@@ -67,7 +67,13 @@ Or in CMD:
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
 ```
 
-The script downloads a Drivebay server archive from the latest GitHub release when that release has one. Otherwise it downloads main and builds the server. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
+This copy of the script installs branch `cursor/windows-script-install-d803` and builds that server. It does not install the latest GitHub release or `main`. Release v3.20 has no server archive, so an earlier copy of this script downloaded `main`, and `main` opens the file browser on this PC. Running `install.ps1` from a checkout uses the files in that checkout. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
+
+Until this is on `main`, use the branch script:
+
+```
+irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/install.ps1 | iex
+```
 
 Setup asks for the same choices as the .exe installer:
 

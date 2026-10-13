@@ -12,6 +12,10 @@ $OutputEncoding = New-Object System.Text.UTF8Encoding $false
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
 $script:Repo = "lordstryfe/drivebay-pinokio"
+# "main" installs the latest release server zip, or main when that zip is missing.
+# This branch is not in the v3.20 release, and that release has no server zip, so the
+# old script downloaded main. Main opens /login and then the file browser.
+$script:SourceRef = "cursor/windows-script-install-d803"
 
 function Test-NonInteractive {
   return ($env:DRIVEBAY_SETUP_ONLY -eq "1" -or $env:DRIVEBAY_NONINTERACTIVE -eq "1")
@@ -432,6 +436,14 @@ function Get-LatestRelease {
   }
 }
 
+function Get-ScriptCheckout {
+  $self = $PSScriptRoot
+  if ([string]::IsNullOrWhiteSpace($self)) { return $null }
+  $launcher = Join-Path $self "installer\launcher.mjs"
+  if (Test-Path -LiteralPath $launcher) { return $self }
+  return $null
+}
+
 function Get-DrivebayTree {
   if (-not [string]::IsNullOrWhiteSpace($env:DRIVEBAY_SETUP_SOURCE)) {
     $given = $env:DRIVEBAY_SETUP_SOURCE
@@ -442,10 +454,36 @@ function Get-DrivebayTree {
     return $given
   }
 
+  $checkout = Get-ScriptCheckout
+  if ($checkout) {
+    Write-Host "Using Drivebay files from $checkout"
+    return $checkout
+  }
+
+  $ref = $env:DRIVEBAY_INSTALL_REF
+  if ([string]::IsNullOrWhiteSpace($ref)) { $ref = $script:SourceRef }
+  if ([string]::IsNullOrWhiteSpace($ref)) { $ref = "main" }
+
   $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("drivebay-src-" + [guid]::NewGuid().ToString("n"))
   New-Item -ItemType Directory -Force -Path $temp | Out-Null
   $zip = Join-Path $temp "drivebay.zip"
   $extract = Join-Path $temp "extract"
+
+  # A non-main ref must not fall through to the latest release or to main.
+  # Those builds open the file browser on this PC.
+  if ($ref -ne "main") {
+    $url = "https://github.com/$script:Repo/archive/refs/heads/$ref.zip"
+    Write-Host "Downloading Drivebay from $ref"
+    Write-Host "The latest release is not used."
+    try {
+      Download-File $url $zip
+    } catch {
+      throw "Could not download Drivebay from $ref. $url"
+    }
+    Expand-ZipFile $zip $extract
+    return (Find-DrivebayRoot $extract)
+  }
+
   $release = Get-LatestRelease
   $asset = $null
   if ($release -and $release.assets) {
