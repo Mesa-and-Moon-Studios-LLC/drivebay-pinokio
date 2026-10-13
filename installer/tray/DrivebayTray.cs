@@ -194,12 +194,16 @@ internal static class Program
     static ContextMenuStrip BuildMenu()
     {
         ContextMenuStrip menu = new ContextMenuStrip();
-        ToolStripMenuItem openItem = new ToolStripMenuItem("Open Drivebay");
+        ToolStripMenuItem openItem = new ToolStripMenuItem("Open settings");
         openItem.Click += delegate { OpenDrivebay(); };
         ToolStripMenuItem copyItem = new ToolStripMenuItem("Copy address");
         copyItem.Click += delegate { CopyAddress(); };
         startItem = new ToolStripMenuItem("Start server");
-        startItem.Click += delegate { StartServer(true); };
+        startItem.Click += delegate
+        {
+            openWhenReady = true;
+            StartServer(true);
+        };
         stopItem = new ToolStripMenuItem("Stop server");
         stopItem.Click += delegate { StopServer(); };
         restartItem = new ToolStripMenuItem("Restart server");
@@ -488,7 +492,7 @@ internal static class Program
 
     static void OpenLocal()
     {
-        string url = "http://127.0.0.1:" + ReadPort() + "/login";
+        string url = "http://127.0.0.1:" + ReadPort() + "/settings";
         try
         {
             Process.Start(url);

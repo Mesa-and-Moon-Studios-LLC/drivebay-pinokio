@@ -7,10 +7,10 @@
 !include "WinMessages.nsh"
 
 !ifndef VERSION
-  !define VERSION "3.20"
+  !define VERSION "3.21"
 !endif
 !ifndef VERSION4
-  !define VERSION4 "3.20.0.0"
+  !define VERSION4 "3.21.0.0"
 !endif
 
 Name "Drivebay ${VERSION}"
@@ -29,9 +29,9 @@ ShowInstDetails show
 !define MUI_WELCOMEPAGE_TITLE "Install Drivebay"
 !define MUI_WELCOMEPAGE_TEXT "Drivebay is a password-locked file browser for every drive on this PC.$\r$\n$\r$\nThis setup includes the program and the runtime it needs. You do not need Node.js, git, or Pinokio.$\r$\n$\r$\nYou will choose Tailscale or a regular connection, pick a free port, and set the password."
 !define MUI_FINISHPAGE_TITLE "Drivebay is installed"
-!define MUI_FINISHPAGE_TEXT "Open Drivebay and sign in with the username and password you just chose.$\r$\n$\r$\nOther devices can connect only after you open and forward the port you picked on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
+!define MUI_FINISHPAGE_TEXT "Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices can connect only after you open and forward the port you picked on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
 !define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Open Drivebay in my browser"
+!define MUI_FINISHPAGE_RUN_TEXT "Open Drivebay settings"
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchDrivebay
 
 !insertmacro MUI_PAGE_WELCOME
@@ -396,7 +396,7 @@ FunctionEnd
 
 Function FinishPageShow
   ${If} $Mode == "tailscale"
-    SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay and sign in with the username and password you just chose.$\r$\n$\r$\nOther devices on your tailnet open http://<this-PC-tailscale-name>:$Port/ after Tailscale is signed in on both devices. You do not forward that port on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
+    SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices on your tailnet open http://<this-PC-tailscale-name>:$Port/ after Tailscale is signed in on both devices. You do not forward that port on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
   ${EndIf}
 FunctionEnd
 

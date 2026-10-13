@@ -8,7 +8,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/lordstryfe/drivebay-pinokio
 ```
 
-Current version: **3.20** — see [Changelog](#changelog) below.
+Current version: **3.21** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -22,7 +22,7 @@ Current version: **3.20** — see [Changelog](#changelog) below.
 4. Paste `https://github.com/lordstryfe/drivebay-pinokio` and download.
 5. Click **Install**. Choose **Static** (you pick the port) or **Random** (new port each Start).
 6. If you chose Static, forward **that same port** on your router.
-7. Click **Start**, then **Open Drivebay**.
+7. Click **Start**. On this PC, Drivebay opens the settings page. It does not open the file browser. Other devices use the address Pinokio shows.
 8. The first visit creates the **only** username and password. Pick something strong — Pinokio is already visible online, and this app can see every file on the machine.
 9. After that, anyone who opens it can only unlock. Nobody else can sign up.
 10. In the sidebar, open **X:**, **Z:**, and any other drives you want.
@@ -31,9 +31,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.20.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.21.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.20` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.21` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -45,13 +45,39 @@ The setup screens are:
 6. **Tailscale** (only if you chose Tailscale). Other devices on your tailnet open `http://<this-pc-tailscale-name>:<port>/` after you sign in to Tailscale on both devices. You can download the official installer from `pkgs.tailscale.com` and launch Tailscale. You do not forward the port on your router.
 7. **Password.** The only username and password (at least 8 characters). Drivebay opens in the browser so you can sign in. If that account cannot be saved, setup shows the reason and writes the same text to the install log. The login page then lets you set the lock on first run. A reinstall does not replace an existing password.
 8. **Shortcuts.** Start menu entries (Drivebay, Stop Drivebay, and Uninstall) are always created. They open a notification-area icon, not a console window. Optional desktop shortcut. Optional **Start Drivebay when I sign in to Windows**, which starts that same icon in the background.
-9. **Finish.** Opens Drivebay in the browser. The icon stays while the server is running. Double-click it, or choose **Open Drivebay**, to open the page. The right-click menu can also copy the Tailscale or LAN address, start, stop, or restart the server, open the logs folder, turn **Start with Windows** on or off, or quit. A short notice appears when the server comes up. If the server stops on its own, the icon changes so you can see it.
+9. **Finish.** On this PC, opens the settings page. It does not open the file browser. The icon stays while the server is running. Double-click it, or choose **Open settings**, to open settings again. The right-click menu can also copy the Tailscale or LAN address, start, stop, or restart the server, open the logs folder, turn **Start with Windows** on or off, or quit. A short notice appears when the server comes up. If the server stops on its own, the icon changes so you can see it. Other devices still open the file browser at the Tailscale or LAN address.
 
 The password lock is unchanged: drives stay behind that login. Uninstall stops the tray icon and the server, removes the program, shortcuts, and the startup entry, and asks before deleting the saved password.
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
+
+## Install from the command line (Windows)
+
+No installer and no Pinokio. Paste this in PowerShell:
+
+```
+irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+```
+
+Or in CMD:
+
+```
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
+```
+
+The script downloads a Drivebay server archive from the latest GitHub release when that release has one. Otherwise it downloads main and builds the server. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
+
+Setup asks for the same choices as the .exe installer:
+
+1. **Mode.** Tailscale or Regular.
+2. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013.
+3. **Router** (Regular only). You have to open and forward that port on your router. Type YES to continue. Tailscale skips this and tells you not to forward the port.
+4. **Tailscale** (only if you chose Tailscale). You can download the official installer and launch Tailscale.
+5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8.
+
+A Start menu shortcut named **Drivebay** starts it. On this PC that opens the settings page, and the tray icon stays. The file browser is not opened on this PC. `uninstall.ps1` in `%LOCALAPPDATA%\Drivebay` removes the program. It asks before deleting the saved password.
 
 Search: type in the search box and press Enter (or Ctrl/Cmd+K). It looks through the current folder and its subfolders. Hidden folders follow the eye toggle.
 
@@ -67,6 +93,10 @@ Search: type in the search box and press Enter (or Ctrl/Cmd+K). It looks through
 Treat the password like a house key. Do not share the Pinokio link and the password together. The first person to open a fresh install owns the lock — make sure that person is you.
 
 ## Changelog
+
+### 3.21
+- Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex`
+- On this PC, starting Drivebay opens the settings page. It does not open the file browser. The tray icon stays. Other devices still use the Tailscale or LAN address.
 
 ### 3.20
 - The installer writes the password as UTF-16. An 8-character password is saved and used for login. If saving still fails, setup shows the reason.

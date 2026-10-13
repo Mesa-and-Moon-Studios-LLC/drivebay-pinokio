@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { hasOwner } from "@/lib/files/api.functions";
 import { usernameToEmail } from "@/lib/files/identity";
+import { pageAfterSignIn, readStoredNext } from "@/lib/host-page.mjs";
 import { APP_VERSION } from "@/lib/version";
 
 export const Route = createFileRoute("/login")({ ssr: false, component: LoginPage });
@@ -25,7 +26,7 @@ function LoginPage() {
 
   useEffect(() => {
     if (!isPending && user) {
-      void navigate({ to: "/" });
+      void navigate({ to: pageAfterSignIn(window.location.hostname, readStoredNext()) });
     }
   }, [isPending, user, navigate]);
 
@@ -78,7 +79,7 @@ function LoginPage() {
         const { error } = await authClient.signIn.email({ email, password });
         if (error) throw new Error(error.message ?? "Wrong username or password");
       }
-      await navigate({ to: "/" });
+      await navigate({ to: pageAfterSignIn(window.location.hostname, readStoredNext()) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not continue");
     } finally {

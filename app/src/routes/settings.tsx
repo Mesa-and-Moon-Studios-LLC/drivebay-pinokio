@@ -8,6 +8,7 @@ import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
 import { getSettings, saveDriveAccess, savePortSettings } from "@/lib/files/api.functions";
 import { APP_VERSION, FEATURE_REQUEST_URL } from "@/lib/version";
+import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +46,7 @@ function SettingsPage() {
   const [savingPass, setSavingPass] = useState(false);
 
   useEffect(() => {
+    clearStoredNext();
     let alive = true;
     getSettings()
       .then((s) => {
@@ -81,7 +83,12 @@ function SettingsPage() {
       </div>
     );
   }
-  if (!user) return <RedirectToSignIn />;
+  if (!user) {
+    rememberSettingsAfterLogin();
+    return <RedirectToSignIn />;
+  }
+
+  const onThisPc = pageAfterSignIn(window.location.hostname, null) === "/settings";
 
   const ownerName = user.displayName || emailToUsername(user.primaryEmail);
 
@@ -169,9 +176,11 @@ function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
-        <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>
-          <ArrowLeft className="size-4" />
-        </Button>
+        {onThisPc ? null : (
+          <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>
+            <ArrowLeft className="size-4" />
+          </Button>
+        )}
         <HardDrive className="size-4 text-fg-muted" strokeWidth={1.7} />
         <span className="font-mono text-[11px] tracking-[0.16em] text-fg-subtle uppercase">Settings</span>
         <span className="font-mono text-[11px] text-fg-subtle">{APP_VERSION}</span>
@@ -382,9 +391,11 @@ function SettingsPage() {
               <ExternalLink className="size-3.5" />
             </a>
             <p className="mt-2 break-all font-mono text-[11px] text-fg-subtle">{dataDir || "…"}</p>
-            <Link to="/" className="mt-4 inline-flex text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
-              Back to files
-            </Link>
+            {onThisPc ? null : (
+              <Link to="/" className="mt-4 inline-flex text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
+                Back to files
+              </Link>
+            )}
           </div>
         </section>
       </main>

@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.21
+- Command-line Windows install (`install.ps1`). No installer and no Pinokio. It downloads the latest release server archive, or main when that archive is not published, installs a portable Node under `%LOCALAPPDATA%\Drivebay` when Node is missing, and runs the same Tailscale or Regular setup as the .exe installer. Regular mode requires a typed YES before it will continue, and tells you to forward the port. Tailscale skips that notice and can install Tailscale. A Start menu shortcut and `uninstall.ps1` are created. The password file is UTF-8.
+- On this PC, Pinokio, the .exe installer, and the command-line install open the settings page when Drivebay starts. They do not open the file browser. The tray icon stays. Other devices still open the file browser at the shared address.
+
 ## 3.20
 - Windows setup writes the username and password as UTF-16. Version 3.19 wrote them as ANSI, so an 8-character password looked too short and was not saved. A failed save now shows the reason.
 - The standalone install adds a notification-area icon with Open, Copy address, Start, Stop, Restart, logs, Start with Windows, and Quit. The Start menu and sign-in startup open that icon instead of a console window. Uninstall stops it.

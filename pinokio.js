@@ -1,5 +1,5 @@
 module.exports = {
-  version: "3.20",
+  version: "3.21",
   title: "Drivebay",
   description: "Password-locked file browser for every drive on this machine.",
   icon: "icon.png",
@@ -25,8 +25,14 @@ module.exports = {
       if (running.start) {
         const local = info.local("start.js");
         if (local && local.url) {
+          const settings = String(local.url).indexOf("/settings") !== -1;
           return [
-            { default: true, icon: "fa-solid fa-folder-open", text: "Open Drivebay", href: local.url },
+            {
+              default: true,
+              icon: settings ? "fa-solid fa-gear" : "fa-solid fa-folder-open",
+              text: settings ? "Open settings" : "Open Drivebay",
+              href: local.url,
+            },
             { icon: "fa-solid fa-terminal", text: "Terminal", href: "start.js" },
           ];
         }

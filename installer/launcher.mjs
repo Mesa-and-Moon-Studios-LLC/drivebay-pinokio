@@ -256,13 +256,13 @@ async function main() {
   if (existing && pidAlive(existing) && existing !== process.pid) {
     const ready = await waitForLogin(origin, home, 4_000);
     if (ready) {
-      log(home, `Drivebay is already running at ${origin}/login`);
+      log(home, `Drivebay is already running. This PC opens settings at ${origin}/settings`);
       if (config.mode === "tailscale") {
         log(home, `Tailscale: other devices on your tailnet use http://<this-pc-tailscale-name>:${port}/`);
       } else {
         log(home, `Forward TCP port ${port} on your router if other devices cannot connect.`);
       }
-      openBrowser(`${origin}/login`);
+      openBrowser(`${origin}/settings`);
       return;
     }
   }
@@ -354,7 +354,8 @@ async function main() {
     shutdown(1);
   }
   await ensureAccount(home, origin);
-  openBrowser(`${origin}/login`);
+  // This PC opens settings. Other devices still use the shared address for the file browser.
+  openBrowser(`${origin}/settings`);
   child.ref();
 }
 
