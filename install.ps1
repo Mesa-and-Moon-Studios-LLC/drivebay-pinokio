@@ -271,7 +271,20 @@ $launcher = Join-Path $Root "launcher.mjs"
 if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $launcher)) {
   try { & $node $launcher --stop } catch {}
 }
-try { & taskkill.exe /IM DrivebayTray.exe /F } catch {}
+$trayProc = @(Get-Process -Name "DrivebayTray" -ErrorAction SilentlyContinue)
+if ($trayProc.Count -gt 0) {
+  $oldNative = $null
+  $hasNative = Test-Path variable:PSNativeCommandUseErrorActionPreference
+  if ($hasNative) {
+    $oldNative = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  $oldError = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { & taskkill.exe /IM DrivebayTray.exe /F 1>$null 2>$null } catch {}
+  $ErrorActionPreference = $oldError
+  if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
+}
 
 $firewall = Join-Path $Root "windows\firewall.ps1"
 if (Test-Path -LiteralPath $firewall) {
@@ -367,6 +380,27 @@ function New-StartShortcuts([string]$Root) {
   Write-Host "Start menu shortcut: Drivebay"
 }
 
+function Invoke-Quiet([scriptblock]$Command) {
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  # Local assignment hides the session preference. A missing tray must not abort setup.
+  if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  try {
+    & $Command
+  } catch {
+  } finally {
+    $ErrorActionPreference = $old
+  }
+}
+
+function Stop-TrayImage {
+  $procs = @(Get-Process -Name "DrivebayTray" -ErrorAction SilentlyContinue)
+  if ($procs.Count -eq 0) { return }
+  Invoke-Quiet { & taskkill.exe /IM DrivebayTray.exe /F 1>$null 2>$null }
+}
+
 function Start-InstalledDrivebay([string]$Root) {
   if ($env:DRIVEBAY_SKIP_START -eq "1") { return }
   $tray = Join-Path $Root "DrivebayTray.exe"
@@ -374,24 +408,31 @@ function Start-InstalledDrivebay([string]$Root) {
     Start-Process -FilePath $tray -WorkingDirectory $Root | Out-Null
     return
   }
+  Write-Host "The tray icon was not built. Starting Drivebay with the launcher."
   $vbs = Join-Path $Root "start-drivebay.vbs"
   if (Test-Path -LiteralPath $vbs) {
     Start-Process -FilePath "wscript.exe" -ArgumentList @("//B", $vbs) -WorkingDirectory $Root | Out-Null
+    return
+  }
+  $node = Join-Path $Root "runtime\node.exe"
+  $launcher = Join-Path $Root "launcher.mjs"
+  if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $launcher)) {
+    Start-Process -FilePath $node -ArgumentList @($launcher) -WorkingDirectory $Root | Out-Null
   }
 }
 
 function Stop-InstalledDrivebay([string]$Root) {
   $tray = Join-Path $Root "DrivebayTray.exe"
   if (Test-Path -LiteralPath $tray) {
-    try { & $tray --quit } catch {}
+    Invoke-Quiet { & $tray --quit 1>$null 2>$null }
     Start-Sleep -Milliseconds 400
   }
   $node = Join-Path $Root "runtime\node.exe"
   $launcher = Join-Path $Root "launcher.mjs"
   if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $launcher)) {
-    try { & $node $launcher --stop } catch {}
+    Invoke-Quiet { & $node $launcher --stop 1>$null 2>$null }
   }
-  try { & taskkill.exe /IM DrivebayTray.exe /F } catch {}
+  Stop-TrayImage
 }
 
 function Get-WebHeaders {
@@ -660,9 +701,12 @@ function Compile-Tray([string]$Source, [string]$Root) {
   $icon = Join-Path $Root "assets\drivebay.ico"
   $out = Join-Path $Root "DrivebayTray.exe"
   Write-Host "Building the Drivebay tray icon."
-  & $csc /nologo /target:winexe /optimize+ /platform:anycpu /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /win32icon:$icon /out:$out $cs
+  Invoke-Quiet {
+    & $csc /nologo /target:winexe /optimize+ /platform:anycpu /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /win32icon:$icon /out:$out $cs
+  }
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $out)) {
-    Write-Host "The tray icon was not built. The start shortcut will use the launcher script."
+    if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue }
+    Write-Host "The tray icon was not built. Drivebay will start with the launcher and open settings."
   }
 }
 
@@ -766,7 +810,6 @@ function Start-DrivebayInstall {
 
   Write-Host ""
   Write-Host "Drivebay is installed."
-  Write-Host "This PC opens http://127.0.0.1:${port}/settings"
   Write-Host "It does not open the file browser."
   Write-Host "The tray icon stays while Drivebay is running."
   if ($mode -eq "tailscale") {
@@ -779,6 +822,7 @@ function Start-DrivebayInstall {
   Write-Host "Start shortcut: Drivebay, in the Start menu."
   Write-Host ("Uninstall script: " + (Join-Path $root "uninstall.ps1"))
   Write-Host "A reinstall does not replace an existing password."
+  Write-Host "Drivebay is ready at http://127.0.0.1:${port}/settings"
 }
 
 if ($MyInvocation.InvocationName -ne ".") {

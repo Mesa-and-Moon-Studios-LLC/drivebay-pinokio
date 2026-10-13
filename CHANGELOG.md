@@ -3,6 +3,7 @@
 All user-facing Drivebay versions. Newest first.
 
 ## 3.21
+- Command-line setup no longer prints an error or stops when DrivebayTray.exe is not already running. If the tray cannot be built, the launcher starts instead and this PC still opens settings.
 - The command-line install from this branch installs this branch, or the checkout the script is in. It does not install the latest release or `main`. Those builds open the file browser on this PC. Opening `/` on this PC goes to settings, so the file list is not shown here.
 - After the Windows .exe or command-line install, the first page asks you to sign in with the username and password from setup. It does not ask you to create the account again. Pinokio still creates the account on the first visit, because that install does not write a setup account file.
 - Command-line Windows install (`install.ps1`). No installer and no Pinokio. It downloads the latest release server archive, or main when that archive is not published, installs a portable Node under `%LOCALAPPDATA%\Drivebay` when Node is missing, and runs the same Tailscale or Regular setup as the .exe installer. Regular mode requires a typed YES before it will continue, and tells you to forward the port. Tailscale skips that notice and can install Tailscale. A Start menu shortcut and `uninstall.ps1` are created. The password file is UTF-8.

@@ -128,8 +128,54 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   const browser = index.indexOf('import("@/components/browser/app")');
   assert.ok(guard !== -1 && browser !== -1 && guard < browser);
   assert.match(index, /redirect\(\{ to: "\/settings", replace: true \}\)/);
+  const stop = script.slice(script.indexOf("function Stop-TrayImage"), script.indexOf("function Start-InstalledDrivebay"));
+  const countCheck = stop.indexOf("if ($procs.Count -eq 0)");
+  const kill = stop.indexOf("taskkill.exe");
+  assert.ok(countCheck !== -1 && kill !== -1 && countCheck < kill);
+  assert.match(stop, /2>\$null/);
+  assert.match(script, /The tray icon was not built\. Drivebay will start with the launcher and open settings\./);
+  assert.match(script, /Starting Drivebay with the launcher\./);
+  const finish = script.slice(script.lastIndexOf('Write-Host "Drivebay is installed."'));
+  const readyAt = finish.lastIndexOf('Write-Host "Drivebay is ready at http://127.0.0.1:${port}/settings"');
+  assert.ok(readyAt !== -1);
+  assert.equal(finish.indexOf("Write-Host", readyAt + 12), -1);
   for (const ch of nsi) {
     assert.ok(ch.charCodeAt(0) <= 127, `non-ASCII installer character ${JSON.stringify(ch)}`);
+  }
+});
+
+test("a missing tray does not print ERROR and setup still continues", () => {
+  const ps = powershell();
+  if (!ps) {
+    if (process.platform === "win32") assert.fail("powershell is required on Windows");
+    return;
+  }
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-no-tray-"));
+  const scriptPath = path.join(root, "install.ps1").replace(/'/g, "''");
+  const homePath = home.replace(/'/g, "''");
+  const result = spawnSync(
+    ps,
+    [
+      "-NoProfile",
+      "-Command",
+      [
+        "$ErrorActionPreference = 'Stop'",
+        "if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) { $PSNativeCommandUseErrorActionPreference = $true }",
+        `. '${scriptPath}'`,
+        `Stop-InstalledDrivebay '${homePath}'`,
+        "Invoke-Quiet { & bash -c 'echo ERROR: The process not found 1>&2; exit 1' 2>$null }",
+        "Write-Output CONTINUED",
+      ].join("; "),
+    ],
+    { encoding: "utf8" },
+  );
+  try {
+    const out = `${result.stdout || ""}\n${result.stderr || ""}`;
+    assert.equal(result.status, 0, out);
+    assert.equal(out.includes("ERROR"), false, out);
+    assert.match(String(result.stdout), /CONTINUED/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
 
