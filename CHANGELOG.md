@@ -3,6 +3,7 @@
 All user-facing Drivebay versions. Newest first.
 
 ## 3.21
+- Opening `/` in a browser on this PC shows sign-in when you are signed out, and settings after you sign in. A Tailscale or LAN address shows the file browser sign-in. Those pages are HTML. JSON errors stay on API calls.
 - Settings on this PC can change Server lock: port, delete, rename, new folder, upload, max upload, and which drives or folders are allowed. The save is UTF-8 and takes effect immediately. Other devices can read the lock and cannot change it.
 - Command-line setup no longer prints an error or stops when DrivebayTray.exe is not already running. If the tray cannot be built, the launcher starts instead and this PC still opens settings.
 - The command-line install from this branch installs this branch, or the checkout the script is in. It does not install the latest release or `main`. Those builds open the file browser on this PC. Opening `/` on this PC goes to settings, so the file list is not shown here.
