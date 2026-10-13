@@ -445,7 +445,7 @@ export function FileBrowserApp() {
   async function handleUpload(files: FileList | File[]) {
     if (!listing) return;
     if (serverLock && !serverLock.allowUpload) {
-      toast.error("Upload is locked on the server (edit data/server-lock.json on the PC).");
+      toast.error("Upload is turned off in Settings on the PC that runs Drivebay.");
       return;
     }
     const list = Array.from(files);

@@ -182,9 +182,10 @@ export const getSettings = createServerFn({ method: "GET" })
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
     const driveAccess = await access.listDrivesWithAccess();
+    const host = await import("./host-request.server");
     return {
       ...settings.readAppSettings(),
-      serverLock: lock.toPublicServerLock(),
+      serverLock: lock.toPublicServerLock(lock.readServerLock(), host.isLoopbackRequest()),
       driveAccess,
     };
   });
@@ -216,4 +217,37 @@ export const savePortSettings = createServerFn({ method: "POST" })
     const lock = await import("./server-lock.server");
     lock.assertPolicy("allowPortChangeFromUi");
     return settings.writePortSettings(data.style, data.port);
+  });
+
+const serverLockInput = z.object({
+  allowPortChangeFromUi: z.boolean(),
+  allowDelete: z.boolean(),
+  allowRename: z.boolean(),
+  allowCreateFolder: z.boolean(),
+  allowUpload: z.boolean(),
+  maxUploadMb: z.number().int().min(1).max(8192),
+  allowedRoots: z.array(z.string().trim().min(1).max(400)).max(64),
+});
+
+export const saveServerLock = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(serverLockInput)
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const lock = await import("./server-lock.server");
+    const saved = lock.writeServerLock(data);
+    return {
+      applied: saved.applied,
+      serverLock: lock.toPublicServerLock(saved.policy, true),
+    };
+  });
+
+export const restartDrivebay = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const restart = await import("./host-restart.server");
+    return restart.scheduleStandaloneRestart();
   });

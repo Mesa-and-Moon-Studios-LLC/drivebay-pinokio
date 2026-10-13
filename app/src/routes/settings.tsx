@@ -6,7 +6,7 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getSettings, saveDriveAccess, savePortSettings } from "@/lib/files/api.functions";
+import { getSettings, restartDrivebay, saveDriveAccess, savePortSettings, saveServerLock } from "@/lib/files/api.functions";
 import { APP_VERSION, FEATURE_REQUEST_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { Button } from "@/components/ui/button";
@@ -30,9 +30,22 @@ function SettingsPage() {
     maxUploadMb: number;
     allowedRoots: string[];
     note: string;
-    lockedOnServer: true;
+    lockedOnServer: boolean;
+    canEdit: boolean;
     lockFile: string;
   } | null>(null);
+  const [allowPort, setAllowPort] = useState(true);
+  const [allowDelete, setAllowDelete] = useState(true);
+  const [allowRename, setAllowRename] = useState(true);
+  const [allowMkdir, setAllowMkdir] = useState(true);
+  const [allowUpload, setAllowUpload] = useState(true);
+  const [maxUpload, setMaxUpload] = useState("512");
+  const [allRoots, setAllRoots] = useState(true);
+  const [chosenRoots, setChosenRoots] = useState<string[]>([]);
+  const [folderPath, setFolderPath] = useState("");
+  const [savingLock, setSavingLock] = useState(false);
+  const [needsRestart, setNeedsRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [driveRows, setDriveRows] = useState<
     { id: string; path: string; label: string; kind: string; enabled: boolean }[]
   >([]);
@@ -54,9 +67,17 @@ function SettingsPage() {
         setStyle(s.style);
         setPort(String(s.port));
         setDataDir(s.dataDir);
-        // serverLock is host-only policy; never writable from this UI
         if (s && typeof s === "object" && "serverLock" in s) {
-          setServerLock((s as { serverLock: NonNullable<typeof serverLock> }).serverLock);
+          const lock = (s as { serverLock: NonNullable<typeof serverLock> }).serverLock;
+          setServerLock(lock);
+          setAllowPort(lock.allowPortChangeFromUi);
+          setAllowDelete(lock.allowDelete);
+          setAllowRename(lock.allowRename);
+          setAllowMkdir(lock.allowCreateFolder);
+          setAllowUpload(lock.allowUpload);
+          setMaxUpload(String(lock.maxUploadMb));
+          setAllRoots(lock.allowedRoots.length === 0);
+          setChosenRoots(lock.allowedRoots);
         }
         if (s && typeof s === "object" && "driveAccess" in s && s.driveAccess) {
           const da = s.driveAccess as {
@@ -89,13 +110,92 @@ function SettingsPage() {
   }
 
   const onThisPc = pageAfterSignIn(window.location.hostname, null) === "/settings";
+  const canEditLock = serverLock?.canEdit === true;
 
   const ownerName = user.displayName || emailToUsername(user.primaryEmail);
+
+  function rootKey(path: string) {
+    return path.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  }
+
+  function rootSelected(path: string) {
+    const key = rootKey(path);
+    return chosenRoots.some((root) => rootKey(root) === key);
+  }
+
+  function toggleRoot(path: string) {
+    setChosenRoots((prev) => {
+      const key = rootKey(path);
+      if (prev.some((root) => rootKey(root) === key)) return prev.filter((root) => rootKey(root) !== key);
+      return [...prev, path];
+    });
+  }
+
+  function addFolder() {
+    const value = folderPath.trim();
+    if (!value) return;
+    if (!rootSelected(value)) setChosenRoots((prev) => [...prev, value]);
+    setFolderPath("");
+  }
+
+  async function onSaveLock(e: React.FormEvent) {
+    e.preventDefault();
+    const mb = Number(maxUpload);
+    if (!Number.isInteger(mb) || mb < 1 || mb > 8192) {
+      toast.error("Max upload must be a whole number of MB from 1 to 8192.");
+      return;
+    }
+    if (!allRoots && chosenRoots.length === 0) {
+      toast.error("Choose at least one drive or folder, or switch to all drives.");
+      return;
+    }
+    setSavingLock(true);
+    try {
+      const saved = await saveServerLock({
+        data: {
+          allowPortChangeFromUi: allowPort,
+          allowDelete,
+          allowRename,
+          allowCreateFolder: allowMkdir,
+          allowUpload,
+          maxUploadMb: mb,
+          allowedRoots: allRoots ? [] : chosenRoots,
+        },
+      });
+      setServerLock(saved.serverLock);
+      setNeedsRestart(saved.applied === "restart");
+      if (saved.applied === "live") {
+        toast.success("Server lock saved. It is in effect now.");
+      } else {
+        toast.error("Server lock was saved. Restart Drivebay to apply it.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save server lock");
+    } finally {
+      setSavingLock(false);
+    }
+  }
+
+  async function onRestart() {
+    setRestarting(true);
+    try {
+      const result = await restartDrivebay();
+      if (result.ok) {
+        toast.success("Restarting Drivebay.");
+      } else {
+        toast.error(result.message);
+        setRestarting(false);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not restart Drivebay");
+      setRestarting(false);
+    }
+  }
 
   async function onSavePort(e: React.FormEvent) {
     e.preventDefault();
     if (serverLock && !serverLock.allowPortChangeFromUi) {
-      toast.error("Port changes are locked on the server (edit data/server-lock.json on the PC).");
+      toast.error("Port changes are turned off in Server lock on this PC.");
       return;
     }
     const n = Number(port);
@@ -292,32 +392,162 @@ function SettingsPage() {
 
         <section className="space-y-3">
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Server lock (host only)</p>
-          <div className="space-y-2 rounded-md border border-border bg-bg-elevated p-4 text-sm">
-            <p className="text-xs text-fg-muted">
-              These flags are enforced on the PC. Web and APK clients can read them but cannot change them.
-              Edit <span className="font-mono">data/server-lock.json</span> on the host, then restart Drivebay.
-            </p>
-            {serverLock ? (
-              <ul className="space-y-1 font-mono text-[11px] text-fg-muted">
-                <li>port from UI: {serverLock.allowPortChangeFromUi ? "allowed" : "LOCKED"}</li>
-                <li>delete: {serverLock.allowDelete ? "allowed" : "LOCKED"}</li>
-                <li>rename: {serverLock.allowRename ? "allowed" : "LOCKED"}</li>
-                <li>mkdir: {serverLock.allowCreateFolder ? "allowed" : "LOCKED"}</li>
-                <li>upload: {serverLock.allowUpload ? "allowed" : "LOCKED"}</li>
-                <li>max upload: {serverLock.maxUploadMb} MB</li>
-                <li>
-                  roots:{" "}
-                  {serverLock.allowedRoots.length
-                    ? serverLock.allowedRoots.join(", ")
-                    : "(all drives)"}
-                </li>
-                {serverLock.note ? <li className="text-fg">note: {serverLock.note}</li> : null}
-                <li className="break-all text-fg-subtle">{serverLock.lockFile}</li>
-              </ul>
-            ) : (
-              <p className="text-xs text-fg-subtle">Loading lock policy…</p>
-            )}
-          </div>
+          {canEditLock && serverLock ? (
+            <form className="space-y-3 rounded-md border border-border bg-bg-elevated p-4" onSubmit={(e) => void onSaveLock(e)}>
+              <p className="text-xs text-fg-muted">
+                These rules are enforced on the PC. Other devices can read them and cannot change them.
+              </p>
+              {(
+                [
+                  ["allow-port", "Port from this page", allowPort, setAllowPort],
+                  ["allow-delete", "Delete", allowDelete, setAllowDelete],
+                  ["allow-rename", "Rename", allowRename, setAllowRename],
+                  ["allow-mkdir", "New folder", allowMkdir, setAllowMkdir],
+                  ["allow-upload", "Upload", allowUpload, setAllowUpload],
+                ] as const
+              ).map(([id, label, checked, setChecked]) => (
+                <label key={id} htmlFor={id} className="flex items-center gap-3 text-sm">
+                  <input
+                    id={id}
+                    type="checkbox"
+                    className="size-4 accent-fg"
+                    checked={checked}
+                    onChange={(e) => setChecked(e.target.checked)}
+                  />
+                  {label}
+                </label>
+              ))}
+              <div>
+                <Label htmlFor="max-upload">Max upload (MB)</Label>
+                <Input
+                  id="max-upload"
+                  className="mt-1.5 font-mono"
+                  inputMode="numeric"
+                  value={maxUpload}
+                  onChange={(e) => setMaxUpload(e.target.value.replace(/[^\d]/g, ""))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAllRoots(true)}
+                  className={
+                    allRoots
+                      ? "rounded-sm border border-border-strong bg-bg-subtle px-3 py-3 text-left text-sm"
+                      : "rounded-sm border border-border px-3 py-3 text-left text-sm text-fg-muted hover:bg-bg-subtle"
+                  }
+                >
+                  <span className="block font-medium text-fg">All drives</span>
+                  Every drive on this PC
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllRoots(false)}
+                  className={
+                    !allRoots
+                      ? "rounded-sm border border-border-strong bg-bg-subtle px-3 py-3 text-left text-sm"
+                      : "rounded-sm border border-border px-3 py-3 text-left text-sm text-fg-muted hover:bg-bg-subtle"
+                  }
+                >
+                  <span className="block font-medium text-fg">Choose drives</span>
+                  Drives and folders
+                </button>
+              </div>
+              {!allRoots && (
+                <div className="space-y-2">
+                  {driveRows.length ? (
+                    <ul className="space-y-2">
+                      {driveRows.map((d) => (
+                        <li key={d.id} className="flex items-start gap-3 rounded-sm border border-border px-3 py-2">
+                          <input
+                            id={`root-${d.id}`}
+                            type="checkbox"
+                            className="mt-1 size-4 accent-fg"
+                            checked={rootSelected(d.path)}
+                            onChange={() => toggleRoot(d.path)}
+                          />
+                          <label htmlFor={`root-${d.id}`} className="min-w-0 flex-1 cursor-pointer">
+                            <span className="block text-sm text-fg">{d.label}</span>
+                            <span className="block break-all font-mono text-[11px] text-fg-subtle">{d.path}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-fg-subtle">No drives found on scan. Add a folder path below.</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      id="lock-folder"
+                      value={folderPath}
+                      placeholder="C:\Users\you\Downloads"
+                      onChange={(e) => setFolderPath(e.target.value)}
+                    />
+                    <Button type="button" variant="outline" onClick={addFolder}>
+                      Add folder
+                    </Button>
+                  </div>
+                  {chosenRoots.filter((root) => !driveRows.some((d) => rootKey(d.path) === rootKey(root))).length ? (
+                    <ul className="space-y-1">
+                      {chosenRoots
+                        .filter((root) => !driveRows.some((d) => rootKey(d.path) === rootKey(root)))
+                        .map((root) => (
+                          <li key={root} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="break-all font-mono text-fg-muted">{root}</span>
+                            <button type="button" className="text-fg-subtle underline" onClick={() => toggleRoot(root)}>
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  ) : null}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={!loaded || savingLock}>
+                  {savingLock ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  Save server lock
+                </Button>
+                {needsRestart ? (
+                  <Button type="button" variant="outline" disabled={restarting} onClick={() => void onRestart()}>
+                    {restarting ? <Loader2 className="size-4 animate-spin" /> : null}
+                    Restart Drivebay
+                  </Button>
+                ) : null}
+              </div>
+              <p className="break-all font-mono text-[11px] text-fg-subtle">{serverLock.lockFile}</p>
+            </form>
+          ) : (
+            <div className="space-y-2 rounded-md border border-border bg-bg-elevated p-4 text-sm">
+              <p className="text-xs text-fg-muted">
+                These flags are enforced on the PC. Web and APK clients can read them but cannot change them.
+                Change them in Settings on the PC that runs Drivebay.
+              </p>
+              {onThisPc && serverLock && !serverLock.canEdit ? (
+                <p className="text-xs text-fg">
+                  This page is on this PC, but the server did not see a loopback connection, so the lock stays read-only.
+                </p>
+              ) : null}
+              {serverLock ? (
+                <ul className="space-y-1 font-mono text-[11px] text-fg-muted">
+                  <li>port from UI: {serverLock.allowPortChangeFromUi ? "allowed" : "LOCKED"}</li>
+                  <li>delete: {serverLock.allowDelete ? "allowed" : "LOCKED"}</li>
+                  <li>rename: {serverLock.allowRename ? "allowed" : "LOCKED"}</li>
+                  <li>mkdir: {serverLock.allowCreateFolder ? "allowed" : "LOCKED"}</li>
+                  <li>upload: {serverLock.allowUpload ? "allowed" : "LOCKED"}</li>
+                  <li>max upload: {serverLock.maxUploadMb} MB</li>
+                  <li>
+                    roots:{" "}
+                    {serverLock.allowedRoots.length ? serverLock.allowedRoots.join(", ") : "(all drives)"}
+                  </li>
+                  {serverLock.note ? <li className="text-fg">note: {serverLock.note}</li> : null}
+                  <li className="break-all text-fg-subtle">{serverLock.lockFile}</li>
+                </ul>
+              ) : (
+                <p className="text-xs text-fg-subtle">Loading lock policy…</p>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="space-y-3">
