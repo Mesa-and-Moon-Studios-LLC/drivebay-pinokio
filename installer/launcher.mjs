@@ -295,6 +295,7 @@ async function main() {
   const serverEnv = {
     ...process.env,
     DRIVEBAY_STANDALONE: "true",
+      DRIVEBAY_HOME: home,
       DRIVEBAY_DATA_DIR: path.join(home, "data"),
       DRIVEBAY_PORT_FILE: path.join(home, "drivebay.port"),
       DRIVEBAY_FALLBACK_PORT: String(port),

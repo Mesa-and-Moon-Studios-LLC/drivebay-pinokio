@@ -34,7 +34,9 @@ function LoginPage() {
     let alive = true;
     hasOwner()
       .then((value) => {
-        if (alive) setOwned(value);
+        if (!alive) return;
+        setOwned(value.owned);
+        if (value.owned && value.username) setUsername(value.username);
       })
       .catch(() => {
         if (alive) setOwned(false);

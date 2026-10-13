@@ -4,10 +4,9 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import type { DirListing, Drive, PreviewPayload, SearchResult } from "./types";
 
 export const hasOwner = createServerFn({ method: "GET" }).handler(async () => {
-  const { getSql } = await import("@/lib/db");
-  const sql = await getSql();
-  const rows = await sql<{ n: number }>`select count(*)::int as n from "user"`;
-  return (rows[0]?.n ?? 0) > 0;
+  const { accountFirstRun } = await import("@/lib/auth/pending-account.server");
+  const first = await accountFirstRun();
+  return { owned: first.mode === "unlock", username: first.username };
 });
 
 export const listDrives = createServerFn({ method: "GET" })

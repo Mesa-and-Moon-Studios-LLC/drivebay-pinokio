@@ -13,6 +13,8 @@ export const Route = createFileRoute("/api/auth/$")({
     handlers: {
       GET: ({ request }) => auth.handler(request),
       POST: async ({ request }) => {
+        const { applyPendingAccount } = await import("@/lib/auth/pending-account.server");
+        await applyPendingAccount();
         const url = new URL(request.url);
         const path = url.pathname.toLowerCase();
         if (path.includes("sign-up") && (await ownerExists())) {

@@ -43,7 +43,7 @@ The setup screens are:
 4. **Port.** Required in both modes. A free port from 1024 to 65535. The suggested port is 42013.
 5. **Router** (Regular only). You have to open and forward **that port** on your router. The page shows the port you picked. You must check the box to continue. Tailscale skips this page. Allow the same port in Windows Firewall if Windows asks.
 6. **Tailscale** (only if you chose Tailscale). Other devices on your tailnet open `http://<this-pc-tailscale-name>:<port>/` after you sign in to Tailscale on both devices. You can download the official installer from `pkgs.tailscale.com` and launch Tailscale. You do not forward the port on your router.
-7. **Password.** The only username and password (at least 8 characters). Drivebay opens in the browser so you can sign in. If that account cannot be saved, setup shows the reason and writes the same text to the install log. The login page then lets you set the lock on first run. A reinstall does not replace an existing password.
+7. **Password.** The only username and password (at least 8 characters). The first launch asks you to sign in with that account. It does not ask you to create it again. If that account cannot be saved, setup shows the reason and writes the same text to the install log, and the login page then lets you set the lock. A reinstall does not replace an existing password.
 8. **Shortcuts.** Start menu entries (Drivebay, Stop Drivebay, and Uninstall) are always created. They open a notification-area icon, not a console window. Optional desktop shortcut. Optional **Start Drivebay when I sign in to Windows**, which starts that same icon in the background.
 9. **Finish.** On this PC, opens the settings page. It does not open the file browser. The icon stays while the server is running. Double-click it, or choose **Open settings**, to open settings again. The right-click menu can also copy the Tailscale or LAN address, start, stop, or restart the server, open the logs folder, turn **Start with Windows** on or off, or quit. A short notice appears when the server comes up. If the server stops on its own, the icon changes so you can see it. Other devices still open the file browser at the Tailscale or LAN address.
 
@@ -75,7 +75,7 @@ Setup asks for the same choices as the .exe installer:
 2. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013.
 3. **Router** (Regular only). You have to open and forward that port on your router. Type YES to continue. Tailscale skips this and tells you not to forward the port.
 4. **Tailscale** (only if you chose Tailscale). You can download the official installer and launch Tailscale.
-5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8.
+5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
 A Start menu shortcut named **Drivebay** starts it. On this PC that opens the settings page, and the tray icon stays. The file browser is not opened on this PC. `uninstall.ps1` in `%LOCALAPPDATA%\Drivebay` removes the program. It asks before deleting the saved password.
 

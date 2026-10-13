@@ -3,6 +3,7 @@
 All user-facing Drivebay versions. Newest first.
 
 ## 3.21
+- After the Windows .exe or command-line install, the first page asks you to sign in with the username and password from setup. It does not ask you to create the account again. Pinokio still creates the account on the first visit, because that install does not write a setup account file.
 - Command-line Windows install (`install.ps1`). No installer and no Pinokio. It downloads the latest release server archive, or main when that archive is not published, installs a portable Node under `%LOCALAPPDATA%\Drivebay` when Node is missing, and runs the same Tailscale or Regular setup as the .exe installer. Regular mode requires a typed YES before it will continue, and tells you to forward the port. Tailscale skips that notice and can install Tailscale. A Start menu shortcut and `uninstall.ps1` are created. The password file is UTF-8.
 - On this PC, Pinokio, the .exe installer, and the command-line install open the settings page when Drivebay starts. They do not open the file browser. The tray icon stays. Other devices still open the file browser at the shared address.
 
