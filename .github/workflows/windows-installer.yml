@@ -56,21 +56,19 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: |
-          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          $dest = "${env:ProgramFiles(x86)}\NSIS"
+          $makensis = Join-Path $dest "makensis.exe"
           if (Test-Path $makensis) { exit 0 }
-          for ($try = 1; $try -le 3; $try++) {
-            choco install nsis -y --no-progress
-            if (Test-Path $makensis) { exit 0 }
-            Write-Host "Chocolatey did not install makensis (attempt $try, exit $LASTEXITCODE)."
-            Start-Sleep -Seconds (10 * $try)
-          }
-          $setup = Join-Path $env:TEMP "nsis-3.11-setup.exe"
-          Write-Host "Downloading the NSIS 3.11 installer."
-          Invoke-WebRequest -Uri "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11-setup.exe" -OutFile $setup
-          $proc = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
-          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "NSIS setup failed ($($proc.ExitCode))"
-          }
+          $zip = Join-Path $env:TEMP "nsis-3.11.zip"
+          curl.exe -fsSL -L -o $zip "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS download failed ($LASTEXITCODE)" }
+          $size = (Get-Item $zip).Length
+          if ($size -lt 1000000) { throw "NSIS download is too small ($size bytes)" }
+          $unpack = Join-Path $env:TEMP "nsis-3.11-unpack"
+          if (Test-Path $unpack) { Remove-Item $unpack -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $unpack
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path (Join-Path $unpack "nsis-3.11\*") -Destination $dest -Recurse -Force
           if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
 
       - name: Compile installer
