@@ -6,12 +6,14 @@ import { fileURLToPath } from "node:url";
 import { donateLinks, DONATE_GITHUB_SPONSORS_URL, DONATE_KOFI_URL, DONATE_PAYPAL_URL } from "../app/src/lib/donate.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PAYPAL_URL =
+  "https://www.paypal.com/donate/?business=AAGD9Q6BU4WCE&currency_code=USD&item_name=Support%20Drivebay%20-%20Mesa%20and%20Moon%20Studios";
 
-test("donate links stay blank and a blank URL drops that choice", () => {
+test("donate links keep PayPal and a blank URL drops that choice", () => {
   assert.equal(DONATE_GITHUB_SPONSORS_URL, "");
-  assert.equal(DONATE_PAYPAL_URL, "");
+  assert.equal(DONATE_PAYPAL_URL, PAYPAL_URL);
   assert.equal(DONATE_KOFI_URL, "");
-  assert.deepEqual(donateLinks(), []);
+  assert.deepEqual(donateLinks(), [{ label: "PayPal", url: PAYPAL_URL }]);
   assert.deepEqual(
     donateLinks([
       { label: "GitHub Sponsors", url: "" },
@@ -39,7 +41,7 @@ test("FUNDING.yml and the README keep the donate placeholders commented", () => 
   assert.match(funding, /^# github: lordstryfe$/m);
   assert.equal(funding.split("\n").some((line) => /^github:/.test(line)), false);
   assert.match(funding, /^# ko_fi:$/m);
-  assert.match(funding, /^# custom:$/m);
+  assert.match(funding, new RegExp(`^custom: \\['${PAYPAL_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}'\\]$`, "m"));
   assert.match(funding, /app\/src\/lib\/donate\.mjs/);
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   const sectionStart = readme.indexOf("## Support Drivebay");
@@ -50,4 +52,5 @@ test("FUNDING.yml and the README keep the donate placeholders commented", () => 
   assert.match(section, /DONATE_PAYPAL_URL/);
   assert.match(section, /DONATE_KOFI_URL/);
   assert.match(section, /github: lordstryfe/);
+  assert.ok(section.includes(PAYPAL_URL));
 });
