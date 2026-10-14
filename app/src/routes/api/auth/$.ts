@@ -20,6 +20,12 @@ export const Route = createFileRoute("/api/auth/$")({
         if (path.includes("sign-up") && (await ownerExists())) {
           return Response.json({ message: "Sign-up is closed" }, { status: 403 });
         }
+        if (path.includes("change-password") || path.includes("set-password")) {
+          const host = await import("@/lib/files/host-request.server");
+          if (!host.isPcAdminRequest()) {
+            return Response.json({ message: "Password can only be changed on this PC." }, { status: 403 });
+          }
+        }
         return auth.handler(request);
       },
     },

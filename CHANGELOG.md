@@ -2,6 +2,12 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.33
+- The Windows installer and the server report 3.33. `/api/health` returns `version` 3.33. The release files are `Drivebay-Setup-3.33.exe` and `drivebay-server-win-x64.zip`.
+- Server settings stay on the PC that runs Drivebay. The web UI hides drives, port, mode, API tokens, donate, password, updates, and Tailscale or server setup when the request is not loopback or when the page is inside the Android app. Those admin calls return 403 from any other device.
+- Settings on this PC has Allow delete from other devices and Allow upload/rename from other devices. Both default to on. Turning one off makes the server reject that action from other devices with 403, and the file browser hides the button. This PC can still delete, upload, and rename. Rename covers moving a file to a new name.
+- Android app 3.33.0 (versionCode 33) blocks `/settings` and opens an app settings screen for the server address and Wi-Fi-only downloads. The release does not attach an APK.
+
 ## 3.32
 - The Windows installer and the server report 3.32. `/api/health` returns `version` 3.32. The release files are `Drivebay-Setup-3.32.exe` and `drivebay-server-win-x64.zip`.
 - A forgotten password can be reset on this PC only. Right-click the Drivebay tray icon and choose Reset password, or run `drivebay reset-password` in PowerShell. The new password is typed locally, masked, twice. It is not printed or logged. Drivebay updates the Better Auth credential hash for the saved account and deletes its sessions. Settings, drives, and API tokens stay. The login page has Forgot password? and explains that a phone or another computer cannot reset it.

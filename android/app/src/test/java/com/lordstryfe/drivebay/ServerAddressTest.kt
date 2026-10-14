@@ -30,6 +30,16 @@ class ServerAddressTest {
     }
 
     @Test
+    fun adminSettingsStayOutOfTheApp() {
+        assertTrue(ServerAddress.isAdminSettingsPath("/settings"))
+        assertTrue(ServerAddress.isAdminSettingsPath("/settings/"))
+        assertTrue(ServerAddress.isAdminSettingsUrl("http://100.1.2.3:8765/settings?next=1"))
+        assertFalse(ServerAddress.isAdminSettingsPath("/"))
+        assertFalse(ServerAddress.isAdminSettingsPath("/login"))
+        assertFalse(ServerAddress.isAdminSettingsUrl("http://100.1.2.3:8765/"))
+    }
+
+    @Test
     fun fileNamesStayInsideOnePathSegment() {
         val url = "http://pc:8765/api/download?path=C%3A%5CUsers%5CAaron%5Cvacation%20photo.jpg"
         assertEquals("vacation photo.jpg", DownloadNames.fileNameFromDownloadUrl(url, ""))

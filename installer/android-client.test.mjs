@@ -11,10 +11,10 @@ function read(rel) {
   return fs.readFileSync(path.join(android, rel), "utf8");
 }
 
-test("android wrapper is version 3.30.0 and ignores secrets", () => {
+test("android wrapper is version 3.33.0 and ignores secrets", () => {
   const gradle = read("app/build.gradle.kts");
-  assert.match(gradle, /versionCode = 30/);
-  assert.match(gradle, /versionName = "3\.30\.0"/);
+  assert.match(gradle, /versionCode = 33/);
+  assert.match(gradle, /versionName = "3\.33\.0"/);
   assert.equal(fs.existsSync(path.join(android, "gradlew")), true);
   const ignore = read(".gitignore");
   assert.match(ignore, /local\.properties/);
@@ -48,6 +48,9 @@ test("android download, tailscale, back, and port behavior is present", () => {
   assert.match(address, /SUGGESTED_PORT = 8765/);
   assert.match(address, /42000/);
   assert.match(main, /DrivebayNative/);
+  assert.match(main, /openAppSettings/);
+  assert.match(main, /isAdminSettingsUrl/);
+  assert.match(address, /fun isAdminSettingsPath/);
 
   const saver = read("app/src/main/java/com/lordstryfe/drivebay/MediaStoreSaver.kt");
   assert.match(saver, /MediaStore/);

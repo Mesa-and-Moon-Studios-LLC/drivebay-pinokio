@@ -146,10 +146,10 @@ test("static files stay ahead of auth, and server-lock writes stay on this PC", 
   const api = fs.readFileSync(path.join(root, "app/src/lib/files/api.functions.ts"), "utf8");
   const save = api.slice(api.indexOf("export const saveServerLock"));
   const restart = api.slice(api.indexOf("export const restartDrivebay"));
-  assert.ok(save.indexOf("assertLoopbackRequest") !== -1);
-  assert.ok(save.indexOf("assertLoopbackRequest") < save.indexOf("writeServerLock"));
-  assert.ok(restart.indexOf("assertLoopbackRequest") !== -1);
-  assert.ok(restart.indexOf("assertLoopbackRequest") < restart.indexOf("scheduleStandaloneRestart"));
+  assert.ok(save.indexOf("assertPcAdmin") !== -1);
+  assert.ok(save.indexOf("assertPcAdmin") < save.indexOf("writeServerLock"));
+  assert.ok(restart.indexOf("assertPcAdmin") !== -1);
+  assert.ok(restart.indexOf("assertPcAdmin") < restart.indexOf("scheduleStandaloneRestart"));
 
   const host = fs.readFileSync(path.join(root, "app/src/lib/files/host-request.server.ts"), "utf8");
   assert.equal(host.includes("x-forwarded-for"), false);

@@ -20,10 +20,10 @@ test("server lock writes are loopback-only and the settings page can edit them",
   const api = fs.readFileSync(path.join(root, "app/src/lib/files/api.functions.ts"), "utf8");
   const save = api.slice(api.indexOf("export const saveServerLock"));
   const restart = api.slice(api.indexOf("export const restartDrivebay"));
-  assert.ok(save.indexOf("assertLoopbackRequest") !== -1);
-  assert.ok(save.indexOf("assertLoopbackRequest") < save.indexOf("writeServerLock"));
-  assert.ok(restart.indexOf("assertLoopbackRequest") !== -1);
-  assert.ok(restart.indexOf("assertLoopbackRequest") < restart.indexOf("scheduleStandaloneRestart"));
+  assert.ok(save.indexOf("assertPcAdmin") !== -1);
+  assert.ok(save.indexOf("assertPcAdmin") < save.indexOf("writeServerLock"));
+  assert.ok(restart.indexOf("assertPcAdmin") !== -1);
+  assert.ok(restart.indexOf("assertPcAdmin") < restart.indexOf("scheduleStandaloneRestart"));
 
   const lock = fs.readFileSync(path.join(root, "app/src/lib/files/server-lock.server.ts"), "utf8");
   assert.match(lock, /writeFileSync\(file, body, "utf8"\)/);

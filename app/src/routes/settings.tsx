@@ -6,9 +6,10 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveServerLock } from "@/lib/files/api.functions";
+import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveRemoteActions, saveServerLock } from "@/lib/files/api.functions";
+import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
-import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
+import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { DonateMenu } from "@/components/settings/donate-menu";
 import { HowToGuide } from "@/components/settings/how-to";
@@ -70,9 +71,23 @@ function SettingsPage() {
   } | null>(null);
   const [publicHours, setPublicHours] = useState<0 | 1 | 4 | 24>(1);
   const [savingPublic, setSavingPublic] = useState(false);
+  const [remoteDelete, setRemoteDelete] = useState(true);
+  const [remoteUpload, setRemoteUpload] = useState(true);
+  const [savingRemote, setSavingRemote] = useState(false);
+
+  useEffect(() => {
+    if (!isAndroidApp()) return;
+    const native = (window as Window & { DrivebayNative?: { openAppSettings?: () => void } }).DrivebayNative;
+    native?.openAppSettings?.();
+    void navigate({ to: "/" });
+  }, [navigate]);
 
   useEffect(() => {
     clearStoredNext();
+    if (!settingsOnThisPc(window.location.hostname)) {
+      setLoaded(true);
+      return;
+    }
     let alive = true;
     getSettings()
       .then((s) => {
@@ -99,6 +114,14 @@ function SettingsPage() {
           };
           setDriveRows(da.drives ?? []);
           setDriveAccessFile(da.accessFile ?? "");
+        }
+        if (s && typeof s === "object" && "remoteActions" in s && s.remoteActions) {
+          const remote = s.remoteActions as {
+            allowDeleteFromOtherDevices?: boolean;
+            allowUploadRenameFromOtherDevices?: boolean;
+          };
+          setRemoteDelete(remote.allowDeleteFromOtherDevices !== false);
+          setRemoteUpload(remote.allowUploadRenameFromOtherDevices !== false);
         }
         setLoaded(true);
       })
@@ -133,7 +156,7 @@ function SettingsPage() {
     return <RedirectToSignIn />;
   }
 
-  const onThisPc = pageAfterSignIn(window.location.hostname, null) === "/settings";
+  const onThisPc = settingsOnThisPc(window.location.hostname);
   const canEditLock = serverLock?.canEdit === true;
 
   const ownerName = user.displayName || emailToUsername(user.primaryEmail);
@@ -283,6 +306,27 @@ function SettingsPage() {
     }
   }
 
+  async function onSaveRemote(nextDelete: boolean, nextUpload: boolean) {
+    setRemoteDelete(nextDelete);
+    setRemoteUpload(nextUpload);
+    setSavingRemote(true);
+    try {
+      const saved = await saveRemoteActions({
+        data: {
+          allowDeleteFromOtherDevices: nextDelete,
+          allowUploadRenameFromOtherDevices: nextUpload,
+        },
+      });
+      setRemoteDelete(saved.allowDeleteFromOtherDevices);
+      setRemoteUpload(saved.allowUploadRenameFromOtherDevices);
+      toast.success("Saved for other devices.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save other-device access");
+    } finally {
+      setSavingRemote(false);
+    }
+  }
+
   async function onChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword.length < 8) {
@@ -333,6 +377,8 @@ function SettingsPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 px-4 py-8">
+        {onThisPc ? (
+        <>
         <section className="space-y-3">
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Account</p>
           <div className="rounded-md border border-border bg-bg-elevated p-4">
@@ -341,6 +387,38 @@ function SettingsPage() {
             <p className="mt-2 text-xs text-fg-muted">
               This lock stays after Update. It is stored in a data folder outside the files Git replaces.
             </p>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Other devices</p>
+          <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4">
+            <p className="text-xs text-fg-muted">
+              This PC can always delete, upload, and rename. Phones and other computers follow these switches.
+              Rename is also how a file is moved. Both start on.
+            </p>
+            <label htmlFor="remote-delete" className="flex items-center gap-3 text-sm">
+              <input
+                id="remote-delete"
+                type="checkbox"
+                className="size-4 accent-fg"
+                checked={remoteDelete}
+                disabled={!loaded || savingRemote}
+                onChange={(e) => void onSaveRemote(e.target.checked, remoteUpload)}
+              />
+              Allow delete from other devices
+            </label>
+            <label htmlFor="remote-upload" className="flex items-center gap-3 text-sm">
+              <input
+                id="remote-upload"
+                type="checkbox"
+                className="size-4 accent-fg"
+                checked={remoteUpload}
+                disabled={!loaded || savingRemote}
+                onChange={(e) => void onSaveRemote(remoteDelete, e.target.checked)}
+              />
+              Allow upload/rename from other devices
+            </label>
           </div>
         </section>
 
@@ -684,7 +762,7 @@ function SettingsPage() {
                   </Button>
                 </div>
               ) : (
-                <p>Public access can only be changed on this PC or from a signed-in device on Tailscale.</p>
+                <p>Public access can only be changed on this PC.</p>
               )}
             </div>
           </section>
@@ -787,6 +865,22 @@ function SettingsPage() {
             )}
           </div>
         </section>
+        </>
+        ) : (
+          <section className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">This phone</p>
+            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-sm">
+              <p>Server settings stay on this PC.</p>
+              <p className="text-xs text-fg-muted">
+                Browse, download, and upload from this device. Lock signs out. In the Android app, App settings
+                holds the server address and Wi-Fi downloads.
+              </p>
+              <Link to="/" className="inline-flex text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
+                Back to files
+              </Link>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

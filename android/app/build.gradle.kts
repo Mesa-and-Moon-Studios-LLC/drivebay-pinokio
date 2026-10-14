@@ -11,8 +11,8 @@ android {
         applicationId = "com.lordstryfe.drivebay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "3.30.0"
+        versionCode = 33
+        versionName = "3.33.0"
     }
 
     buildFeatures {
