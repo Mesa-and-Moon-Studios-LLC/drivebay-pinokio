@@ -134,6 +134,7 @@ Treat the password like a house key. Do not share the Pinokio link and the passw
 ## Changelog
 
 ### 3.21
+- Settings includes **Get the Android app**, with a link to the latest APK. The Google Play button stays hidden until `PLAY_STORE_URL` in `app/src/lib/version.ts` is set.
 - Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex`
 - On this PC, starting Drivebay opens the settings page. It does not open the file browser. The tray icon stays. Other devices still use the Tailscale or LAN address.
 

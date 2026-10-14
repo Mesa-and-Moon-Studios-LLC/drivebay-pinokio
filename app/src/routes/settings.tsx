@@ -7,7 +7,7 @@ import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
 import { getSettings, restartDrivebay, saveDriveAccess, savePortSettings, saveServerLock } from "@/lib/files/api.functions";
-import { APP_VERSION, FEATURE_REQUEST_URL } from "@/lib/version";
+import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -602,6 +602,33 @@ function SettingsPage() {
               {serverLock?.allowPortChangeFromUi === false ? "Port locked on server" : "Save port"}
             </Button>
           </form>
+        </section>
+
+        <section className="space-y-3">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Get the Android app</p>
+          <div className="rounded-md border border-border bg-bg-elevated p-4">
+            <p className="text-xs text-fg-muted">
+              Install Drivebay on a phone. The APK is on the latest GitHub release.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <a
+                href={ANDROID_APK_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                Android APK
+                <ExternalLink className="size-3.5" />
+              </a>
+              {PLAY_STORE_URL ? (
+                <Button asChild variant="outline" size="sm">
+                  <a href={PLAY_STORE_URL} target="_blank" rel="noreferrer">
+                    Google Play
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </section>
 
         <section className="space-y-3">
