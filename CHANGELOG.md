@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.25
+- `skills/drivebay` is an OpenClaw skill with `SKILL.md` and `scripts/drivebay.js`. It uses Node.js only, with no packages. It needs `DRIVEBAY_URL` and `DRIVEBAY_TOKEN`. Commands are `roots`, `ls`, `stat`, `find`, `get`, `put`, `mkdir`, `mv`, and `rm`.
+- The script's only network call is to `DRIVEBAY_URL`. It does not print the token. It does not overwrite a file, and it does not download a file larger than `DRIVEBAY_GET_CONFIRM_BYTES` (default 20 MB), unless `--yes` is passed. A write outside the open window prints `Waiting for approval on Drivebay` and polls until this PC approves, denies, or the request expires.
+- Publish the skill from the repository root after `clawhub login`: `clawhub skill publish ./skills/drivebay --slug drivebay --name "Drivebay" --version 1.0.0`. Do not include the token in that publish.
+
 ## 3.24
 - If a token writes while its window is closed, Drivebay does not perform the write. It returns 403 with `approval_request_id` and keeps a pending request with the token name, action, path, and size. This PC's settings page shows a yes or no card and a live count of waiting requests.
 - Yes grants that one action. The card can also open a write window of 15 minutes, 1 hour, or 4 hours. The client polls `GET /api/v1/approvals/<id>` or sends the id in `X-Drivebay-Approval` or the `approval` query. Pending requests expire after about 10 minutes. A server-lock refusal stays 403 with no approval id. A later Android build can show the same card.

@@ -8,7 +8,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/lordstryfe/drivebay-pinokio
 ```
 
-Current version: **3.24** — see [Changelog](#changelog) below.
+Current version: **3.25** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -31,9 +31,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.24.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.25.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.24` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.25` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -51,7 +51,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.24`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.25`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -79,7 +79,7 @@ A first-time install asks for the same choices as the .exe installer:
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.24`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.25`.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -197,7 +197,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.24.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.25.
 
 Paste this in PowerShell:
 
@@ -205,7 +205,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.24. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.25. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -249,7 +249,27 @@ When the window ends, those calls are refused and nothing is written. They also 
 
 A write outside the window is not performed. Drivebay returns 403 with `approval_request_id` and shows a yes or no card on this PC, with a live badge. Yes allows that one action. The card can also open a 15 minute, 1 hour, or 4 hour window. The client polls `GET /api/v1/approvals/<id>` or retries with header `X-Drivebay-Approval` (or `?approval=`). A pending request expires after about 10 minutes. The server lock is not bypassed: a locked action is 403 with no approval id. A later Android build can show the same card.
 
+## OpenClaw skill
+
+The folder `skills/drivebay` is a Node.js skill. It installs no packages. Set `DRIVEBAY_URL` to this PC and `DRIVEBAY_TOKEN` to a token from the settings page. The secret is shown once, and Drivebay stores only a hash.
+
+From that folder, run `node scripts/drivebay.js` with `roots`, `ls`, `stat`, `find`, `get`, `put`, `mkdir`, `mv`, or `rm`. The script's only network call is to `DRIVEBAY_URL`. It does not print the token. It does not overwrite a remote file or a local download unless `--yes` is passed. A download larger than `DRIVEBAY_GET_CONFIRM_BYTES` (default 20 MB) also waits for `--yes`. When there is no terminal, those commands stop unless `--yes` was passed.
+
+`put`, `mkdir`, `mv`, and `rm` do nothing until this PC allows them. The script prints `Waiting for approval on Drivebay` and polls `GET /api/v1/approvals/<id>`.
+
+Publish the skill from the repository root after `clawhub login`:
+
+```
+clawhub skill publish ./skills/drivebay --slug drivebay --name "Drivebay" --version 1.0.0
+```
+
+Do not include the token in that publish.
+
 ## Changelog
+
+### 3.25
+- `skills/drivebay` is an OpenClaw skill. It needs Node.js, `DRIVEBAY_URL`, and `DRIVEBAY_TOKEN`. Commands are `roots`, `ls`, `stat`, `find`, `get`, `put`, `mkdir`, `mv`, and `rm`. The script talks only to `DRIVEBAY_URL`, does not print the token, and does not overwrite a file or download a large file unless `--yes` is passed.
+- A write outside the open window prints `Waiting for approval on Drivebay` and polls `GET /api/v1/approvals/<id>`. Publish from the repository root with `clawhub skill publish ./skills/drivebay --slug drivebay --name "Drivebay" --version 1.0.0` after `clawhub login`. Do not include the token.
 
 ### 3.24
 - A write outside the open window is not performed. Drivebay returns 403 with `approval_request_id` and a pending request (token name, action, path, size). This PC shows a yes or no card and a live badge.
