@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.31
+- The Windows installer and the server report 3.31. `/api/health` returns `version` 3.31. The release files are `Drivebay-Setup-3.31.exe` and `drivebay-server-win-x64.zip`.
+- This build includes the Android app 3.30.0 and `Range` downloads on `/api/download` from 3.30.
+
 ## 3.30
 - Android app 3.30.0 (versionCode 30) lives in `android/`. A download from the phone saves into Downloads/Drivebay with a progress notification (speed and time left), then offers Open and Share. Large files download in 8 MB ranges, can pause, resume, and cancel, retry with backoff, and continue after the connection drops or the app restarts. Files of 50 MB and up can stay on Wi-Fi. The session cookie from the WebView is sent with each request.
 - If Tailscale is not installed, the app offers Download (Play Store) or Skip. The hardware back button moves to the parent folder before it leaves the app. Connecting opens the file browser home. The address hint uses port 8765, and a saved port from 42000–42999 asks before it is kept. 8766 is noted as a common port.

@@ -1,7 +1,7 @@
-Drivebay 3.29 adds Ko-fi to the Donate menu.
+Drivebay 3.31 publishes the Windows installer and server at version 3.31.
 
-This release includes Drivebay-Setup-3.29.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.31.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-The settings Donate button opens PayPal and Ko-fi. Ko-fi is https://ko-fi.com/mesaandmoonstudios. .github/FUNDING.yml lists ko_fi: mesaandmoonstudios. GitHub Sponsors stays blank, so that choice stays out of the menu. github: lordstryfe stays commented until GitHub Sponsors is approved.
+`/api/health` reports version 3.31. `GET` and `HEAD /api/download` support Range, 206, 416, ETag, and If-Range. The Android app 3.30.0 source is in the repository. Phone downloads save to Downloads/Drivebay and can resume.
