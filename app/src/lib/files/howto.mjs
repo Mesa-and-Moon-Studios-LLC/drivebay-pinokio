@@ -155,7 +155,7 @@ export const howToSections = [
       },
       {
         kind: "code",
-        text: "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex",
+        text: "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex",
       },
       {
         kind: "p",
@@ -167,7 +167,7 @@ export const howToSections = [
       },
       {
         kind: "code",
-        text: "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex",
+        text: "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex",
       },
       {
         kind: "p",

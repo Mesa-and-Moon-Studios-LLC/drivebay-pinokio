@@ -112,12 +112,12 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.ok(
     readme.includes(
-      "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex",
+      "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex",
     ),
   );
   assert.ok(
     readme.includes(
-      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"',
+      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex"',
     ),
   );
 

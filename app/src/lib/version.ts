@@ -1,6 +1,6 @@
 export const APP_VERSION = "3.31";
 export const FEATURE_REQUEST_URL =
-  "https://github.com/lordstryfe/drivebay-pinokio/issues/new?title=Feature%20request%3A%20&labels=enhancement";
+  "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/issues/new?title=Feature%20request%3A%20&labels=enhancement";
 
 /** Latest Drivebay Android APK on GitHub. */
 export const ANDROID_APK_URL = "https://github.com/lordstryfe/drivebay/releases/latest";

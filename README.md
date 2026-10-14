@@ -1,11 +1,13 @@
 # Drivebay
 
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.31.exe)**
+
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
 **Install this URL in Pinokio:**
 
 ```
-https://github.com/lordstryfe/drivebay-pinokio
+https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
 Current version: **3.31** — see [Changelog](#changelog) below.
@@ -19,7 +21,7 @@ Current version: **3.31** — see [Changelog](#changelog) below.
 
 2. Open **Pinokio**.
 3. Go to **Discover** (or **Download from URL**).
-4. Paste `https://github.com/lordstryfe/drivebay-pinokio` and download.
+4. Paste `https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio` and download.
 5. Click **Install**. Choose **Static** (you pick the port) or **Random** (new port each Start).
 6. If you chose Static, forward **that same port** on your router.
 7. Click **Start**. On this PC, Drivebay opens the settings page. It does not open the file browser. Other devices use the address Pinokio shows.
@@ -31,7 +33,7 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.31.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.31.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
 Push a version tag such as `v3.31` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
@@ -60,13 +62,13 @@ Your username and password are stored in a `data` folder next to the app. **Upda
 No installer and no Pinokio. Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
 Or in CMD:
 
 ```
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex"
 ```
 
 The script downloads the latest GitHub release server archive (`drivebay-server-win-x64.zip`) and installs that build. If the latest release has no server archive, it downloads `main`. Running `install.ps1` from a checkout uses the files in that checkout. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
@@ -90,13 +92,13 @@ A Start menu shortcut named **Drivebay** starts it. On this PC that opens the se
 Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex
 ```
 
 Or in CMD:
 
 ```
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex"
 ```
 
 It stops node on the Drivebay port, `DrivebayTray.exe`, and the launcher. It removes the startup Run entry, scheduled tasks, Start menu and desktop shortcuts, and the program files under `%LOCALAPPDATA%\Drivebay` and `%LOCALAPPDATA%\Programs\Drivebay`. Anything already gone is skipped. It asks before deleting the saved password and settings. Type YES to delete them.
@@ -202,7 +204,7 @@ To update, run the install command again. Drivebay stops, the program files are 
 Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
 The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.31. In Pinokio, use Update.
@@ -210,7 +212,7 @@ The .exe installer updates the same way when you run it again. The finish page s
 To uninstall, paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex
 ```
 
 Uninstall stops Drivebay, removes shortcuts and the startup entry, and deletes the program files. It asks before deleting the saved password and settings. Type YES to delete them. Set DRIVEBAY_UNINSTALL_KEEP_DATA=1 to keep them, or DRIVEBAY_UNINSTALL_FORCE=1 to delete them without asking. The last line is Drivebay is uninstalled. If a Pinokio copy is still running, uninstall says so and leaves that copy running.
@@ -280,13 +282,11 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 ## Changelog
 
 ### 3.31
-- The Windows installer and the server report 3.31. `/api/health` returns version 3.31. Download Drivebay-Setup-3.31.exe. The command-line install uses drivebay-server-win-x64.zip from that release.
-- This build includes the Android app 3.30.0 and Range downloads on `/api/download`.
+- The Windows installer and the server report 3.31. `/api/health` returns version 3.31. Download [Drivebay-Setup-3.31.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.31.exe). The command-line install uses drivebay-server-win-x64.zip from that release.
+- The Android app 3.30.0 is in `android/`. Phone downloads save to Downloads/Drivebay and can resume. `GET` and `HEAD /api/download` support Range.
 
 ### 3.30
-- Android 3.30.0 (versionCode 30) is in `android/`. Downloads save to Downloads/Drivebay with progress, Open, and Share. Large files use 8 MB ranges and can pause, resume, retry, and continue after a drop or an app restart. A 50 MB file can be limited to Wi-Fi. The WebView session cookie is sent with the download.
-- The phone asks to install Tailscale from the Play Store, or to skip that step. Back moves up a folder before leaving the app. Connect opens the file browser home. The port hint is 8765. A saved port from 42000–42999 asks to update. 8766 is also common.
-- `GET` and `HEAD /api/download` support `Range`, `Accept-Ranges`, 206, 416, `ETag` (size and mtime), and `If-Range`.
+- The repository is https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio. Install, uninstall, update checks, and the settings feature-request link use that path. The Windows download is [Drivebay-Setup-3.30.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.30.exe).
 
 ### 3.29
 - The Donate menu includes Ko-fi: https://ko-fi.com/mesaandmoonstudios `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
@@ -322,7 +322,7 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 - A first-time Tailscale install asks whether Tailscale is already on this PC. Yes continues. No can download the official Tailscale installer, then walks through sign-in or a free account, or skip Tailscale for later. `DRIVEBAY_TAILSCALE` can be `have`, `install`, or `skip`.
 - Setup refuses a port that is already in use, including Pinokio's Caddy, and names the program that holds it. It prints the ready line only after this Drivebay server answers `/api/health`. Uninstall says when a Pinokio copy is still running.
 - Settings includes **Get the Android app**, with a link to the latest APK. The Google Play button stays hidden until `PLAY_STORE_URL` in `app/src/lib/version.ts` is set.
-- Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex`
+- Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex`
 - On this PC, starting Drivebay opens the settings page. It does not open the file browser. The tray icon stays. Other devices still use the Tailscale or LAN address.
 
 ### 3.20

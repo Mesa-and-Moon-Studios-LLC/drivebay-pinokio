@@ -2,6 +2,6 @@ Drivebay 3.31 publishes the Windows installer and server at version 3.31.
 
 This release includes Drivebay-Setup-3.31.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-`/api/health` reports version 3.31. `GET` and `HEAD /api/download` support Range, 206, 416, ETag, and If-Range. The Android app 3.30.0 source is in the repository. Phone downloads save to Downloads/Drivebay and can resume.
+`/api/health` reports version 3.31. Install, uninstall, and update checks use https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio. `GET` and `HEAD /api/download` support Range, 206, 416, ETag, and If-Range. The Android app 3.30.0 source is in the repository. Phone downloads save to Downloads/Drivebay and can resume.

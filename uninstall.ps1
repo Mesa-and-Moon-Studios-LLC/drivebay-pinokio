@@ -3,9 +3,9 @@
 # No param() block, so this still runs when piped to iex.
 #
 # PowerShell:
-#   irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+#   irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex
 # CMD:
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"
+#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex"
 # Scripting, after the file is saved:
 #   powershell -ExecutionPolicy Bypass -File uninstall.ps1 -KeepData
 #   powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Force

@@ -1,7 +1,7 @@
 # Drivebay command-line setup for Windows.
 # No installer and no Pinokio. Run from PowerShell or CMD:
-#   irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
+#   irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
+#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex"
 # Plain ASCII only. The account file is written by installer/windows/write-setup.ps1 as UTF-8.
 # This file has no param() block so it still runs when piped to iex.
 
@@ -11,7 +11,7 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } c
 $OutputEncoding = New-Object System.Text.UTF8Encoding $false
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$script:Repo = "lordstryfe/drivebay-pinokio"
+$script:Repo = "Mesa-and-Moon-Studios-LLC/drivebay-pinokio"
 # "main" installs the latest release server zip, or main when that zip is missing.
 $script:SourceRef = "main"
 

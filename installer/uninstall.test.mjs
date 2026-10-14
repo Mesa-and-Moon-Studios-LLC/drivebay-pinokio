@@ -117,12 +117,12 @@ test("uninstall.ps1 is a one-liner script and install runs it first", () => {
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.ok(
     readme.includes(
-      "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex",
+      "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex",
     ),
   );
   assert.ok(
     readme.includes(
-      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"',
+      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex"',
     ),
   );
   assert.match(readme, /-KeepData/);

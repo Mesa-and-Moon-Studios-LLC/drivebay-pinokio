@@ -4,12 +4,12 @@ All user-facing Drivebay versions. Newest first.
 
 ## 3.31
 - The Windows installer and the server report 3.31. `/api/health` returns `version` 3.31. The release files are `Drivebay-Setup-3.31.exe` and `drivebay-server-win-x64.zip`.
-- This build includes the Android app 3.30.0 and `Range` downloads on `/api/download` from 3.30.
-
-## 3.30
 - Android app 3.30.0 (versionCode 30) lives in `android/`. A download from the phone saves into Downloads/Drivebay with a progress notification (speed and time left), then offers Open and Share. Large files download in 8 MB ranges, can pause, resume, and cancel, retry with backoff, and continue after the connection drops or the app restarts. Files of 50 MB and up can stay on Wi-Fi. The session cookie from the WebView is sent with each request.
 - If Tailscale is not installed, the app offers Download (Play Store) or Skip. The hardware back button moves to the parent folder before it leaves the app. Connecting opens the file browser home. The address hint uses port 8765, and a saved port from 42000–42999 asks before it is kept. 8766 is noted as a common port.
 - `GET` and `HEAD /api/download` send `Accept-Ranges: bytes` and an ETag from the file size and mtime. A valid `Range` returns 206 with `Content-Range`. A bad range returns 416. `If-Range` sends the slice only when the ETag or modification time still matches.
+
+## 3.30
+- The repository is `https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio`. Install, uninstall, update checks, and the settings feature-request link use that path. The Windows installer is `Drivebay-Setup-3.30.exe`.
 
 ## 3.29
 - The Donate menu includes Ko-fi: `https://ko-fi.com/mesaandmoonstudios`. `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
@@ -52,7 +52,7 @@ All user-facing Drivebay versions. Newest first.
 - A first-time Tailscale install asks "Do you already have Tailscale?" and selects Yes when Tailscale is already installed. Yes goes to the port, username, and password. No can download the official Windows installer (quiet MSI) and then walks through sign-in or creating a free account, or skip Tailscale and set it up later. Regular mode is unchanged. `DRIVEBAY_TAILSCALE=have`, `install`, or `skip` selects that step without prompts.
 - Setup checks the chosen port before it saves. If Pinokio, Caddy, or any other program is already listening, it names that program and asks for another port. A scripted install stops with that same message. After start, setup calls `/api/health` and prints the ready line only when this Drivebay server answers. Uninstall says when a Pinokio copy is still running and leaves that copy running.
 - Settings on this PC includes Get the Android app, with a link to the latest APK at https://github.com/lordstryfe/drivebay/releases/latest. The Google Play button stays hidden until `PLAY_STORE_URL` is set.
-- Command-line uninstall: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex`. It stops Drivebay, removes shortcuts and startup entries, and deletes the program files. It asks before deleting the saved account. `-KeepData` keeps that account. `-Force` deletes it. Installing again runs this uninstall first and keeps the account.
+- Command-line uninstall: `irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex`. It stops Drivebay, removes shortcuts and startup entries, and deletes the program files. It asks before deleting the saved account. `-KeepData` keeps that account. `-Force` deletes it. Installing again runs this uninstall first and keeps the account.
 - Opening `/` in a browser on this PC shows sign-in when you are signed out, and settings after you sign in. A Tailscale or LAN address shows the file browser sign-in. Those pages are HTML. JSON errors stay on API calls.
 - Settings on this PC can change Server lock: port, delete, rename, new folder, upload, max upload, and which drives or folders are allowed. The save is UTF-8 and takes effect immediately. Other devices can read the lock and cannot change it.
 - Command-line setup no longer prints an error or stops when DrivebayTray.exe is not already running. If the tray cannot be built, the launcher starts instead and this PC still opens settings.
