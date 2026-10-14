@@ -440,6 +440,30 @@ test("the settings panel is loopback for management and tailnet for the write wi
   }
 });
 
+test("token management stays on this PC and a Tailscale device can open a write window", () => {
+  const api = fs.readFileSync(path.join(repo, "app/src/lib/files/api.functions.ts"), "utf8");
+  const create = api.slice(api.indexOf("export const createApiToken"), api.indexOf("export const revokeApiToken"));
+  assert.match(create, /assertLoopbackRequest/);
+  assert.equal(create.includes("assertPublicAccessEditor"), false);
+  const revoke = api.slice(api.indexOf("export const revokeApiToken"), api.indexOf("export const allowApiWrite"));
+  assert.match(revoke, /assertLoopbackRequest/);
+  const allow = api.slice(api.indexOf("export const allowApiWrite"), api.indexOf("export const decideApiApproval"));
+  assert.match(allow, /assertPublicAccessEditor/);
+  assert.equal(allow.includes("assertLoopbackRequest"), false);
+  const decide = api.slice(api.indexOf("export const decideApiApproval"));
+  assert.match(decide, /assertLoopbackRequest/);
+  assert.equal(decide.includes("assertPublicAccessEditor"), false);
+
+  const settings = fs.readFileSync(path.join(repo, "app/src/routes/settings.tsx"), "utf8");
+  assert.match(settings, /<ApiTokens \/>/);
+  const ui = fs.readFileSync(path.join(repo, "app/src/components/settings/api-tokens.tsx"), "utf8");
+  assert.match(ui, /Allow write for/);
+  assert.match(ui, /waiting/);
+  assert.match(ui, /Copy this token now/);
+  assert.match(ui, /Audit log/);
+  assert.match(ui, /setInterval/);
+});
+
 test("the v1 route is registered and API paths stay JSON", () => {
   const route = fs.readFileSync(path.join(repo, "app/src/routes/api/v1/$.ts"), "utf8");
   const tree = fs.readFileSync(path.join(repo, "app/src/routeTree.gen.ts"), "utf8");
