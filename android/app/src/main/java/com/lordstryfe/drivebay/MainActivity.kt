@@ -97,13 +97,27 @@ class MainActivity : AppCompatActivity() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                val url = request?.url?.toString() ?: return false
+                val target = request?.url ?: return false
+                val url = target.toString()
+                if (ServerAddress.isAdminSettingsUrl(url)) {
+                    showSetup(keepUrl = true)
+                    return true
+                }
                 if (looksLikeDownload(url)) {
                     beginDownload(url, null, null)
                     return true
                 }
                 view?.loadUrl(url)
                 return true
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                if (url != null && ServerAddress.isAdminSettingsUrl(url)) {
+                    view?.stopLoading()
+                    showSetup(keepUrl = true)
+                    return
+                }
+                super.onPageStarted(view, url, favicon)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -494,6 +508,11 @@ class MainActivity : AppCompatActivity() {
         fun download(url: String, fileName: String, size: String) {
             val bytes = size.toLongOrNull() ?: size.toDoubleOrNull()?.toLong() ?: -1L
             runOnUiThread { beginDownload(url, fileName, bytes.takeIf { it > 0L }) }
+        }
+
+        @JavascriptInterface
+        fun openAppSettings() {
+            runOnUiThread { showSetup(keepUrl = true) }
         }
     }
 

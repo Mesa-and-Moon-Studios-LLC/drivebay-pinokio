@@ -175,7 +175,7 @@ export function ApiTokens() {
         </p>
         {panel == null ? <p>Loading tokens…</p> : null}
         {panel && !panel.canManage && !panel.canWriteWindow ? (
-          <p>API tokens are created on this PC. A signed-in Tailscale device can open a write window for a token.</p>
+          <p>API tokens are created on this PC.</p>
         ) : null}
         {panel?.canManage
           ? panel.approvals.map((approval) => (

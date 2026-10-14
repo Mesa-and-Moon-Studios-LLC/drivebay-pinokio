@@ -1,7 +1,11 @@
-Drivebay 3.32 publishes the Windows installer and server at version 3.32.
+Drivebay 3.33 publishes the Windows installer and server at version 3.33.
 
-This release includes Drivebay-Setup-3.32.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.33.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-`/api/health` reports version 3.32. A forgotten password can be reset on this PC only: the tray menu's Reset password, or `drivebay reset-password`. The login page explains that. There is no remote reset. The saved account hash is updated and existing sessions are signed out. Settings, drives, and API tokens stay.
+`/api/health` reports version 3.33. Server settings stay on this PC. Phones and the Android app keep browse, download, upload, and sign out. Admin setting calls from another device return 403.
+
+This PC can turn off delete, or upload and rename, for other devices. Both switches start on, so current behavior stays until you change them. This PC can always delete, upload, and rename.
+
+The Android app in the repo is 3.33.0. This release does not attach an APK.

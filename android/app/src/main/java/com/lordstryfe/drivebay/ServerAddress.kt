@@ -40,6 +40,18 @@ object ServerAddress {
         return origin(uri, host, port) + "/"
     }
 
+    /** Server settings live on the PC. The app must not open that page. */
+    fun isAdminSettingsPath(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        val clean = path.substringBefore('?').let { if (it.length > 1 && it.endsWith("/")) it.dropLast(1) else it }
+        return clean == "/settings" || clean.startsWith("/settings/")
+    }
+
+    fun isAdminSettingsUrl(raw: String): Boolean {
+        val uri = parse(raw) ?: return false
+        return isAdminSettingsPath(uri.rawPath ?: uri.path)
+    }
+
     /** File browser home. Drops a saved folder, settings path, or query. */
     fun homeUrl(raw: String): String {
         val uri = parse(raw) ?: return normalize(raw).let { if (it.endsWith("/")) it else "$it/" }

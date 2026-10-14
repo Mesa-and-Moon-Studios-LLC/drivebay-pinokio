@@ -3,7 +3,8 @@
     <string name="app_name">DriveBay</string>
     <string name="server_url_hint">http://100.x.x.x:8765</string>
     <string name="connect">Connect</string>
-    <string name="settings">Server</string>
+    <string name="settings">App settings</string>
+    <string name="app_settings_note">This screen changes the server address and Wi-Fi downloads. Server settings stay on the PC.</string>
     <string name="save_connect">Save and Connect</string>
     <string name="url_label">DriveBay URL</string>
     <string name="url_help">Tailscale or LAN address of the Drivebay PC. Include http:// and the port. 8765 is the usual port. 8766 is also common.</string>

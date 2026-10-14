@@ -1,4 +1,5 @@
 import { getRequest, getRequestIP } from "@tanstack/react-start/server";
+import { isAndroidUserAgent } from "./client-surface.mjs";
 import { isLoopbackAddress } from "./loopback.mjs";
 import { isTailnetAddress } from "./tailnet.mjs";
 
@@ -34,9 +35,35 @@ export function isTailnetRequest(): boolean {
   return isTailnetAddress(clientAddress());
 }
 
+export function isAndroidAppRequest(): boolean {
+  try {
+    const request = getRequest();
+    return isAndroidUserAgent(request.headers.get("user-agent"));
+  } catch {
+    return false;
+  }
+}
+
+/** This PC's own browser. The Android app is never the PC, even on a loopback tunnel. */
+export function isPcAdminRequest(): boolean {
+  return isLoopbackRequest() && !isAndroidAppRequest();
+}
+
+function forbidden(message: string): Error {
+  const err = new Error(message);
+  Object.assign(err, { status: 403, statusCode: 403 });
+  return err;
+}
+
 export function assertLoopbackRequest(): void {
   if (!isLoopbackRequest()) {
-    throw new Error("Server lock can only be changed on this PC.");
+    throw forbidden("Server settings are only available on this PC.");
+  }
+}
+
+export function assertPcAdmin(): void {
+  if (!isPcAdminRequest()) {
+    throw forbidden("Server settings are only available on this PC.");
   }
 }
 

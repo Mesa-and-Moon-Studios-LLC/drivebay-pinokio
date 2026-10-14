@@ -724,7 +724,7 @@ function Read-DrivebayVersion([string]$Source) {
     $line = Get-Content -LiteralPath $file -TotalCount 1
     if ($line -match "(\d+\.\d+)") { return $Matches[1] }
   }
-  return "3.32"
+  return "3.33"
 }
 
 function Save-DrivebayAccount([string]$Root, [string]$SetupScript, [int]$Port, [string]$Mode, [string]$Version, [string]$UserName, [string]$Password) {
@@ -1375,7 +1375,7 @@ function Start-DrivebayInstall {
   } elseif ($mode -eq "both") {
     Write-Host "Tailscale + Local (Both)."
     Write-Host "Other devices on your tailnet open http://<this-PC-tailscale-name>:${port}/ after Tailscale is signed in on both devices."
-    Write-Host "Public access is off. The router path stays closed until you turn it on from this PC or from a signed-in Tailscale device."
+    Write-Host "Public access is off. The router path stays closed until you turn it on from this PC."
     Write-Host "You must open and forward TCP port $port on your router before that public path can work."
   } else {
     Write-Host "You must open and forward TCP port $port on your router."

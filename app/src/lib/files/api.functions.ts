@@ -84,7 +84,9 @@ export const renameEntry = createServerFn({ method: "POST" })
     const fs = await import("./fs.server");
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
     lock.assertPolicy("allowRename");
+    remote.assertRemoteAction("rename");
     const resolved = fs.resolveSafePath(data.path);
     lock.assertPathAllowed(resolved);
     await access.assertPathAllowedByDriveAccess(resolved);
@@ -99,7 +101,9 @@ export const deleteEntry = createServerFn({ method: "POST" })
     const fs = await import("./fs.server");
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
     lock.assertPolicy("allowDelete");
+    remote.assertRemoteAction("delete");
     const resolved = fs.resolveSafePath(data.path);
     lock.assertPathAllowed(resolved);
     await access.assertPathAllowedByDriveAccess(resolved);
@@ -120,7 +124,9 @@ export const uploadFile = createServerFn({ method: "POST" })
     const fs = await import("./fs.server");
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
     lock.assertPolicy("allowUpload");
+    remote.assertRemoteAction("upload");
     const parentResolved = fs.resolveSafePath(data.parent);
     lock.assertPathAllowed(parentResolved);
     await access.assertPathAllowedByDriveAccess(parentResolved);
@@ -178,8 +184,9 @@ export const searchFiles = createServerFn({ method: "POST" })
 export const getRouterHelp = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
-    const settings = await import("./settings.server");
     const host = await import("./host-request.server");
+    host.assertPcAdmin();
+    const settings = await import("./settings.server");
     const mode = settings.readReachMode();
     const port = settings.readPortSettings().port;
     const showRouter = mode === "regular" || mode === "both";
@@ -202,16 +209,48 @@ export const getRouterHelp = createServerFn({ method: "GET" })
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
+    const host = await import("./host-request.server");
+    host.assertPcAdmin();
     const settings = await import("./settings.server");
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
     const driveAccess = await access.listDrivesWithAccess();
-    const host = await import("./host-request.server");
     return {
       ...settings.readAppSettings(),
-      serverLock: lock.toPublicServerLock(lock.readServerLock(), host.isLoopbackRequest()),
+      serverLock: lock.toPublicServerLock(lock.readServerLock(), true),
       driveAccess,
+      remoteActions: remote.readRemoteActions(),
     };
+  });
+
+export const getBrowserActions = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    const lock = await import("./server-lock.server");
+    const remote = await import("./remote-actions.server");
+    const { browserActionsFor } = await import("./remote-actions.mjs");
+    return browserActionsFor(
+      lock.readServerLock(),
+      remote.readRemoteActions(),
+      host.isPcAdminRequest(),
+    );
+  });
+
+export const saveRemoteActions = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      allowDeleteFromOtherDevices: z.boolean(),
+      allowUploadRenameFromOtherDevices: z.boolean(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPcAdmin();
+    const remote = await import("./remote-actions.server");
+    return remote.writeRemoteActions(data);
   });
 
 export const saveDriveAccess = createServerFn({ method: "POST" })
@@ -223,6 +262,8 @@ export const saveDriveAccess = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPcAdmin();
     const access = await import("./drive-access.server");
     access.writeDriveAccess(data.disabledIds);
     return access.listDrivesWithAccess();
@@ -237,6 +278,8 @@ export const savePortSettings = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPcAdmin();
     const settings = await import("./settings.server");
     const lock = await import("./server-lock.server");
     lock.assertPolicy("allowPortChangeFromUi");
@@ -258,7 +301,7 @@ export const saveServerLock = createServerFn({ method: "POST" })
   .validator(serverLockInput)
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertLoopbackRequest();
+    host.assertPcAdmin();
     const lock = await import("./server-lock.server");
     const saved = lock.writeServerLock(data);
     return {
@@ -277,7 +320,7 @@ export const savePublicAccess = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertPublicAccessEditor();
+    host.assertPcAdmin();
     const settings = await import("./settings.server");
     if (settings.readReachMode() !== "both") {
       throw new Error("Public access is only used in Tailscale + Local mode.");
@@ -290,7 +333,7 @@ export const restartDrivebay = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
   .handler(async () => {
     const host = await import("./host-request.server");
-    host.assertLoopbackRequest();
+    host.assertPcAdmin();
     const restart = await import("./host-restart.server");
     return restart.scheduleStandaloneRestart();
   });
@@ -299,6 +342,7 @@ export const getApiAccess = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
     const host = await import("./host-request.server");
+    host.assertPcAdmin();
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     return store.panelFor(
@@ -319,7 +363,7 @@ export const createApiToken = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertLoopbackRequest();
+    host.assertPcAdmin();
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     const now = Date.now();
@@ -332,7 +376,7 @@ export const revokeApiToken = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().trim().min(8).max(64) }))
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertLoopbackRequest();
+    host.assertPcAdmin();
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     return store.revokeToken(access.resolveApiAccessFile(), data.id);
@@ -348,7 +392,7 @@ export const allowApiWrite = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertPublicAccessEditor();
+    host.assertPcAdmin();
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     return store.allowWrite(access.resolveApiAccessFile(), data.id, data.minutes, Date.now());
@@ -365,7 +409,7 @@ export const decideApiApproval = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const host = await import("./host-request.server");
-    host.assertLoopbackRequest();
+    host.assertPcAdmin();
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     return store.decideApproval(

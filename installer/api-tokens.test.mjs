@@ -309,19 +309,19 @@ test("token management stays on this PC", () => {
 
   const api = fs.readFileSync(path.join(repo, "app/src/lib/files/api.functions.ts"), "utf8");
   const create = api.slice(api.indexOf("export const createApiToken"), api.indexOf("export const revokeApiToken"));
-  assert.match(create, /assertLoopbackRequest/);
+  assert.match(create, /assertPcAdmin/);
   assert.equal(create.includes("assertPublicAccessEditor"), false);
   const revoke = api.slice(api.indexOf("export const revokeApiToken"), api.indexOf("export const allowApiWrite"));
-  assert.match(revoke, /assertLoopbackRequest/);
+  assert.match(revoke, /assertPcAdmin/);
   assert.equal(revoke.includes("assertPublicAccessEditor"), false);
   const allow = api.slice(api.indexOf("export const allowApiWrite"), api.indexOf("export const decideApiApproval"));
-  assert.match(allow, /assertPublicAccessEditor/);
-  assert.equal(allow.includes("assertLoopbackRequest"), false);
+  assert.match(allow, /assertPcAdmin/);
+  assert.equal(allow.includes("assertPublicAccessEditor"), false);
   const decide = api.slice(api.indexOf("export const decideApiApproval"));
-  assert.match(decide, /assertLoopbackRequest/);
+  assert.match(decide, /assertPcAdmin/);
   assert.equal(decide.includes("assertPublicAccessEditor"), false);
   const access = api.slice(api.indexOf("export const getApiAccess"), api.indexOf("export const createApiToken"));
-  assert.equal(access.includes("assertLoopbackRequest"), false);
+  assert.match(access, /assertPcAdmin/);
   assert.match(access, /isLoopbackRequest/);
 
   const settings = fs.readFileSync(path.join(repo, "app/src/routes/settings.tsx"), "utf8");
@@ -333,7 +333,7 @@ test("token management stays on this PC", () => {
   assert.match(ui, /API tokens are created on this PC/);
   assert.match(ui, /Allow write for/);
   assert.match(ui, /waiting/);
-  assert.match(ui, /signed-in Tailscale device can open a write window/);
+  assert.match(ui, /API tokens are created on this PC/);
 });
 
 test("the v1 route is registered and API paths stay JSON", () => {

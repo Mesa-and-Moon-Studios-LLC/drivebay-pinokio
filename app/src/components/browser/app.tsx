@@ -35,8 +35,8 @@ import { emailToUsername } from "@/lib/files/identity";
 import {
   createFolder,
   deleteEntry,
+  getBrowserActions,
   getPreview,
-  getSettings,
   listDrives,
   listEntries,
   readFileBase64,
@@ -44,6 +44,7 @@ import {
   searchFiles,
   uploadFile,
 } from "@/lib/files/api.functions";
+import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { defaultStartPath, formatBytes, formatWhen, splitPath } from "@/lib/files/format";
 import type { DirListing, Drive, FileCategory, FsEntry, PreviewPayload, SearchHit } from "@/lib/files/types";
 import { FileGlyph } from "@/components/file-icon";
@@ -183,6 +184,7 @@ export function FileBrowserApp() {
   const [serverLock, setServerLock] = useState<{
     allowDelete: boolean;
     allowRename: boolean;
+    allowMove: boolean;
     allowCreateFolder: boolean;
     allowUpload: boolean;
     maxUploadMb: number;
@@ -265,39 +267,24 @@ export function FileBrowserApp() {
 
   useEffect(() => {
     let alive = true;
-    getSettings()
+    getBrowserActions()
       .then((s) => {
         if (!alive) return;
-        if (s && typeof s === "object" && "serverLock" in s && s.serverLock) {
-          const lock = s.serverLock as {
-            allowDelete: boolean;
-            allowRename: boolean;
-            allowCreateFolder: boolean;
-            allowUpload: boolean;
-            maxUploadMb: number;
-          };
-          setServerLock({
-            allowDelete: lock.allowDelete !== false,
-            allowRename: lock.allowRename !== false,
-            allowCreateFolder: lock.allowCreateFolder !== false,
-            allowUpload: lock.allowUpload !== false,
-            maxUploadMb: typeof lock.maxUploadMb === "number" ? lock.maxUploadMb : 512,
-          });
-        } else {
-          setServerLock({
-            allowDelete: true,
-            allowRename: true,
-            allowCreateFolder: true,
-            allowUpload: true,
-            maxUploadMb: 512,
-          });
-        }
+        setServerLock({
+          allowDelete: s.allowDelete !== false,
+          allowRename: s.allowRename !== false,
+          allowMove: s.allowMove !== false,
+          allowCreateFolder: s.allowCreateFolder !== false,
+          allowUpload: s.allowUpload !== false,
+          maxUploadMb: typeof s.maxUploadMb === "number" ? s.maxUploadMb : 512,
+        });
       })
       .catch(() => {
         if (alive) {
           setServerLock({
             allowDelete: true,
             allowRename: true,
+            allowMove: true,
             allowCreateFolder: true,
             allowUpload: true,
             maxUploadMb: 512,
@@ -605,7 +592,7 @@ export function FileBrowserApp() {
       e.preventDefault();
       void activate(selectedEntry);
     }
-    if ((e.key === "Delete" || e.key === "Backspace") && (e.metaKey || e.ctrlKey) && selectedEntry) {
+    if ((e.key === "Delete" || e.key === "Backspace") && (e.metaKey || e.ctrlKey) && selectedEntry && serverLock?.allowDelete !== false) {
       e.preventDefault();
       setDeleteOpen(true);
     }
@@ -631,6 +618,21 @@ export function FileBrowserApp() {
   if (!user) return <RedirectToSignIn />;
 
   const ownerName = user.displayName || emailToUsername(user.primaryEmail);
+  const showAppSettings = isAndroidApp();
+  const showServerSettings = settingsOnThisPc(typeof window === "undefined" ? "" : window.location.hostname);
+
+  function openSurfaceSettings() {
+    if (showAppSettings) {
+      const native = (window as Window & { DrivebayNative?: { openAppSettings?: () => void } }).DrivebayNative;
+      native?.openAppSettings?.();
+      setMobileNav(false);
+      return;
+    }
+    if (showServerSettings) {
+      setMobileNav(false);
+      void navigate({ to: "/settings" });
+    }
+  }
 
   const nav = (
     <DriveNav
@@ -793,9 +795,15 @@ export function FileBrowserApp() {
         </div>
         <div className="hidden items-center gap-2 pl-1 md:flex">
           <span className="max-w-28 truncate text-xs text-fg-muted">{ownerName}</span>
-          <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => void navigate({ to: "/settings" })}>
-            <Settings className="size-3.5" />
-          </Button>
+          {showAppSettings ? (
+            <Button variant="ghost" size="icon-sm" aria-label="App settings" onClick={openSurfaceSettings}>
+              <Settings className="size-3.5" />
+            </Button>
+          ) : showServerSettings ? (
+            <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={openSurfaceSettings}>
+              <Settings className="size-3.5" />
+            </Button>
+          ) : null}
           <Button variant="ghost" size="sm" onClick={() => void signOut("/login")}>
             <LogOut className="size-3.5" />
             Lock
@@ -818,7 +826,7 @@ export function FileBrowserApp() {
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            if (e.dataTransfer.files.length && serverLock?.allowUpload !== false) {
+            if (e.dataTransfer.files.length && serverLock?.allowUpload) {
               void handleUpload(e.dataTransfer.files);
             }
           }}
@@ -833,48 +841,49 @@ export function FileBrowserApp() {
               <FolderPlus className="size-3.5" />
               New folder
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={serverLock?.allowUpload === false}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="size-3.5" />
-              Upload
-            </Button>
+            {serverLock?.allowUpload ? (
+              <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
+                <Upload className="size-3.5" />
+                Upload
+              </Button>
+            ) : null}
             <input
               ref={fileInputRef}
               type="file"
               multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files) void handleUpload(e.target.files);
+                if (e.target.files && serverLock?.allowUpload) void handleUpload(e.target.files);
                 e.target.value = "";
               }}
             />
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!selectedEntry || serverLock?.allowRename === false}
-              onClick={() => {
-                if (!selectedEntry) return;
-                setRenameValue(selectedEntry.name);
-                setRenameOpen(true);
-              }}
-            >
-              <Pencil className="size-3.5" />
-              Rename
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!selectedEntry || serverLock?.allowDelete === false}
-              className="text-danger hover:text-danger"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="size-3.5" />
-              Delete
-            </Button>
+            {serverLock?.allowRename || serverLock?.allowMove ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!selectedEntry}
+                onClick={() => {
+                  if (!selectedEntry) return;
+                  setRenameValue(selectedEntry.name);
+                  setRenameOpen(true);
+                }}
+              >
+                <Pencil className="size-3.5" />
+                Rename
+              </Button>
+            ) : null}
+            {serverLock?.allowDelete ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={!selectedEntry}
+                className="text-danger hover:text-danger"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="size-3.5" />
+                Delete
+              </Button>
+            ) : null}
             <div className="ml-auto hidden text-xs text-fg-subtle sm:block">
               {searching
                 ? "Searching…"
@@ -993,17 +1002,12 @@ export function FileBrowserApp() {
           </div>
           {nav}
           <div className="mt-auto space-y-2 border-t border-border p-3">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setMobileNav(false);
-                void navigate({ to: "/settings" });
-              }}
-            >
-              <Settings className="size-3.5" />
-              Settings
-            </Button>
+            {showAppSettings || showServerSettings ? (
+              <Button variant="outline" className="w-full" onClick={openSurfaceSettings}>
+                <Settings className="size-3.5" />
+                {showAppSettings ? "App settings" : "Settings"}
+              </Button>
+            ) : null}
             <Button variant="outline" className="w-full" onClick={() => void signOut("/login")}>
               <LogOut className="size-3.5" />
               Lock

@@ -68,7 +68,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "This PC and a signed-in device on Tailscale can turn it on or off. A public or other LAN address cannot change it, even after sign-in. The other server lock settings stay on this PC only.",
+        text: "Only this PC can turn it on or off. A phone, Tailscale, or another computer cannot change it. The other server settings stay on this PC only.",
       },
       {
         kind: "p",
@@ -147,7 +147,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.32.",
+        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.33.",
       },
       {
         kind: "p",
@@ -159,7 +159,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.32. In Pinokio, use Update.",
+        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.33. In Pinokio, use Update.",
       },
       {
         kind: "p",

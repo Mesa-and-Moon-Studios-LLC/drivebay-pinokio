@@ -80,10 +80,10 @@ test("a browser refusal page has no sign-in form, and the toggle is not a server
 
   const api = fs.readFileSync(path.join(root, "app/src/lib/files/api.functions.ts"), "utf8");
   const pub = api.slice(api.indexOf("export const savePublicAccess"), api.indexOf("export const restartDrivebay"));
-  assert.match(pub, /assertPublicAccessEditor/);
-  assert.equal(pub.includes("assertLoopbackRequest"), false);
+  assert.match(pub, /assertPcAdmin/);
+  assert.equal(pub.includes("assertPublicAccessEditor"), false);
   const lock = api.slice(api.indexOf("export const saveServerLock"), api.indexOf("export const savePublicAccess"));
-  assert.match(lock, /assertLoopbackRequest/);
+  assert.match(lock, /assertPcAdmin/);
   assert.equal(lock.includes("assertPublicAccessEditor"), false);
 
   const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
