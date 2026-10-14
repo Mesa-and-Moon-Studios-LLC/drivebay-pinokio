@@ -2,6 +2,12 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.31
+- The Windows installer and the server report 3.31. `/api/health` returns `version` 3.31. The release files are `Drivebay-Setup-3.31.exe` and `drivebay-server-win-x64.zip`.
+- Android app 3.30.0 (versionCode 30) lives in `android/`. A download from the phone saves into Downloads/Drivebay with a progress notification (speed and time left), then offers Open and Share. Large files download in 8 MB ranges, can pause, resume, and cancel, retry with backoff, and continue after the connection drops or the app restarts. Files of 50 MB and up can stay on Wi-Fi. The session cookie from the WebView is sent with each request.
+- If Tailscale is not installed, the app offers Download (Play Store) or Skip. The hardware back button moves to the parent folder before it leaves the app. Connecting opens the file browser home. The address hint uses port 8765, and a saved port from 42000–42999 asks before it is kept. 8766 is noted as a common port.
+- `GET` and `HEAD /api/download` send `Accept-Ranges: bytes` and an ETag from the file size and mtime. A valid `Range` returns 206 with `Content-Range`. A bad range returns 416. `If-Range` sends the slice only when the ETag or modification time still matches.
+
 ## 3.30
 - The repository is `https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio`. Install, uninstall, update checks, and the settings feature-request link use that path. The Windows installer is `Drivebay-Setup-3.30.exe`.
 
