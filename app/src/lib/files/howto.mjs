@@ -134,7 +134,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "Pick Static to keep the same port every start, or Random to get a new port each start. A static port must be a free number from 1024 to 65535. The suggested port is 42013.",
+        text: "Pick Static to keep the same port every start, or Random to get a new port each start. A static port must be a free number from 1024 to 65535. The suggested port is 8765. Ports from 42000 to 42999 are left for Pinokio's Caddy.",
       },
       {
         kind: "p",
@@ -147,7 +147,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.25.",
+        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.26.",
       },
       {
         kind: "p",
@@ -159,7 +159,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.25. In Pinokio, use Update.",
+        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.26. In Pinokio, use Update.",
       },
       {
         kind: "p",
@@ -180,7 +180,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "Port already in use. Setup names the program that holds the port, including Pinokio's Caddy, and asks for another port. The message can say That is a Pinokio copy of Drivebay. An update ignores this Drivebay when it still holds its own port. If a different program holds the saved port, the update stops and keeps that port.",
+        text: "Port already in use. Setup names the program that holds the port. Pinokio's Caddy (z:\\pinokio\\bin\\miniforge\\Library\\bin\\caddy.exe) takes ports from 42000 to 42999 while Pinokio is running, even when Drivebay is not installed in Pinokio. Setup asks for a different port outside that range. The suggested port is 8765. The message can say That is a Pinokio copy of Drivebay. An update ignores this Drivebay when it still holds its own port. A saved port from 42000 to 42999 moves automatically. Any other saved port stays.",
       },
       {
         kind: "p",

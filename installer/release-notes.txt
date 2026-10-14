@@ -1,15 +1,11 @@
-Drivebay 3.25 adds an OpenClaw skill that uses an API token on this PC.
+Drivebay 3.26 moves the suggested port to 8765 so Pinokio's Caddy does not take it.
 
-This release includes Drivebay-Setup-3.25.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.26.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-The skill folder is skills/drivebay. It needs Node.js, DRIVEBAY_URL, and DRIVEBAY_TOKEN. Commands are roots, ls, stat, find, get, put, mkdir, mv, and rm. The script talks only to DRIVEBAY_URL. It does not print the token. It does not overwrite a file, and it does not download a file larger than DRIVEBAY_GET_CONFIRM_BYTES (default 20 MB), unless you pass --yes.
+Pinokio's Caddy (z:\pinokio\bin\miniforge\Library\bin\caddy.exe) claims ports from 42000 to 42999 while Pinokio is running, even when Drivebay is not installed in Pinokio. The suggested port is 8765. If that port is taken, setup picks the next free port outside that range.
 
-A write outside the open window prints "Waiting for approval on Drivebay" and polls GET /api/v1/approvals/<id> until this PC approves, denies, or the request expires.
+An update keeps a saved port outside 42000-42999. A saved port in that range moves automatically. Setup prints the new address and updates the firewall rule and the shortcut.
 
-Publish the skill from the repository root after clawhub login:
-
-clawhub skill publish ./skills/drivebay --slug drivebay --name "Drivebay" --version 1.0.0
-
-Do not include the token in that publish.
+If a port is already in use, setup names the program. When the program is Pinokio's Caddy, the message says so and asks for a different port outside that range.

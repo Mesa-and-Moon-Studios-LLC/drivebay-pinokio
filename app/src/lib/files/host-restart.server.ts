@@ -13,7 +13,7 @@ export function scheduleStandaloneRestart(): { ok: true } | { ok: false; message
       message: "Stop Drivebay and start it again. This start method cannot restart itself.",
     };
   }
-  const port = String(process.env.PORT || process.env.NITRO_PORT || "42013");
+  const port = String(process.env.PORT || process.env.NITRO_PORT || "8765");
   const script = `
     const { spawn } = require("node:child_process");
     const net = require("node:net");

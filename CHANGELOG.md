@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.26
+- The suggested port is 8765. Setup skips 42000-42999, the range Pinokio's Caddy (`z:\pinokio\bin\miniforge\Library\bin\caddy.exe`) claims while Pinokio is running, and picks the next free port outside that range when 8765 is taken.
+- An update keeps a saved port outside that range. A saved port from 42000 to 42999 moves automatically. Setup prints the new address and updates the firewall rule and the shortcut.
+- When a port is already in use, setup names the program. If it is Pinokio's Caddy, the message says so and asks for a port outside 42000-42999.
+
 ## 3.25
 - `skills/drivebay` is an OpenClaw skill with `SKILL.md` and `scripts/drivebay.js`. It uses Node.js only, with no packages. It needs `DRIVEBAY_URL` and `DRIVEBAY_TOKEN`. Commands are `roots`, `ls`, `stat`, `find`, `get`, `put`, `mkdir`, `mv`, and `rm`.
 - The script's only network call is to `DRIVEBAY_URL`. It does not print the token. It does not overwrite a file, and it does not download a file larger than `DRIVEBAY_GET_CONFIRM_BYTES` (default 20 MB), unless `--yes` is passed. A write outside the open window prints `Waiting for approval on Drivebay` and polls until this PC approves, denies, or the request expires.

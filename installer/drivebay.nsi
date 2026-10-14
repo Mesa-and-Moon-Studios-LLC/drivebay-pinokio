@@ -7,10 +7,10 @@
 !include "WinMessages.nsh"
 
 !ifndef VERSION
-  !define VERSION "3.25"
+  !define VERSION "3.26"
 !endif
 !ifndef VERSION4
-  !define VERSION4 "3.25.0.0"
+  !define VERSION4 "3.26.0.0"
 !endif
 
 Name "Drivebay ${VERSION}"
@@ -57,6 +57,7 @@ Var ModeTailscale
 Var ModeBoth
 Var ModeRegular
 Var Port
+Var PortMoved
 Var PortField
 Var LocalIp
 Var PublicIp
@@ -95,7 +96,8 @@ Var SetupError
 
 Function .onInit
   StrCpy $Mode "tailscale"
-  StrCpy $Port "42013"
+  StrCpy $Port "8765"
+  StrCpy $PortMoved "0"
   StrCpy $InstallTailscale "0"
   StrCpy $LaunchTailscale "0"
   StrCpy $Update "0"
@@ -104,6 +106,40 @@ Function .onInit
   StrCpy $StartWithWindows "0"
   SetShellVarContext current
   Call DetectUpdate
+  ${If} $Update != "1"
+    Call SuggestFreePort
+  ${EndIf}
+FunctionEnd
+
+Function DigitsOnly
+  StrCpy $R1 ""
+  StrLen $R2 $Port
+  StrCpy $R3 0
+  ${While} $R3 < $R2
+    StrCpy $R4 $Port 1 $R3
+    ${If} $R4 >= "0"
+    ${AndIf} $R4 <= "9"
+      StrCpy $R1 "$R1$R4"
+    ${EndIf}
+    IntOp $R3 $R3 + 1
+  ${EndWhile}
+  StrCpy $Port $R1
+FunctionEnd
+
+Function SuggestFreePort
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$found=0; for ($$n=0; $$n -le 128; $$n++) { $$cand=8765+$$n; if ($$cand -ge 42000 -and $$cand -le 42999) { continue }; if ($$cand -gt 65535) { break }; $$busy=$$false; try { $$c=New-Object System.Net.Sockets.TcpClient; $$a=$$c.BeginConnect([System.Net.IPAddress]::Loopback,$$cand,$$null,$$null); if ($$a.AsyncWaitHandle.WaitOne(200,$$false)) { try { $$c.EndConnect($$a); if ($$c.Connected) { $$busy=$$true } } catch {} }; $$c.Close() } catch {}; if (-not $$busy) { try { $$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,$$cand); $$l.Start(); $$l.Stop() } catch { $$busy=$$true } }; if (-not $$busy) { $$found=$$cand; break } }; if ($$found -lt 1024) { for ($$n=0; $$n -le 128; $$n++) { $$cand=18080+$$n; $$busy=$$false; try { $$c=New-Object System.Net.Sockets.TcpClient; $$a=$$c.BeginConnect([System.Net.IPAddress]::Loopback,$$cand,$$null,$$null); if ($$a.AsyncWaitHandle.WaitOne(200,$$false)) { try { $$c.EndConnect($$a); if ($$c.Connected) { $$busy=$$true } } catch {} }; $$c.Close() } catch {}; if (-not $$busy) { try { $$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,$$cand); $$l.Start(); $$l.Stop() } catch { $$busy=$$true } }; if (-not $$busy) { $$found=$$cand; break } } }; if ($$found -lt 1024) { $$found=8765 }; $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-suggested-port.txt), ([string]$$found), $$utf8); exit 0"'
+  Pop $0
+  Pop $1
+  IfFileExists "$TEMP\drivebay-suggested-port.txt" 0 suggest_done
+    FileOpen $R9 "$TEMP\drivebay-suggested-port.txt" r
+    FileRead $R9 $Port
+    FileClose $R9
+    Delete "$TEMP\drivebay-suggested-port.txt"
+    Call DigitsOnly
+    ${If} $Port == ""
+      StrCpy $Port "8765"
+    ${EndIf}
+  suggest_done:
 FunctionEnd
 
 Function DetectUpdate
@@ -232,7 +268,7 @@ Function PortPageLeave
   Pop $0
   Pop $1
   ${If} $0 != "0"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "Port $Port is already in use on this PC. Enter a different port."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Port $Port is already in use on this PC. Enter a different port. If this is Pinokio's Caddy (z:\pinokio\bin\miniforge\Library\bin\caddy.exe), it takes ports from 42000 to 42999 while Pinokio is running. Choose a port outside that range, such as 8765."
     Abort
   ${EndIf}
 FunctionEnd
@@ -551,7 +587,11 @@ FunctionEnd
 
 Function FinishPageShow
   ${If} $Update == "1"
-    SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Drivebay updated to ${VERSION}.$\r$\n$\r$\nYour account, password, port, and settings were kept.$\r$\n$\r$\nOn this PC, Drivebay opens the settings page."
+    ${If} $PortMoved == "1"
+      SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Drivebay updated to ${VERSION}.$\r$\n$\r$\nThe saved port was in the range Pinokio's Caddy uses (42000-42999), so Drivebay moved to port $Port.$\r$\n$\r$\nThe new address on this PC is http://127.0.0.1:$Port/settings. The firewall rule and shortcut were updated.$\r$\n$\r$\nOn this PC, Drivebay opens the settings page."
+    ${Else}
+      SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Drivebay updated to ${VERSION}.$\r$\n$\r$\nYour account, password, port, and settings were kept.$\r$\n$\r$\nOn this PC, Drivebay opens the settings page."
+    ${EndIf}
   ${ElseIf} $Mode == "tailscale"
     SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices on your tailnet open http://<this-PC-tailscale-name>:$Port/ after Tailscale is signed in on both devices. You do not forward that port on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
   ${ElseIf} $Mode == "both"
@@ -576,9 +616,27 @@ Section "Install"
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
   ${If} $Update == "1"
-    DetailPrint "Keeping the existing account, password, port, and settings."
     nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "$$root=Join-Path $$env:LOCALAPPDATA Drivebay; $$cfg=Join-Path $$root config.json; if (Test-Path -LiteralPath $$cfg) { $$j=Get-Content -LiteralPath $$cfg -Raw | ConvertFrom-Json; $$j.version=[string]${VERSION}; $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText($$cfg, ($$j | ConvertTo-Json -Compress), $$utf8) }"'
     Pop $0
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\windows\migrate-listen-port.ps1"'
+    Pop $0
+    IfFileExists "$TEMP\drivebay-migrated-port.txt" 0 migrate_port_keep
+      StrCpy $R7 $Port
+      FileOpen $R9 "$TEMP\drivebay-migrated-port.txt" r
+      FileRead $R9 $Port
+      FileClose $R9
+      Delete "$TEMP\drivebay-migrated-port.txt"
+      Call DigitsOnly
+      ${If} $Port == ""
+        StrCpy $Port $R7
+        DetailPrint "Keeping the existing account, password, port, and settings."
+      ${Else}
+        StrCpy $PortMoved "1"
+        DetailPrint "The saved port was in the range Pinokio's Caddy uses (42000-42999). Drivebay moved to port $Port. The new address on this PC is http://127.0.0.1:$Port/settings. The firewall rule and shortcut were updated."
+      ${EndIf}
+      Goto update_files_done
+    migrate_port_keep:
+    DetailPrint "Keeping the existing account, password, port, and settings."
     Goto update_files_done
   ${EndIf}
 

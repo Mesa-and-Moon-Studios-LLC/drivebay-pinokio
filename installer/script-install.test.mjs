@@ -164,6 +164,10 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   assert.ok(healthCheck !== -1 && healthCheck < readyAt);
   assert.match(script, /Get-PortConflict/);
   assert.match(script, /That is a Pinokio copy of Drivebay/);
+  assert.match(script, /Pinokio's Caddy/);
+  assert.match(script, /8765/);
+  assert.match(nsi, /StrCpy \$Port "8765"/);
+  assert.match(nsi, /Pinokio's Caddy/);
   assert.match(script, /\/api\/health/);
   assert.match(script, /Do you already have Tailscale\?/);
   assert.match(script, /DRIVEBAY_TAILSCALE/);
@@ -484,7 +488,9 @@ test("a busy port is refused before the account is saved", async () => {
     const out = `${result.stdout || ""}\n${result.stderr || ""}`;
     assert.equal(result.status, 1, out);
     assert.match(out, new RegExp(`Port ${port} is already in use by`));
-    assert.match(out, /Pinokio copy of Drivebay/);
+    assert.match(out, /Pinokio's Caddy/);
+    assert.match(out, /42000 to 42999/);
+    assert.match(out, /8765/);
     assert.match(out, /Enter a different port/);
     assert.equal(out.includes("Drivebay is ready"), false);
     assert.equal(fs.existsSync(path.join(home, "pending-account.json")), false);
@@ -511,7 +517,7 @@ test("ready is printed only after /api/health names Drivebay", async () => {
     child.unref();
     return { pid: child.pid, port: chosen };
   }
-  const good = serve('{"ok":true,"name":"Drivebay","version":"3.25"}', 200);
+  const good = serve('{"ok":true,"name":"Drivebay","version":"3.26"}', 200);
   const foreign = serve('{"error":"Unauthorized"}', 401);
   await new Promise((resolve, reject) => {
     const started = Date.now();
@@ -557,5 +563,93 @@ test("ready is printed only after /api/health names Drivebay", async () => {
   } finally {
     try { process.kill(good.pid, "SIGKILL"); } catch { /* already gone */ }
     try { process.kill(foreign.pid, "SIGKILL"); } catch { /* already gone */ }
+  }
+});
+
+function listenOn(port) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve(server));
+  });
+}
+
+test("a saved port in Pinokio's Caddy range moves on update", async () => {
+  const ps = powershell();
+  if (!ps) {
+    if (process.platform === "win32") assert.fail("powershell is required on Windows");
+    return;
+  }
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-caddy-port-"));
+  fs.mkdirSync(path.join(home, "data"), { recursive: true });
+  fs.writeFileSync(path.join(home, "pending-account.json"), '{"username":"old","password":"old-password-1"}\n');
+  fs.writeFileSync(path.join(home, "drivebay.port"), "42061");
+  fs.writeFileSync(
+    path.join(home, "config.json"),
+    JSON.stringify({ port: 42061, mode: "tailscale", version: "3.25", note: "keep-me" }),
+  );
+  let held = null;
+  try {
+    held = await listenOn(8765);
+  } catch {
+    held = null;
+  }
+  try {
+    const result = spawnSync(ps, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "install.ps1")], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: {
+        ...process.env,
+        DRIVEBAY_SETUP_ONLY: "1",
+        DRIVEBAY_SETUP_SOURCE: root,
+        DRIVEBAY_SETUP_HOME: home,
+        DRIVEBAY_SETUP_PORT: "9000",
+        DRIVEBAY_SETUP_USER: "alice",
+        DRIVEBAY_SETUP_MODE: "regular",
+        DRIVEBAY_SETUP_PASSWORD: "caddy-port-pass-1",
+        DRIVEBAY_SKIP_START: "1",
+      },
+    });
+    const out = `${result.stdout || ""}\n${result.stderr || ""}`;
+    assert.equal(result.status, 0, out);
+    const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+    assert.equal(config.mode, "tailscale");
+    assert.equal(config.note, "keep-me");
+    assert.equal(config.version, "3.26");
+    assert.ok(config.port < 42000 || config.port > 42999, String(config.port));
+    if (held) assert.notEqual(config.port, 8765);
+    else assert.equal(config.port, 8765);
+    assert.equal(fs.readFileSync(path.join(home, "drivebay.port"), "utf8").trim(), String(config.port));
+    assert.match(out, new RegExp(`http://127\\.0\\.0\\.1:${config.port}/settings`));
+    assert.match(out, /Pinokio's Caddy/);
+    assert.match(out, /firewall rule and the Start menu shortcut/);
+    assert.equal(out.includes("Saving the Drivebay account"), false);
+    const pending = JSON.parse(fs.readFileSync(path.join(home, "pending-account.json"), "utf8"));
+    assert.equal(pending.username, "old");
+    const kept = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-keep-port-"));
+    try {
+      fs.mkdirSync(path.join(kept, "data"), { recursive: true });
+      fs.writeFileSync(path.join(kept, "pending-account.json"), '{"username":"old","password":"old-password-1"}\n');
+      fs.writeFileSync(path.join(kept, "drivebay.port"), "8080");
+      fs.writeFileSync(
+        path.join(kept, "config.json"),
+        JSON.stringify({ port: 8080, mode: "regular", version: "3.25", note: "stay" }),
+      );
+      const direct = spawnSync(
+        ps,
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "installer/windows/migrate-listen-port.ps1"), "-Root", kept],
+        { encoding: "utf8", timeout: 20000 },
+      );
+      assert.equal(direct.status, 0, direct.stderr || direct.stdout);
+      const stayed = JSON.parse(fs.readFileSync(path.join(kept, "config.json"), "utf8"));
+      assert.equal(stayed.port, 8080);
+      assert.equal(stayed.note, "stay");
+      assert.equal(fs.readFileSync(path.join(kept, "drivebay.port"), "utf8").trim(), "8080");
+    } finally {
+      fs.rmSync(kept, { recursive: true, force: true });
+    }
+  } finally {
+    if (held) await new Promise((resolve) => held.close(resolve));
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });

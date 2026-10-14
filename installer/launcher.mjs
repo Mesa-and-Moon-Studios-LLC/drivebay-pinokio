@@ -247,8 +247,8 @@ async function main() {
   try {
     config = readConfig(home);
   } catch (err) {
-    log(home, `Setup config was not found (${err.message}). Using port 42013 so the login page can still open.`);
-    config = { port: 42013, mode: "regular", version: "" };
+    log(home, `Setup config was not found (${err.message}). Using port 8765 so the login page can still open.`);
+    config = { port: 8765, mode: "regular", version: "" };
   }
   const port = resolveListenPort(home, config.port);
   const origin = `http://127.0.0.1:${port}`;

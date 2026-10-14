@@ -19,7 +19,7 @@ Use this skill to list, read, and change files on the PC that runs Drivebay.
 
 The PC creates the token on its settings page and shows it once. Set these for the skill:
 
-- `DRIVEBAY_URL` — the Drivebay address, such as `http://100.x.y.z:42013`
+- `DRIVEBAY_URL` — the Drivebay address, such as `http://100.x.y.z:8765`
 - `DRIVEBAY_TOKEN` — the token from that PC. It starts with `db_`
 
 This folder needs Node.js. It does not install packages. The script's only network call is to `DRIVEBAY_URL`.
