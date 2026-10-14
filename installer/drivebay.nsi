@@ -37,9 +37,10 @@ ShowInstDetails show
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 Page custom ModePageCreate ModePageLeave
+Page custom TailscalePageCreate TailscalePageLeave
+Page custom TailscaleOfferPageCreate TailscaleOfferPageLeave
 Page custom PortPageCreate PortPageLeave
 Page custom RouterPageCreate RouterPageLeave
-Page custom TailscalePageCreate TailscalePageLeave
 Page custom AccountPageCreate AccountPageLeave
 Page custom OptionsPageCreate OptionsPageLeave
 !insertmacro MUI_PAGE_INSTFILES
@@ -64,8 +65,12 @@ Var ConfirmField
 Var Confirm
 Var InstallTailscale
 Var LaunchTailscale
-Var HInstallTs
-Var HLaunchTs
+Var Update
+Var TailscaleHave
+Var TailscaleHaveYes
+Var TailscaleHaveNo
+Var TailscaleOfferInstall
+Var TailscaleOfferSkip
 Var HAck
 Var DesktopShortcut
 Var StartWithWindows
@@ -88,9 +93,35 @@ Function .onInit
   StrCpy $Port "42013"
   StrCpy $InstallTailscale "0"
   StrCpy $LaunchTailscale "0"
+  StrCpy $Update "0"
+  StrCpy $TailscaleHave "0"
   StrCpy $DesktopShortcut "1"
   StrCpy $StartWithWindows "0"
   SetShellVarContext current
+  Call DetectUpdate
+FunctionEnd
+
+Function DetectUpdate
+  ; Exit 2 tailscale, 3 regular, 0 no install. Writes the saved port when found.
+  ; No nested quotes: NSIS single quotes would end the command.
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$root=Join-Path $$env:LOCALAPPDATA Drivebay; $$cfg=Join-Path $$root config.json; $$code=0; $$portText=$$null; if (Test-Path -LiteralPath $$cfg) { try { $$j=Get-Content -LiteralPath $$cfg -Raw | ConvertFrom-Json; $$m=[string]$$j.mode; $$portNum=0; $$ok=[int]::TryParse([string]$$j.port,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { if ($$m.StartsWith([string][char]116)) { $$code=2; $$portText=[string]$$portNum } elseif ($$m.StartsWith([string][char]114)) { $$code=3; $$portText=[string]$$portNum } } } catch {} }; if ($$code -eq 0) { $$f=Join-Path $$root drivebay.port; $$a=Join-Path $$root pending-account.json; $$d=Join-Path $$root data; $$s=Join-Path $$root auth.secret; if ((Test-Path -LiteralPath $$f) -and ((Test-Path -LiteralPath $$a) -or (Test-Path -LiteralPath $$d) -or (Test-Path -LiteralPath $$s))) { $$rawPort=[System.IO.File]::ReadAllText($$f).Trim(); $$portNum=0; $$ok=[int]::TryParse($$rawPort,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { $$code=3; $$portText=[string]$$portNum } } }; if ($$portText) { $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-update-port.txt), $$portText, $$utf8) }; exit $$code"'
+  Pop $0
+  Pop $1
+  ${If} $0 == "2"
+    StrCpy $Update "1"
+    StrCpy $Mode "tailscale"
+  ${ElseIf} $0 == "3"
+    StrCpy $Update "1"
+    StrCpy $Mode "regular"
+  ${EndIf}
+  ${If} $Update == "1"
+    IfFileExists "$TEMP\drivebay-update-port.txt" 0 update_port_done
+      FileOpen $R9 "$TEMP\drivebay-update-port.txt" r
+      FileRead $R9 $Port
+      FileClose $R9
+      Delete "$TEMP\drivebay-update-port.txt"
+    update_port_done:
+  ${EndIf}
 FunctionEnd
 
 Function un.onInit
@@ -99,6 +130,9 @@ Function un.onInit
 FunctionEnd
 
 Function ModePageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${NSD_CreateLabel} 0 0 100% 36u "How should other devices reach this PC? Both modes use a local port. Tailscale reaches it over your tailnet, with no router change. Regular mode needs that port forwarded on your router."
@@ -125,6 +159,9 @@ Function ModePageLeave
 FunctionEnd
 
 Function PortPageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${If} $Mode == "tailscale"
@@ -185,6 +222,9 @@ FunctionEnd
 
 Function RouterPageCreate
   ; Tailscale reaches the local port over the tailnet. No router forward.
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   ${If} $Mode == "tailscale"
     Abort
   ${EndIf}
@@ -213,38 +253,98 @@ Function RouterPageLeave
 FunctionEnd
 
 Function TailscalePageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   ${If} $Mode != "tailscale"
     Abort
   ${EndIf}
+  StrCpy $0 "0"
+  IfFileExists "$PROGRAMFILES64\Tailscale\Tailscale.exe" ts_found_64 ts_check_pf
+  ts_found_64:
+    StrCpy $0 "1"
+  ts_check_pf:
+  IfFileExists "$PROGRAMFILES\Tailscale\Tailscale.exe" ts_found_pf ts_check_32
+  ts_found_pf:
+    StrCpy $0 "1"
+  ts_check_32:
+  IfFileExists "$PROGRAMFILES32\Tailscale\Tailscale.exe" ts_found_32 ts_have_ui
+  ts_found_32:
+    StrCpy $0 "1"
+  ts_have_ui:
   nsDialogs::Create 1018
-  Pop $0
-  ${NSD_CreateLabel} 0 0 100% 56u "Tailscale mode. Devices on your tailnet reach this PC at http://<this-PC-tailscale-name>:$Port/ after you sign in to Tailscale on both devices. You do not open that port on your router.$\r$\n$\r$\nDrivebay can download the official Tailscale installer from pkgs.tailscale.com and run it. Tailscale's own window will open."
-  Pop $0
-  ${NSD_CreateCheckbox} 0 62u 100% 12u "Download and install Tailscale (official installer)"
-  Pop $HInstallTs
-  ${NSD_CreateCheckbox} 0 78u 100% 14u "Launch Tailscale when setup finishes"
-  Pop $HLaunchTs
-  ${If} $InstallTailscale == "1"
-    ${NSD_SetState} $HInstallTs ${BST_CHECKED}
-  ${EndIf}
-  ${If} $LaunchTailscale == "1"
-    ${NSD_SetState} $HLaunchTs ${BST_CHECKED}
+  Pop $1
+  ${NSD_CreateLabel} 0 0 100% 40u "Do you already have Tailscale? If it is installed, this page selects Yes. Yes continues to the port, username, and password. No lets you install Tailscale or skip it."
+  Pop $1
+  ${NSD_CreateFirstRadioButton} 0 46u 100% 12u "Yes, Tailscale is already installed"
+  Pop $TailscaleHaveYes
+  ${NSD_CreateAdditionalRadioButton} 0 62u 100% 14u "No"
+  Pop $TailscaleHaveNo
+  ${If} $0 == "1"
+    ${NSD_SetState} $TailscaleHaveYes ${BST_CHECKED}
+  ${Else}
+    ${NSD_SetState} $TailscaleHaveNo ${BST_CHECKED}
   ${EndIf}
   nsDialogs::Show
 FunctionEnd
 
 Function TailscalePageLeave
-  ${NSD_GetState} $HInstallTs $0
+  ${If} $Update == "1"
+    Return
+  ${EndIf}
+  ${If} $Mode != "tailscale"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $TailscaleHaveYes $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $TailscaleHave "1"
+    StrCpy $InstallTailscale "0"
+    StrCpy $LaunchTailscale "0"
+  ${Else}
+    StrCpy $TailscaleHave "0"
+  ${EndIf}
+FunctionEnd
+
+Function TailscaleOfferPageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
+  ${If} $Mode != "tailscale"
+    Abort
+  ${EndIf}
+  ${If} $TailscaleHave == "1"
+    Abort
+  ${EndIf}
+  nsDialogs::Create 1018
+  Pop $0
+  ${NSD_CreateLabel} 0 0 100% 48u "Tailscale is not installed. Drivebay can download and install Tailscale for Windows from the official installer. After it installs, sign in or create a free Tailscale account. Or skip this and set Tailscale up later."
+  Pop $0
+  ${NSD_CreateFirstRadioButton} 0 54u 100% 12u "Download and install Tailscale, then sign in"
+  Pop $TailscaleOfferInstall
+  ${NSD_CreateAdditionalRadioButton} 0 70u 100% 14u "Skip. I can install Tailscale and set it up later."
+  Pop $TailscaleOfferSkip
+  ${NSD_SetState} $TailscaleOfferInstall ${BST_CHECKED}
+  nsDialogs::Show
+FunctionEnd
+
+Function TailscaleOfferPageLeave
+  ${If} $Update == "1"
+    Return
+  ${EndIf}
+  ${If} $Mode != "tailscale"
+    Return
+  ${EndIf}
+  ${If} $TailscaleHave == "1"
+    Return
+  ${EndIf}
+  ${NSD_GetState} $TailscaleOfferInstall $0
   ${If} $0 == ${BST_CHECKED}
     StrCpy $InstallTailscale "1"
-  ${Else}
-    StrCpy $InstallTailscale "0"
-  ${EndIf}
-  ${NSD_GetState} $HLaunchTs $0
-  ${If} $0 == ${BST_CHECKED}
     StrCpy $LaunchTailscale "1"
   ${Else}
+    StrCpy $InstallTailscale "0"
     StrCpy $LaunchTailscale "0"
+    MessageBox MB_OK "You can install Tailscale and set it up later. Setup will continue with the port, username, and password."
   ${EndIf}
 FunctionEnd
 
@@ -289,6 +389,9 @@ Function UsernameOk
 FunctionEnd
 
 Function AccountPageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${NSD_CreateLabel} 0 0 100% 32u "Set the only Drivebay account. After this, nobody else can sign up. Use at least 8 characters. This password is the lock for every drive on this PC."
@@ -329,6 +432,9 @@ Function AccountPageLeave
 FunctionEnd
 
 Function OptionsPageCreate
+  ${If} $Update == "1"
+    Abort
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${NSD_CreateLabel} 0 0 100% 32u "Shortcuts. Drivebay is added to the Start menu, with an uninstaller. Starting it puts an icon in the notification area. There is no console window."
@@ -395,15 +501,35 @@ Function OneLine
 FunctionEnd
 
 Function FinishPageShow
-  ${If} $Mode == "tailscale"
+  ${If} $Update == "1"
+    SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Drivebay updated to ${VERSION}.$\r$\n$\r$\nYour account, password, port, and settings were kept.$\r$\n$\r$\nOn this PC, Drivebay opens the settings page."
+  ${ElseIf} $Mode == "tailscale"
     SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices on your tailnet open http://<this-PC-tailscale-name>:$Port/ after Tailscale is signed in on both devices. You do not forward that port on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
   ${EndIf}
 FunctionEnd
 
 Section "Install"
+  ${If} $Update == "1"
+    DetailPrint "Stopping Drivebay before the update."
+    nsExec::ExecToLog '"$INSTDIR\DrivebayTray.exe" --quit'
+    Pop $0
+    nsExec::ExecToLog '"$INSTDIR\runtime\node.exe" "$INSTDIR\launcher.mjs" --stop'
+    Pop $0
+    nsExec::ExecToLog 'taskkill.exe /IM DrivebayTray.exe /F'
+    Pop $0
+    Sleep 400
+  ${EndIf}
+
   SetOutPath "$INSTDIR"
   File /r "staging\*.*"
   WriteUninstaller "$INSTDIR\uninstall.exe"
+
+  ${If} $Update == "1"
+    DetailPrint "Keeping the existing account, password, port, and settings."
+    nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -Command "$$root=Join-Path $$env:LOCALAPPDATA Drivebay; $$cfg=Join-Path $$root config.json; if (Test-Path -LiteralPath $$cfg) { $$j=Get-Content -LiteralPath $$cfg -Raw | ConvertFrom-Json; $$j.version=[string]${VERSION}; $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText($$cfg, ($$j | ConvertTo-Json -Compress), $$utf8) }"'
+    Pop $0
+    Goto update_files_done
+  ${EndIf}
 
   !insertmacro WriteUtf16 "$TEMP\drivebay-pending-user.txt" "$Username"
   !insertmacro WriteUtf16 "$TEMP\drivebay-pending-password.txt" "$Password"
@@ -440,6 +566,7 @@ Section "Install"
     MessageBox MB_OK|MB_ICONEXCLAMATION "Drivebay is installed, but the password file could not be saved.$\r$\n$\r$\n$SetupError$\r$\n$\r$\nSet the username and password in the browser the first time you open Drivebay. The same text is in the install log."
   ${EndIf}
 
+  update_files_done:
   ${If} $Mode == "tailscale"
     DetailPrint "Tailscale mode: other devices use the tailnet address of this PC on port $Port. No router port forward is required."
   ${Else}
@@ -448,32 +575,34 @@ Section "Install"
   nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\firewall.ps1" -Action add'
   Pop $0
 
-  ${If} $Mode == "tailscale"
+  ${If} $Update != "1"
+  ${AndIf} $Mode == "tailscale"
   ${AndIf} $InstallTailscale == "1"
     DetailPrint "Downloading the official Tailscale installer..."
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\install-tailscale.ps1"'
+    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\install-tailscale.ps1" -Quiet'
     Pop $0
     ${If} $0 != 0
       MessageBox MB_OK|MB_ICONEXCLAMATION "Tailscale was not installed. Drivebay is still installed. Download Tailscale from https://tailscale.com/download/windows and sign in so this PC joins your tailnet. Other devices use http://<this-PC-tailscale-name>:$Port/."
+    ${Else}
+      nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\launch-tailscale.ps1"'
+      Pop $0
+      MessageBox MB_OK "Tailscale is installed. Sign in, or create a free Tailscale account.$\r$\n$\r$\n1. The Tailscale window is open.$\r$\n2. Click Sign in, or create a free account if you do not have one.$\r$\n3. Finish the sign-in in the browser.$\r$\n4. Click OK when this PC shows as connected."
     ${EndIf}
-  ${EndIf}
-  ${If} $Mode == "tailscale"
-  ${AndIf} $LaunchTailscale == "1"
-    nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\launch-tailscale.ps1"'
-    Pop $0
   ${EndIf}
 
   CreateDirectory "$SMPROGRAMS\Drivebay"
   CreateShortCut "$SMPROGRAMS\Drivebay\Drivebay.lnk" "$INSTDIR\DrivebayTray.exe" "" "$INSTDIR\assets\drivebay.ico"
   CreateShortCut "$SMPROGRAMS\Drivebay\Stop Drivebay.lnk" "$INSTDIR\DrivebayTray.exe" "--stop" "$INSTDIR\assets\drivebay.ico"
   CreateShortCut "$SMPROGRAMS\Drivebay\Uninstall Drivebay.lnk" "$INSTDIR\uninstall.exe"
-  ${If} $DesktopShortcut == "1"
-    CreateShortCut "$DESKTOP\Drivebay.lnk" "$INSTDIR\DrivebayTray.exe" "" "$INSTDIR\assets\drivebay.ico"
-  ${EndIf}
-  ${If} $StartWithWindows == "1"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Drivebay" '"$INSTDIR\DrivebayTray.exe" --background'
-  ${Else}
-    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Drivebay"
+  ${If} $Update != "1"
+    ${If} $DesktopShortcut == "1"
+      CreateShortCut "$DESKTOP\Drivebay.lnk" "$INSTDIR\DrivebayTray.exe" "" "$INSTDIR\assets\drivebay.ico"
+    ${EndIf}
+    ${If} $StartWithWindows == "1"
+      WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Drivebay" '"$INSTDIR\DrivebayTray.exe" --background'
+    ${Else}
+      DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Drivebay"
+    ${EndIf}
   ${EndIf}
 
   WriteRegStr HKCU "Software\Drivebay" "InstallDir" "$INSTDIR"
@@ -484,6 +613,19 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Drivebay" "DisplayIcon" "$INSTDIR\assets\drivebay.ico"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Drivebay" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Drivebay" "NoRepair" 1
+
+  ${If} $Update == "1"
+    DetailPrint "Starting Drivebay."
+    ExecShell "" "$INSTDIR\DrivebayTray.exe"
+    nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$ok=$$false; $$n=0; $$needle=-join @([char]68,[char]114,[char]105,[char]118,[char]101,[char]98,[char]97,[char]121); $$prefix=-join @([char]104,[char]116,[char]116,[char]112,[char]58,[char]47,[char]47,[char]49,[char]50,[char]55,[char]46,[char]48,[char]46,[char]48,[char]46,[char]49,[char]58); $$suffix=-join @([char]47,[char]97,[char]112,[char]105,[char]47,[char]104,[char]101,[char]97,[char]108,[char]116,[char]104); while ($$n -lt 30) { try { $$url=$$prefix + $Port + $$suffix; $$r=Invoke-WebRequest -UseBasicParsing -Uri $$url -TimeoutSec 2; if ([string]$$r.Content.Contains($$needle)) { $$ok=$$true; break } } catch {}; Start-Sleep -Seconds 1; $$n=$$n+1 }; if ($$ok) { exit 0 } else { exit 1 }"'
+    Pop $0
+    Pop $1
+    ${If} $0 == "0"
+      DetailPrint "Drivebay updated to ${VERSION}"
+    ${Else}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "Drivebay did not answer on port $Port. The program on that port is not this Drivebay server, so the update did not finish."
+    ${EndIf}
+  ${EndIf}
 SectionEnd
 
 Function un.DataPageCreate

@@ -40,16 +40,18 @@ The setup screens are:
 1. **Welcome.** The runtime is included.
 2. **Folder.** Where to put the program. This is a per-user install.
 3. **Mode.** **Tailscale** (over your tailnet, no router change) or **Regular** (this network, which needs a router port forward).
-4. **Port.** Required in both modes. A free port from 1024 to 65535. The suggested port is 42013.
-5. **Router** (Regular only). You have to open and forward **that port** on your router. The page shows the port you picked. You must check the box to continue. Tailscale skips this page. Allow the same port in Windows Firewall if Windows asks.
-6. **Tailscale** (only if you chose Tailscale). Other devices on your tailnet open `http://<this-pc-tailscale-name>:<port>/` after you sign in to Tailscale on both devices. You can download the official installer from `pkgs.tailscale.com` and launch Tailscale. You do not forward the port on your router.
-7. **Password.** The only username and password (at least 8 characters). The first launch asks you to sign in with that account. It does not ask you to create it again. If that account cannot be saved, setup shows the reason and writes the same text to the install log, and the login page then lets you set the lock. A reinstall does not replace an existing password.
+4. **Tailscale** (only if you chose Tailscale). The page asks **Do you already have Tailscale?** and selects Yes when Tailscale is already installed. Yes goes on to the port, username, and password. No offers two choices: download and install Tailscale for Windows from the official installer (quiet MSI from `pkgs.tailscale.com`), then sign in or create a free Tailscale account, or **Skip**. Skip says you can install Tailscale and set it up later, then continues.
+5. **Port.** Required in both modes. A free port from 1024 to 65535. The suggested port is 42013. This page runs on a first-time install.
+6. **Router** (Regular only). You have to open and forward **that port** on your router. The page shows the port you picked. You must check the box to continue. Tailscale skips this page. Allow the same port in Windows Firewall if Windows asks.
+7. **Password.** The only username and password (at least 8 characters). The first launch asks you to sign in with that account. It does not ask you to create it again. If that account cannot be saved, setup shows the reason and writes the same text to the install log, and the login page then lets you set the lock.
 8. **Shortcuts.** Start menu entries (Drivebay, Stop Drivebay, and Uninstall) are always created. They open a notification-area icon, not a console window. Optional desktop shortcut. Optional **Start Drivebay when I sign in to Windows**, which starts that same icon in the background.
 9. **Finish.** On this PC, opens the settings page. It does not open the file browser. The icon stays while the server is running. Double-click it, or choose **Open settings**, to open settings again. The right-click menu can also copy the Tailscale or LAN address, start, stop, or restart the server, open the logs folder, turn **Start with Windows** on or off, or quit. A short notice appears when the server comes up. If the server stops on its own, the icon changes so you can see it. Other devices still open the file browser at the Tailscale or LAN address.
 
 The password lock is unchanged: drives stay behind that login. Uninstall stops the tray icon and the server, removes the program, shortcuts, and the startup entry, and asks before deleting the saved password.
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
+
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.21`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -75,15 +77,17 @@ Until this is on `main`, use the branch script:
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/install.ps1 | iex
 ```
 
-Setup asks for the same choices as the .exe installer:
+A first-time install asks for the same choices as the .exe installer:
 
 1. **Mode.** Tailscale or Regular.
-2. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013.
-3. **Router** (Regular only). You have to open and forward that port on your router. Type YES to continue. Tailscale skips this and tells you not to forward the port.
-4. **Tailscale** (only if you chose Tailscale). You can download the official installer and launch Tailscale.
+2. **Tailscale** (only if you chose Tailscale). It asks **Do you already have Tailscale?** and preselects Yes when `Tailscale.exe` is already installed. Yes goes straight to the port, username, and password. No offers: download and install Tailscale (the official quiet installer), then sign in or create a free account, or Skip. Skip prints that you can install Tailscale and set it up later, then continues. For a script, set `DRIVEBAY_TAILSCALE` to `have`, `install`, or `skip`.
+3. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013. If that port is already in use, setup names the program and asks for another port.
+4. **Router** (Regular only). You have to open and forward that port on your router. Type YES to continue. Tailscale skips this and tells you not to forward the port.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-Running the install again stops the old server and tray and removes the old program files first, including a copy left by the Windows installer or an older script. The saved account and settings stay. To delete those as well, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.21`.
+
+To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
 A Start menu shortcut named **Drivebay** starts it. On this PC that opens the settings page, and the tray icon stays. The file browser is not opened on this PC.
 
@@ -134,6 +138,8 @@ Treat the password like a house key. Do not share the Pinokio link and the passw
 ## Changelog
 
 ### 3.21
+- Installing again, from `install.ps1` or the .exe, updates Drivebay. It keeps the account, password, port, mode, and settings, restarts, checks `/api/health`, and prints `Drivebay updated to 3.21`. A first-time install is the only path that asks for the port, username, password, and Tailscale.
+- A first-time Tailscale install asks whether Tailscale is already on this PC. Yes continues. No can download the official Tailscale installer, then walks through sign-in or a free account, or skip Tailscale for later. `DRIVEBAY_TAILSCALE` can be `have`, `install`, or `skip`.
 - Setup refuses a port that is already in use, including Pinokio's Caddy, and names the program that holds it. It prints the ready line only after this Drivebay server answers `/api/health`. Uninstall says when a Pinokio copy is still running.
 - Settings includes **Get the Android app**, with a link to the latest APK. The Google Play button stays hidden until `PLAY_STORE_URL` in `app/src/lib/version.ts` is set.
 - Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex`

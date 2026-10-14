@@ -340,7 +340,7 @@ test("Force deletes the saved account and settings", async () => {
   }
 });
 
-test("install.ps1 removes an old install and keeps the account files", async () => {
+test("install.ps1 updates an existing install and keeps the account", async () => {
   const ps = powershell();
   if (!ps) {
     if (process.platform === "win32") assert.fail("powershell is required on Windows");
@@ -359,6 +359,10 @@ test("install.ps1 removes an old install and keeps the account files", async () 
   fs.writeFileSync(path.join(home, "data", "server-lock.json"), '{"allowUpload":false}\n');
   fs.writeFileSync(path.join(home, "pending-account.json"), '{"username":"old","password":"old-password-1"}\n');
   fs.writeFileSync(path.join(home, "drivebay.port"), String(oldPort));
+  fs.writeFileSync(
+    path.join(home, "config.json"),
+    JSON.stringify({ port: oldPort, mode: "tailscale", version: "3.20", note: "keep-me" }),
+  );
   fs.writeFileSync(path.join(decoy, "marker.txt"), "exe-install");
   const pid = startListener(oldPort);
   fs.writeFileSync(path.join(home, "drivebay.pid"), String(pid));
@@ -379,6 +383,7 @@ test("install.ps1 removes an old install and keeps the account files", async () 
         DRIVEBAY_SETUP_MODE: "regular",
         DRIVEBAY_SETUP_PASSWORD: password,
         DRIVEBAY_SETUP_ACK: "YES",
+        DRIVEBAY_TAILSCALE: "install",
         DRIVEBAY_SKIP_START: "1",
       },
     });
@@ -386,16 +391,27 @@ test("install.ps1 removes an old install and keeps the account files", async () 
     assert.equal(result.status, 0, out);
     assert.match(result.stdout || "", /saved account and settings stay/);
     assert.match(result.stdout || "", /Drivebay is uninstalled\./);
-    assert.match(result.stdout || "", /http:\/\/127\.0\.0\.1:\d+\/settings/);
+    assert.match(result.stdout || "", /Drivebay updated to 3\.21/);
+    assert.equal((result.stdout || "").includes("Drivebay is ready"), false);
+    assert.equal(out.includes("Enter a different port"), false);
+    assert.equal(out.includes("Saving the Drivebay account"), false);
+    assert.equal(out.includes("Downloading the official Tailscale installer"), false);
     assert.equal(fs.existsSync(path.join(home, "app", "old.txt")), false);
     assert.equal(fs.existsSync(path.join(home, "DrivebayTray.exe")), false);
     assert.equal(fs.readFileSync(path.join(home, "data", "server-lock.json"), "utf8").includes("allowUpload"), true);
     assert.equal(fs.existsSync(path.join(decoy, "marker.txt")), true);
     const pending = JSON.parse(fs.readFileSync(path.join(home, "pending-account.json"), "utf8"));
-    assert.equal(pending.username, "alice");
-    assert.equal(pending.password, password);
+    assert.equal(pending.username, "old");
+    assert.equal(pending.password, "old-password-1");
+    const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
+    assert.equal(config.port, oldPort);
+    assert.equal(config.mode, "tailscale");
+    assert.equal(config.version, "3.21");
+    assert.equal(config.note, "keep-me");
+    assert.equal(fs.readFileSync(path.join(home, "drivebay.port"), "utf8").trim(), String(oldPort));
     const installed = fs.readFileSync(path.join(home, "uninstall.ps1"), "utf8");
     assert.equal(installed.includes(password), false);
+    assert.equal(installed.includes("old-password-1"), false);
     assert.match(installed, /Type YES to also delete the saved password and settings/);
     assert.match(installed, /-KeepData/);
     assert.equal(alive(pid), false);

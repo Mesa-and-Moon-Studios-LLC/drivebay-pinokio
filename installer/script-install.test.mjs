@@ -144,6 +144,23 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   assert.match(script, /Get-PortConflict/);
   assert.match(script, /That is a Pinokio copy of Drivebay/);
   assert.match(script, /\/api\/health/);
+  assert.match(script, /Do you already have Tailscale\?/);
+  assert.match(script, /DRIVEBAY_TAILSCALE/);
+  assert.match(script, /You can install Tailscale and set it up later/);
+  assert.match(script, /The update keeps the saved port/);
+  assert.match(script, /Sign in to Tailscale, or create a free Tailscale account/);
+  const startBody = script.slice(script.indexOf("function Start-DrivebayInstall"));
+  const updatedAt = startBody.indexOf('Write-Host "Drivebay updated to $version"');
+  const modeAt = startBody.indexOf("$mode = Read-Mode");
+  assert.ok(updatedAt !== -1 && modeAt !== -1 && updatedAt < modeAt);
+  const tailscaleInstaller = fs.readFileSync(path.join(root, "installer/windows/install-tailscale.ps1"), "utf8");
+  assert.match(tailscaleInstaller, /\/quiet/);
+  assert.match(tailscaleInstaller, /TS_NOLAUNCH=1/);
+  assert.match(tailscaleInstaller, /pkgs\.tailscale\.com/);
+  assert.match(nsi, /Do you already have Tailscale\?/);
+  assert.match(nsi, /Drivebay updated to \$\{VERSION\}/);
+  assert.match(nsi, /install-tailscale\.ps1" -Quiet/);
+  assert.match(nsi, /Keeping the existing account, password, port, and settings/);
   const healthRoute = fs.readFileSync(path.join(root, "app/src/routes/api/health.ts"), "utf8");
   assert.match(healthRoute, /"name":"Drivebay"|name: "Drivebay"/);
   const routeTree = fs.readFileSync(path.join(root, "app/src/routeTree.gen.ts"), "utf8");
@@ -246,6 +263,7 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
   const tailscale = run({
     DRIVEBAY_SETUP_MODE: "tailscale",
     DRIVEBAY_SETUP_PASSWORD: password,
+    DRIVEBAY_TAILSCALE: "skip",
   });
   try {
     assert.equal(tailscale.result.status, 0, tailscale.result.stderr || tailscale.result.stdout);
@@ -253,7 +271,9 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.equal(config.mode, "tailscale");
     const out = String(tailscale.result.stdout);
     assert.match(out, /You do not open that port on your router/);
+    assert.match(out, /You can install Tailscale and set it up later/);
     assert.equal(out.includes("Type YES to confirm"), false);
+    assert.equal(out.includes("Downloading the official Tailscale installer"), false);
   } finally {
     fs.rmSync(tailscale.home, { recursive: true, force: true });
   }
@@ -280,6 +300,81 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.equal(fs.existsSync(path.join(short.home, "pending-account.json")), false);
   } finally {
     fs.rmSync(short.home, { recursive: true, force: true });
+  }
+});
+
+test("first-time Tailscale choice is have, install, or skip", async () => {
+  const ps = powershell();
+  if (!ps) {
+    if (process.platform === "win32") assert.fail("powershell is required on Windows");
+    return;
+  }
+  const port = await freePort();
+  const script = path.join(root, "install.ps1");
+  const password = "tailscale-pass-1";
+
+  function run(extra) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-ts-"));
+    const result = spawnSync(ps, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script], {
+      encoding: "utf8",
+      timeout: 30000,
+      env: {
+        ...process.env,
+        DRIVEBAY_SETUP_ONLY: "1",
+        DRIVEBAY_SETUP_SOURCE: root,
+        DRIVEBAY_SETUP_HOME: home,
+        DRIVEBAY_SETUP_PORT: String(port),
+        DRIVEBAY_SETUP_USER: "alice",
+        DRIVEBAY_SETUP_MODE: "tailscale",
+        DRIVEBAY_SETUP_PASSWORD: password,
+        DRIVEBAY_SKIP_START: "1",
+        ...extra,
+      },
+    });
+    return { home, result };
+  }
+
+  const marker = path.join(os.tmpdir(), `drivebay-tailscale-marker-${process.pid}.txt`);
+  fs.writeFileSync(marker, "");
+  const have = run({ DRIVEBAY_TAILSCALE_EXE: marker });
+  try {
+    const out = `${have.result.stdout || ""}\n${have.result.stderr || ""}`;
+    assert.equal(have.result.status, 0, out);
+    assert.match(have.result.stdout || "", /Tailscale is already on this PC/);
+    assert.equal(out.includes("You can install Tailscale and set it up later"), false);
+    assert.equal(out.includes("Downloading the official Tailscale installer"), false);
+    assert.match(have.result.stdout || "", /Drivebay is ready at http:\/\/127\.0\.0\.1:\d+\/settings/);
+    const pending = JSON.parse(fs.readFileSync(path.join(have.home, "pending-account.json"), "utf8"));
+    assert.equal(pending.username, "alice");
+  } finally {
+    fs.rmSync(have.home, { recursive: true, force: true });
+    fs.rmSync(marker, { force: true });
+  }
+
+  const installed = run({
+    DRIVEBAY_TAILSCALE: "install",
+    DRIVEBAY_TAILSCALE_INSTALL_STUB: "1",
+  });
+  try {
+    const out = `${installed.result.stdout || ""}\n${installed.result.stderr || ""}`;
+    assert.equal(installed.result.status, 0, out);
+    assert.match(installed.result.stdout || "", /Downloading the official Tailscale installer/);
+    assert.match(installed.result.stdout || "", /Sign in to Tailscale, or create a free Tailscale account/);
+    assert.match(installed.result.stdout || "", /create a free account if you do not have one/);
+    assert.match(installed.result.stdout || "", /Drivebay is ready at http:\/\/127\.0\.0\.1:\d+\/settings/);
+    assert.equal(fs.existsSync(path.join(installed.home, "pending-account.json")), true);
+  } finally {
+    fs.rmSync(installed.home, { recursive: true, force: true });
+  }
+
+  const bad = run({ DRIVEBAY_TAILSCALE: "maybe" });
+  try {
+    const out = `${bad.result.stdout || ""}\n${bad.result.stderr || ""}`;
+    assert.equal(bad.result.status, 1, out);
+    assert.match(bad.result.stderr || "", /DRIVEBAY_TAILSCALE must be have, install, or skip/);
+    assert.equal(fs.existsSync(path.join(bad.home, "pending-account.json")), false);
+  } finally {
+    fs.rmSync(bad.home, { recursive: true, force: true });
   }
 });
 

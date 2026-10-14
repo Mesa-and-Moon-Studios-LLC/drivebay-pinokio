@@ -112,12 +112,16 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
   assert.ok(abortAt !== -1 && abortAt < dialogAt);
 
   const port = functionBody(src, "PortPageCreate");
-  assert.equal(port.includes("Abort"), false);
+  const portDialog = port.indexOf("nsDialogs::Create");
+  assert.ok(portDialog !== -1);
+  assert.match(port, /\$Update == "1"/);
+  assert.equal(port.slice(portDialog).includes("Abort"), false);
   assert.match(port, /1024-65535/);
   assert.match(port, /You do not open it on your router/);
 
   const tailscale = functionBody(src, "TailscalePageCreate");
   assert.equal(tailscale.includes("forward TCP port"), false);
+  assert.match(tailscale, /Do you already have Tailscale\?/);
 
   for (const file of ["write-setup.ps1", "launch-tailscale.ps1", "install-tailscale.ps1", "firewall.ps1"]) {
     const text = fs.readFileSync(path.join(installerDir, "windows", file), "utf8");

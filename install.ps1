@@ -168,20 +168,35 @@ function Read-ProcessBlob([int]$ProcId) {
   return @{ Label = $label; Blob = ($name + " " + $exe + " " + $cmd) }
 }
 
-function Get-PortConflict([int]$Port) {
+function Test-OwnDrivebay([string]$Blob, [string]$Root) {
+  if ([string]::IsNullOrWhiteSpace($Blob) -or [string]::IsNullOrWhiteSpace($Root)) { return $false }
+  $full = $Root
+  try { $full = [System.IO.Path]::GetFullPath($Root) } catch {}
+  if ([string]::IsNullOrWhiteSpace($full)) { return $false }
+  return ($Blob.IndexOf($full, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
+function Get-PortConflict([int]$Port, [string]$IgnoreRoot) {
   $labels = New-Object System.Collections.Generic.List[string]
   $pinokio = $false
+  $ignoredOwn = $false
   foreach ($procId in @(Get-ListenerProcessIds $Port)) {
     if ($null -eq $procId) { continue }
     $parsedId = 0
     if (-not [int]::TryParse([string]$procId, [ref]$parsedId)) { continue }
     if ($parsedId -le 0) { continue }
     $info = Read-ProcessBlob $parsedId
+    if (-not [string]::IsNullOrWhiteSpace($IgnoreRoot) -and (Test-OwnDrivebay ([string]$info.Blob) $IgnoreRoot)) {
+      $ignoredOwn = $true
+      continue
+    }
     if (-not [string]::IsNullOrWhiteSpace($info.Label) -and -not $labels.Contains($info.Label)) {
       [void]$labels.Add($info.Label)
     }
     if ($info.Blob -match '(?i)pinokio' -or $info.Blob -match '(?i)\bcaddy(\.exe)?\b') { $pinokio = $true }
   }
+  # An update keeps its port. Our own Drivebay still holding that port is not a conflict.
+  if ($ignoredOwn -and $labels.Count -eq 0) { return "" }
   $busy = ($labels.Count -gt 0) -or (Test-TcpOpen $Port)
   if (-not $busy -and (Test-BindFree $Port)) { return "" }
   $text = "Port $Port is already in use"
@@ -307,6 +322,252 @@ function Read-YesNo([string]$EnvName, [string]$Prompt) {
   if ($null -eq $answer) { return $false }
   $answer = $answer.Trim().ToLower()
   return ($answer -eq "y" -or $answer -eq "yes")
+}
+
+function Test-EnvYes([string]$EnvName) {
+  $picked = [Environment]::GetEnvironmentVariable($EnvName)
+  if ([string]::IsNullOrWhiteSpace($picked)) { return $false }
+  $picked = $picked.Trim().ToLower()
+  return ($picked -eq "y" -or $picked -eq "yes" -or $picked -eq "1")
+}
+
+function Find-TailscaleExe {
+  $candidates = New-Object System.Collections.Generic.List[string]
+  if (-not [string]::IsNullOrWhiteSpace($env:DRIVEBAY_TAILSCALE_EXE)) {
+    [void]$candidates.Add($env:DRIVEBAY_TAILSCALE_EXE.Trim())
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+    [void]$candidates.Add((Join-Path $env:ProgramFiles "Tailscale\Tailscale.exe"))
+  }
+  $pf86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
+  if (-not [string]::IsNullOrWhiteSpace($pf86)) {
+    [void]$candidates.Add((Join-Path $pf86 "Tailscale\Tailscale.exe"))
+  }
+  foreach ($path in $candidates) {
+    if ($path -and (Test-Path -LiteralPath $path)) { return $path }
+  }
+  return $null
+}
+
+function Test-TailscaleLoggedIn {
+  $gui = Find-TailscaleExe
+  if (-not $gui) { return $false }
+  $cli = Join-Path (Split-Path -Parent $gui) "tailscale.exe"
+  if (-not (Test-Path -LiteralPath $cli)) { return $false }
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $hasNative = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+  $oldNative = $null
+  if ($hasNative) {
+    $oldNative = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  $text = ""
+  $code = 1
+  try {
+    $text = [string](& $cli status 2>&1 | Out-String)
+    $code = $LASTEXITCODE
+  } catch {
+    $text = ""
+    $code = 1
+  } finally {
+    $ErrorActionPreference = $old
+    if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
+  }
+  if ($code -ne 0) { return $false }
+  if ($text -match '(?i)logged out') { return $false }
+  if ($text -match '(?i)needs login') { return $false }
+  if ($text -match '(?i)log in') { return $false }
+  return ($text -match '\d+\.\d+\.\d+\.\d+')
+}
+
+function Read-TailscaleChoice {
+  $picked = $env:DRIVEBAY_TAILSCALE
+  if (-not [string]::IsNullOrWhiteSpace($picked)) {
+    $picked = $picked.Trim().ToLower()
+    if ($picked -eq "have" -or $picked -eq "yes" -or $picked -eq "y") { return "have" }
+    if ($picked -eq "install") { return "install" }
+    if ($picked -eq "skip" -or $picked -eq "no" -or $picked -eq "n") { return "skip" }
+    throw "DRIVEBAY_TAILSCALE must be have, install, or skip."
+  }
+  if (Test-EnvYes "DRIVEBAY_INSTALL_TAILSCALE") { return "install" }
+  $installed = Find-TailscaleExe
+  if (Test-NonInteractive) {
+    if ($installed) { return "have" }
+    return "skip"
+  }
+  if ($installed) {
+    Write-Host "Tailscale is already installed on this PC."
+  } else {
+    Write-Host "Tailscale was not found on this PC."
+  }
+  $default = "N"
+  if ($installed) { $default = "Y" }
+  $answer = Read-Host "Do you already have Tailscale? [$default]"
+  $yes = $false
+  if ([string]::IsNullOrWhiteSpace($answer)) {
+    $yes = ($default -eq "Y")
+  } else {
+    $value = $answer.Trim().ToLower()
+    $yes = ($value -eq "y" -or $value -eq "yes" -or $value -eq "1")
+  }
+  if ($yes) { return "have" }
+  Write-Host "Drivebay can download and install Tailscale for Windows."
+  Write-Host "The installer comes from the official Tailscale download."
+  Write-Host "  1) Download and install Tailscale, then sign in"
+  Write-Host "  2) Skip. You can install Tailscale and set it up later."
+  while ($true) {
+    $choice = Read-Host "Choice [1]"
+    if ([string]::IsNullOrWhiteSpace($choice) -or $choice.Trim() -eq "1" -or $choice.Trim().ToLower() -eq "install") { return "install" }
+    if ($choice.Trim() -eq "2" -or $choice.Trim().ToLower() -eq "skip") { return "skip" }
+    Write-Host "Enter 1 or 2."
+  }
+}
+
+function Resolve-WindowsScript([string]$Root, [string]$Source, [string]$Name) {
+  $beside = Join-Path $Root (Join-Path "windows" $Name)
+  if (Test-Path -LiteralPath $beside) { return $beside }
+  if (-not [string]::IsNullOrWhiteSpace($Source)) {
+    $fromSource = Join-Path $Source (Join-Path "installer" (Join-Path "windows" $Name))
+    if (Test-Path -LiteralPath $fromSource) { return $fromSource }
+  }
+  return $null
+}
+
+function Install-OfficialTailscale([string]$Root, [string]$Source) {
+  Write-Host "Downloading the official Tailscale installer."
+  if ($env:DRIVEBAY_TAILSCALE_INSTALL_STUB -eq "1") {
+    Write-Host "Tailscale installer finished."
+    return $true
+  }
+  $script = Resolve-WindowsScript $Root $Source "install-tailscale.ps1"
+  if (-not $script) {
+    Write-Host "Tailscale was not installed. Download it from https://tailscale.com/download/windows and sign in later."
+    return $false
+  }
+  $ps = Get-PowerShellExe
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $hasNative = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+  $oldNative = $null
+  if ($hasNative) {
+    $oldNative = $PSNativeCommandUseErrorActionPreference
+    $PSNativeCommandUseErrorActionPreference = $false
+  }
+  $code = 1
+  try {
+    & $ps -NoProfile -ExecutionPolicy Bypass -File $script -Quiet
+    $code = $LASTEXITCODE
+  } catch {
+    $code = 1
+  } finally {
+    $ErrorActionPreference = $old
+    if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
+  }
+  if ($code -ne 0) {
+    Write-Host "Tailscale was not installed. Download it from https://tailscale.com/download/windows and sign in later."
+    return $false
+  }
+  Write-Host "Tailscale installer finished."
+  return $true
+}
+
+function Confirm-TailscaleSignIn {
+  Write-Host "Sign in to Tailscale, or create a free Tailscale account."
+  Write-Host "1. The Tailscale window is open."
+  Write-Host "2. Click Sign in, or create a free account if you do not have one."
+  Write-Host "3. Finish the sign-in in the browser."
+  Write-Host "4. Come back here when this PC shows as connected."
+  $gui = Find-TailscaleExe
+  if ($gui -and $env:OS -eq "Windows_NT") {
+    Invoke-Quiet { Start-Process -FilePath $gui | Out-Null }
+  }
+  if ($env:DRIVEBAY_TAILSCALE_SIGNED_IN -eq "1" -or (Test-TailscaleLoggedIn)) {
+    Write-Host "Tailscale is signed in."
+    return
+  }
+  if (Test-NonInteractive) {
+    Write-Host "When Tailscale shows this PC as connected, other devices on your tailnet can reach Drivebay."
+    return
+  }
+  while ($true) {
+    if (Test-TailscaleLoggedIn) {
+      Write-Host "Tailscale is signed in."
+      return
+    }
+    $answer = Read-Host "Press Enter when Tailscale is signed in"
+    if (Test-TailscaleLoggedIn) {
+      Write-Host "Tailscale is signed in."
+      return
+    }
+    if ($null -eq $answer -or $answer.Trim().ToLower() -ne "wait") {
+      Write-Host "Continuing. Other devices can connect after this PC is signed in to Tailscale."
+      return
+    }
+  }
+}
+
+function Read-ExistingInstall([string]$Root) {
+  if ([string]::IsNullOrWhiteSpace($Root)) { return }
+  if (-not (Test-Path -LiteralPath $Root)) { return }
+  $port = 0
+  $mode = ""
+  $configPath = Join-Path $Root "config.json"
+  if (Test-Path -LiteralPath $configPath) {
+    $raw = ""
+    try { $raw = [System.IO.File]::ReadAllText($configPath) } catch { $raw = "" }
+    $portMatch = [regex]::Match($raw, '"port"\s*:\s*"?(\d+)"?')
+    $modeMatch = [regex]::Match($raw, '"mode"\s*:\s*"(tailscale|regular)"')
+    $parsed = 0
+    if ($portMatch.Success -and $modeMatch.Success -and [int]::TryParse($portMatch.Groups[1].Value, [ref]$parsed)) {
+      if ($parsed -ge 1024 -and $parsed -le 65535) {
+        $port = $parsed
+        $mode = $modeMatch.Groups[1].Value
+      }
+    }
+  }
+  if ($port -lt 1024) {
+    $portFile = Join-Path $Root "drivebay.port"
+    $pending = Join-Path $Root "pending-account.json"
+    $data = Join-Path $Root "data"
+    $secret = Join-Path $Root "auth.secret"
+    $hasAccount = (Test-Path -LiteralPath $pending) -or (Test-Path -LiteralPath $data) -or (Test-Path -LiteralPath $secret)
+    if ($hasAccount -and (Test-Path -LiteralPath $portFile)) {
+      $text = ""
+      try { $text = [System.IO.File]::ReadAllText($portFile).Trim() } catch { $text = "" }
+      $parsed = 0
+      if ([int]::TryParse($text, [ref]$parsed) -and $parsed -ge 1024 -and $parsed -le 65535) {
+        $port = $parsed
+        $mode = "regular"
+      }
+    }
+  }
+  if ($port -lt 1024 -or ($mode -ne "tailscale" -and $mode -ne "regular")) { return }
+  return ,@{ Port = $port; Mode = $mode }
+}
+
+function Update-DrivebayConfigVersion([string]$Root, [string]$Version) {
+  $configPath = Join-Path $Root "config.json"
+  if (-not (Test-Path -LiteralPath $configPath)) { return }
+  $raw = ""
+  try { $raw = [System.IO.File]::ReadAllText($configPath) } catch { return }
+  $updated = $raw
+  if ($raw -match '"version"\s*:\s*"') {
+    $updated = [regex]::Replace($raw, '"version"\s*:\s*"[^"]*"', ('"version":"' + $Version + '"'), 1)
+  } elseif ($raw -match '"version"\s*:') {
+    $updated = [regex]::Replace($raw, '"version"\s*:\s*[^,}\r\n]+', ('"version":"' + $Version + '"'), 1)
+  } else {
+    $trimmed = $raw.TrimEnd()
+    if (-not $trimmed.EndsWith("}")) { return }
+    $body = $trimmed.Substring(0, $trimmed.Length - 1).TrimEnd()
+    if ($body.EndsWith("{")) {
+      $updated = $body + '"version":"' + $Version + '"}'
+    } else {
+      $updated = $body + ',"version":"' + $Version + '"}'
+    }
+  }
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($configPath, $updated, $utf8)
 }
 
 function Read-Account {
@@ -888,6 +1149,10 @@ function Start-DrivebayInstall {
     if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw "LOCALAPPDATA is not set." }
     $root = Join-Path $env:LOCALAPPDATA "Drivebay"
   }
+  $existing = $null
+  if ($env:DRIVEBAY_UNINSTALL_FORCE -ne "1") {
+    $existing = Read-ExistingInstall $root
+  }
   Invoke-ExistingUninstall $root
   New-Item -ItemType Directory -Force -Path $root | Out-Null
 
@@ -917,29 +1182,67 @@ function Start-DrivebayInstall {
     if (-not (Test-Path -LiteralPath $trayOut)) { Compile-Tray $source $root }
   }
 
+  $version = Read-DrivebayVersion $source
+  if ($null -ne $existing -and $existing.Port -ge 1024) {
+    Update-DrivebayConfigVersion $root $version
+    # First-time setup is the only path that asks for a port. An update ignores
+    # our own Drivebay if it still holds the saved port, and does not ask.
+    $conflict = Get-PortConflict $existing.Port $root
+    if (-not [string]::IsNullOrWhiteSpace($conflict)) {
+      throw ($conflict + " The update keeps the saved port.")
+    }
+    Copy-UninstallScript $root
+    $startedServer = $false
+    if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
+      Invoke-Firewall $root
+      New-StartShortcuts $root
+      if ($env:DRIVEBAY_SKIP_START -ne "1") {
+        Start-InstalledDrivebay $root
+        $startedServer = $true
+      }
+    }
+    if ($startedServer) {
+      Write-Host "Checking that this Drivebay server is answering on port $($existing.Port)."
+      if (-not (Wait-DrivebayHealth $existing.Port 30)) {
+        throw "Drivebay did not answer on port $($existing.Port). The program on that port is not this Drivebay server, so the update did not finish."
+      }
+    }
+    Write-Host "Drivebay updated to $version"
+    return
+  }
+
   $mode = Read-Mode
+  $tailscaleChoice = "skip"
+  if ($mode -eq "tailscale") {
+    $tailscaleChoice = Read-TailscaleChoice
+    if ($tailscaleChoice -eq "have") {
+      Write-Host "Tailscale is already on this PC."
+    } elseif ($tailscaleChoice -eq "install") {
+      Install-OfficialTailscale $root $source | Out-Null
+      Confirm-TailscaleSignIn
+    } else {
+      Write-Host "You can install Tailscale and set it up later."
+      Write-Host "Setup will continue with the port, username, and password."
+    }
+  }
   $port = Read-ListenPort $mode
   Confirm-RouterForward $mode $port
-  $installTailscale = $false
-  $launchTailscale = $false
-  if ($mode -eq "tailscale") {
-    $installTailscale = Read-YesNo "DRIVEBAY_INSTALL_TAILSCALE" "Download and install Tailscale (official installer)?"
-    $launchTailscale = Read-YesNo "DRIVEBAY_LAUNCH_TAILSCALE" "Launch Tailscale when setup finishes?"
-  }
   $account = Read-Account
   $setupScript = Join-Path $root "windows\write-setup.ps1"
   if (-not (Test-Path -LiteralPath $setupScript)) {
     $setupScript = Join-Path $source "installer\windows\write-setup.ps1"
   }
   Write-Host "Saving the Drivebay account."
-  Save-DrivebayAccount $root $setupScript $port $mode (Read-DrivebayVersion $source) $account.User $account.Password
+  Save-DrivebayAccount $root $setupScript $port $mode $version $account.User $account.Password
   $account.Password = $null
 
   Copy-UninstallScript $root
   $startedServer = $false
   if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
     Invoke-Firewall $root
-    if ($mode -eq "tailscale") { Invoke-Tailscale $root $installTailscale $launchTailscale }
+    if ($mode -eq "tailscale" -and $tailscaleChoice -eq "have" -and (Test-EnvYes "DRIVEBAY_LAUNCH_TAILSCALE")) {
+      Invoke-Tailscale $root $false $true
+    }
     New-StartShortcuts $root
     if ($env:DRIVEBAY_SKIP_START -ne "1") {
       Start-InstalledDrivebay $root
