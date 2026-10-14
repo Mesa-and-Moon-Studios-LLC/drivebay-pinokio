@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { howToSyncLines } from "../app/src/lib/files/howto.mjs";
 import { isIpv4, localLanIpv4 } from "../app/src/lib/files/router-steps.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +32,20 @@ test("settings offers the Android APK and hides Google Play until a URL is set",
   assert.equal(browser.includes("getRouterHelp"), false);
   const launcher = fs.readFileSync(path.join(root, "installer/launcher.mjs"), "utf8");
   assert.match(launcher, /DRIVEBAY_MODE:/);
+
+  const guide = fs.readFileSync(path.join(root, "app/src/components/settings/how-to.tsx"), "utf8");
+  assert.match(guide, /<details/);
+  assert.match(guide, /How-to guide/);
+  assert.match(settings, /<HowToGuide \/>/);
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
+  const howTo = readme.slice(readme.indexOf("## How-to guide"), readme.indexOf("## Changelog"));
+  assert.ok(howTo.length > 0);
+  let cursor = 0;
+  for (const line of howToSyncLines()) {
+    const at = howTo.indexOf(line, cursor);
+    assert.ok(at !== -1, `README How-to guide is missing: ${line}`);
+    cursor = at + line.length;
+  }
 });
 
 test("LAN address helper returns a dotted IPv4 or nothing", () => {
