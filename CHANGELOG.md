@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.24
+- If a token writes while its window is closed, Drivebay does not perform the write. It returns 403 with `approval_request_id` and keeps a pending request with the token name, action, path, and size. This PC's settings page shows a yes or no card and a live count of waiting requests.
+- Yes grants that one action. The card can also open a write window of 15 minutes, 1 hour, or 4 hours. The client polls `GET /api/v1/approvals/<id>` or sends the id in `X-Drivebay-Approval` or the `approval` query. Pending requests expire after about 10 minutes. A server-lock refusal stays 403 with no approval id. A later Android build can show the same card.
+
 ## 3.23
 - This PC, or a signed-in Tailscale device, can open a write window on a token for 15 minutes, 1 hour, or 4 hours. During the window, `PUT /api/v1/upload`, `POST /api/v1/mkdir`, `POST /api/v1/rename`, and `POST /api/v1/delete` accept the bearer token. When the window ends, the token is read-only again and a write is not performed.
 - Those writes still obey the server lock toggles on this PC. A locked action is refused. Upload will not follow a symlink, and deleting a symlink removes the link rather than the target. A new folder is one level, and the parent has to exist.

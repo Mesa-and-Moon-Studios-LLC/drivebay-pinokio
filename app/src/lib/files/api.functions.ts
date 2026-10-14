@@ -353,3 +353,26 @@ export const allowApiWrite = createServerFn({ method: "POST" })
     const access = await import("./api-v1.server");
     return store.allowWrite(access.resolveApiAccessFile(), data.id, data.minutes, Date.now());
   });
+
+export const decideApiApproval = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      id: z.string().trim().min(8).max(64),
+      allow: z.boolean(),
+      minutes: z.union([z.literal(0), z.literal(15), z.literal(60), z.literal(240)]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const store = await import("./token-store.mjs");
+    const access = await import("./api-v1.server");
+    return store.decideApproval(
+      access.resolveApiAccessFile(),
+      data.id,
+      data.allow,
+      data.allow ? data.minutes : 0,
+      Date.now(),
+    );
+  });

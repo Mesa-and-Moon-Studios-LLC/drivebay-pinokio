@@ -1,11 +1,11 @@
-Drivebay 3.23 adds a timed write window for API tokens.
+Drivebay 3.24 adds approval cards for API token writes.
 
-This release includes Drivebay-Setup-3.23.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.24.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-On this PC, or from a signed-in Tailscale device, choose Allow write for 15 minutes, 1 hour, or 4 hours. During that window a token can upload, create a folder, rename, and delete. When the window ends, the token is read-only again and a write is not performed.
+If a token tries to write while its window is closed, Drivebay does not perform the write. It returns 403 with an approval_request_id. This PC shows a yes or no card and a live badge.
 
-Writes still follow the server lock on this PC. A symlink is not followed into a write, and deleting a symlink removes the link.
+Yes allows that one action. The card can also open a write window of 15 minutes, 1 hour, or 4 hours. The client polls GET /api/v1/approvals/<id> or retries with the header X-Drivebay-Approval. Pending requests expire after about 10 minutes.
 
-Read-only tokens from 3.22 stay the same: the secret is shown once, only a hash is stored, and reads use Authorization: Bearer.
+The server lock still applies. A locked action is refused and does not create an approval. A later Android build can show the same card.
