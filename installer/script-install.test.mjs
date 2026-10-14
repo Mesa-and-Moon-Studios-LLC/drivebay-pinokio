@@ -86,8 +86,12 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   const modeFn = script.slice(script.indexOf("function Read-Mode"), script.indexOf("function Read-ListenPort"));
   const blank = modeFn.indexOf("IsNullOrWhiteSpace($answer)");
   const tailReturn = modeFn.indexOf('return "tailscale"', blank);
+  const bothReturn = modeFn.indexOf('return "both"', blank);
   const regularReturn = modeFn.indexOf('return "regular"', blank);
-  assert.ok(blank !== -1 && tailReturn !== -1 && regularReturn !== -1 && tailReturn < regularReturn);
+  assert.ok(blank !== -1 && tailReturn !== -1 && bothReturn !== -1 && regularReturn !== -1);
+  assert.ok(tailReturn < bothReturn && bothReturn < regularReturn);
+  assert.match(script, /Tailscale \+ Local \(Both\)/);
+  assert.match(script, /Public access starts off/);
   assert.match(script, /192\.168\.0\.1/);
   assert.match(script, /192\.168\.1\.1/);
   assert.match(script, /Some ISPs use CGNAT and block this/);
@@ -98,8 +102,9 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
     script.indexOf("function Read-YesNo"),
   );
   const tail = routerFn.indexOf('if ($Mode -eq "tailscale")');
+  const bothMode = routerFn.indexOf('if ($Mode -eq "both")');
   const yes = routerFn.indexOf("Type YES");
-  assert.ok(tail !== -1 && yes !== -1 && tail < yes);
+  assert.ok(tail !== -1 && bothMode !== -1 && yes !== -1 && tail < bothMode && bothMode < yes);
   assert.match(script, /WScript\.Shell/);
   assert.match(script, /Drivebay\.lnk/);
   assert.match(script, /uninstall\.ps1/);
@@ -221,7 +226,7 @@ test("a missing tray does not print ERROR and setup still continues", () => {
   }
 });
 
-test("setup-only writes a UTF-8 password and requires the router YES only for Regular", async () => {
+test("setup-only writes a UTF-8 password and requires the router YES for Regular and Both", async () => {
   const ps = powershell();
   if (!ps) {
     if (process.platform === "win32") assert.fail("powershell is required on Windows");
@@ -267,6 +272,7 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     const config = JSON.parse(fs.readFileSync(path.join(regular.home, "config.json"), "utf8"));
     assert.equal(config.mode, "regular");
     assert.equal(config.port, port);
+    assert.equal(fs.existsSync(path.join(regular.home, "public-access.json")), false);
     const uninstall = fs.readFileSync(path.join(regular.home, "uninstall.ps1"), "utf8");
     assert.equal(uninstall.includes(password), false);
     assert.match(uninstall, /Type YES to also delete the saved password and settings/);
@@ -292,6 +298,7 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.equal(tailscale.result.status, 0, tailscale.result.stderr || tailscale.result.stdout);
     const config = JSON.parse(fs.readFileSync(path.join(tailscale.home, "config.json"), "utf8"));
     assert.equal(config.mode, "tailscale");
+    assert.equal(fs.existsSync(path.join(tailscale.home, "public-access.json")), false);
     const out = String(tailscale.result.stdout);
     assert.match(out, /You do not open that port on your router/);
     assert.match(out, /You can install Tailscale and set it up later/);
@@ -300,6 +307,29 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.equal(out.includes("Downloading the official Tailscale installer"), false);
   } finally {
     fs.rmSync(tailscale.home, { recursive: true, force: true });
+  }
+
+  const both = run({
+    DRIVEBAY_SETUP_MODE: "both",
+    DRIVEBAY_SETUP_PASSWORD: password,
+    DRIVEBAY_SETUP_ACK: "YES",
+    DRIVEBAY_TAILSCALE: "skip",
+  });
+  try {
+    assert.equal(both.result.status, 0, both.result.stderr || both.result.stdout);
+    const config = JSON.parse(fs.readFileSync(path.join(both.home, "config.json"), "utf8"));
+    assert.equal(config.mode, "both");
+    const access = JSON.parse(fs.readFileSync(path.join(both.home, "public-access.json"), "utf8"));
+    assert.equal(access.enabled, false);
+    assert.equal(access.offAt, null);
+    const out = String(both.result.stdout);
+    assert.match(out, /Tailscale \+ Local \(Both\)/);
+    assert.match(out, /Public access starts off/);
+    assert.match(out, /open and forward TCP port/);
+    assert.match(out, /Some ISPs use CGNAT and block this/);
+    assert.match(out, /You can install Tailscale and set it up later/);
+  } finally {
+    fs.rmSync(both.home, { recursive: true, force: true });
   }
 
   const denied = run({

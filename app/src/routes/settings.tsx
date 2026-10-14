@@ -6,7 +6,7 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, saveServerLock } from "@/lib/files/api.functions";
+import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveServerLock } from "@/lib/files/api.functions";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { Button } from "@/components/ui/button";
@@ -57,9 +57,16 @@ function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [savingPass, setSavingPass] = useState(false);
-  const [reachMode, setReachMode] = useState<"regular" | "tailscale" | "unknown">("unknown");
+  const [reachMode, setReachMode] = useState<"regular" | "tailscale" | "both" | "unknown">("unknown");
   const [localIp, setLocalIp] = useState("");
   const [publicIp, setPublicIp] = useState("");
+  const [publicAccess, setPublicAccess] = useState<{
+    enabled: boolean;
+    offAt: number | null;
+    canEdit: boolean;
+  } | null>(null);
+  const [publicHours, setPublicHours] = useState<0 | 1 | 4 | 24>(1);
+  const [savingPublic, setSavingPublic] = useState(false);
 
   useEffect(() => {
     clearStoredNext();
@@ -101,6 +108,7 @@ function SettingsPage() {
         setReachMode(help.mode);
         setLocalIp(help.localIp || "");
         setPublicIp(help.publicIp || "");
+        setPublicAccess(help.publicAccess ?? null);
       })
       .catch(() => {
         /* Settings still load when the router note cannot. */
@@ -186,6 +194,21 @@ function SettingsPage() {
       toast.error(err instanceof Error ? err.message : "Could not save server lock");
     } finally {
       setSavingLock(false);
+    }
+  }
+
+  async function onSavePublic(enabled: boolean) {
+    setSavingPublic(true);
+    try {
+      const saved = await savePublicAccess({
+        data: { enabled, hours: enabled ? publicHours : 0 },
+      });
+      setPublicAccess(saved);
+      toast.success(saved.enabled ? "Public access: On" : "Public access: Off");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change public access");
+    } finally {
+      setSavingPublic(false);
     }
   }
 
@@ -617,13 +640,63 @@ function SettingsPage() {
           </form>
         </section>
 
-        {reachMode === "regular" ? (
+        {reachMode === "both" && publicAccess ? (
+          <section className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Public access</p>
+            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
+              <p className="text-sm text-fg">Public access: {publicAccess.enabled ? "On" : "Off"}</p>
+              <p>
+                {publicAccess.enabled
+                  ? "Devices that are not on this PC and not on Tailscale can open the sign-in page."
+                  : "Devices that are not on this PC and not on Tailscale see a refusal page. They do not get a sign-in page. Tailscale still reaches Drivebay."}
+              </p>
+              {publicAccess.enabled && publicAccess.offAt ? (
+                <p>Turns off at {new Date(publicAccess.offAt).toLocaleString()}.</p>
+              ) : null}
+              {publicAccess.canEdit ? (
+                <div className="space-y-3">
+                  {publicAccess.enabled ? null : (
+                    <div>
+                      <Label htmlFor="public-hours">Turn off after</Label>
+                      <select
+                        id="public-hours"
+                        className="mt-1.5 block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg"
+                        value={publicHours}
+                        onChange={(e) => setPublicHours(Number(e.target.value) as 0 | 1 | 4 | 24)}
+                      >
+                        <option value={0}>Stay on until you turn it off</option>
+                        <option value={1}>1 hour</option>
+                        <option value={4}>4 hours</option>
+                        <option value={24}>24 hours</option>
+                      </select>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    disabled={savingPublic}
+                    onClick={() => void onSavePublic(!publicAccess.enabled)}
+                  >
+                    {savingPublic ? <Loader2 className="size-4 animate-spin" /> : null}
+                    {publicAccess.enabled ? "Turn public access off" : "Turn public access on"}
+                  </Button>
+                </div>
+              ) : (
+                <p>Public access can only be changed on this PC or from a signed-in device on Tailscale.</p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        {reachMode === "regular" || reachMode === "both" ? (
           <section className="space-y-3">
             <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
-              No Tailscale (Regular mode)
+              {reachMode === "both" ? "Tailscale + Local (Both)" : "No Tailscale (Regular mode)"}
             </p>
             <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
               <p>Other devices outside your network reach this PC only after the router forwards the port.</p>
+              {reachMode === "both" ? (
+                <p>Public access starts off. These steps matter when you turn that path on. Tailscale keeps working either way.</p>
+              ) : null}
               <ol className="list-decimal space-y-2 pl-5">
                 <li>
                   This PC&apos;s local IP is{" "}

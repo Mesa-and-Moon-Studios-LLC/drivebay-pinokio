@@ -71,7 +71,7 @@ export function readJson(file) {
 
 export function readConfig(home) {
   const raw = readJson(path.join(home, "config.json"));
-  const mode = raw.mode === "tailscale" ? "tailscale" : "regular";
+  const mode = raw.mode === "tailscale" || raw.mode === "both" || raw.mode === "regular" ? raw.mode : "regular";
   return {
     port: parsePort(raw.port),
     mode,

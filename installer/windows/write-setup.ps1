@@ -48,15 +48,19 @@ try {
   $passFile = $lines[5].Trim()
 
   if (-not $homeDir) { throw "Drivebay data folder is empty." }
-  if ($mode -ne "tailscale" -and $mode -ne "regular") { throw "Mode must be tailscale or regular." }
+  if ($mode -ne "tailscale" -and $mode -ne "both" -and $mode -ne "regular") { throw "Mode must be tailscale, both, or regular." }
   $port = 0
   if (-not [int]::TryParse($portText, [ref]$port)) { throw "Port is not a number." }
   if ($port -lt 1024 -or $port -gt 65535) { throw "Port must be from 1024 to 65535." }
 
   New-Item -ItemType Directory -Force -Path (Join-Path $homeDir "data") | Out-Null
   $config = @{ port = $port; mode = $mode; version = $version } | ConvertTo-Json -Compress
-  [System.IO.File]::WriteAllText((Join-Path $homeDir "config.json"), $config)
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText((Join-Path $homeDir "config.json"), $config, $utf8)
   [System.IO.File]::WriteAllText((Join-Path $homeDir "drivebay.port"), "$port")
+  if ($mode -eq "both") {
+    [System.IO.File]::WriteAllText((Join-Path $homeDir "public-access.json"), '{"enabled":false,"offAt":null}', $utf8)
+  }
   $pendingPath = Join-Path $homeDir "pending-account.json"
   if (Test-Path -LiteralPath $pendingPath) { Remove-Item -LiteralPath $pendingPath -Force }
 
@@ -85,7 +89,6 @@ try {
   if ($null -eq $password -or $password.Length -lt 8) { throw "Password must be at least 8 characters." }
 
   $pending = @{ username = $userName; password = $password } | ConvertTo-Json -Compress
-  $utf8 = New-Object System.Text.UTF8Encoding $false
   [System.IO.File]::WriteAllText($pendingPath, $pending, $utf8)
   if (-not (Test-Path -LiteralPath $pendingPath)) { throw "The account file was not created." }
 

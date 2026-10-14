@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { nextPublicAccess, readPublicAccessFile, writePublicAccessFile } from "./public-access.mjs";
 import { isIpv4, localLanIpv4 } from "./router-steps.mjs";
 
 export type PortStyle = "random" | "static";
@@ -73,19 +74,38 @@ export function readAppSettings(): AppSettings {
   };
 }
 
-export type ReachMode = "regular" | "tailscale" | "unknown";
+export type ReachMode = "regular" | "tailscale" | "both" | "unknown";
 
 export function readReachMode(): ReachMode {
   const env = String(process.env.DRIVEBAY_MODE || "").trim().toLowerCase();
-  if (env === "regular" || env === "tailscale") return env;
+  if (env === "regular" || env === "tailscale" || env === "both") return env;
   try {
     const configPath = resolve(dirname(resolvePortFile()), "config.json");
     const raw = JSON.parse(readFileSync(configPath, "utf8")) as { mode?: string };
-    if (raw.mode === "regular" || raw.mode === "tailscale") return raw.mode;
+    if (raw.mode === "regular" || raw.mode === "tailscale" || raw.mode === "both") return raw.mode;
   } catch {
     /* Pinokio and a fresh folder have no setup mode. */
   }
   return "unknown";
+}
+
+export type PublicAccessState = {
+  enabled: boolean;
+  offAt: number | null;
+};
+
+export function resolvePublicAccessFile(): string {
+  return resolve(dirname(resolvePortFile()), "public-access.json");
+}
+
+export function readPublicAccess(now = Date.now()): PublicAccessState {
+  return readPublicAccessFile(resolvePublicAccessFile(), now);
+}
+
+export function writePublicAccess(enabled: boolean, hours: number, now = Date.now()): PublicAccessState {
+  const next = nextPublicAccess(enabled, hours, now);
+  writePublicAccessFile(resolvePublicAccessFile(), next);
+  return next;
 }
 
 export function thisPcLanIp(): string {

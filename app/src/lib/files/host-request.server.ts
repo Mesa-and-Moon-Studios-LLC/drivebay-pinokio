@@ -1,5 +1,6 @@
 import { getRequest, getRequestIP } from "@tanstack/react-start/server";
 import { isLoopbackAddress } from "./loopback.mjs";
+import { isTailnetAddress } from "./tailnet.mjs";
 
 type NodeRequest = Request & {
   ip?: string;
@@ -29,8 +30,18 @@ export function isLoopbackRequest(): boolean {
   return isLoopbackAddress(clientAddress());
 }
 
+export function isTailnetRequest(): boolean {
+  return isTailnetAddress(clientAddress());
+}
+
 export function assertLoopbackRequest(): void {
   if (!isLoopbackRequest()) {
     throw new Error("Server lock can only be changed on this PC.");
   }
+}
+
+/** This PC, or a signed-in caller on the tailnet. The session check stays on the server function. */
+export function assertPublicAccessEditor(): void {
+  if (isLoopbackRequest() || isTailnetRequest()) return;
+  throw new Error("Public access can only be changed on this PC or over Tailscale.");
 }

@@ -89,7 +89,9 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
     assert.ok(ch.charCodeAt(0) <= 127, `non-ASCII installer character ${JSON.stringify(ch)}`);
   }
   assert.match(src, /Tailscale \(Recommended\) - reach Drivebay over your tailnet/);
+  assert.match(src, /Tailscale \+ Local \(Both\)/);
   assert.match(src, /No Tailscale \(Regular mode\)/);
+  assert.match(src, /Public access starts off/);
   assert.match(src, /Tailscale is the safer choice/);
   assert.match(src, /Nothing is opened to the internet/);
   assert.match(src, /Regular mode exposes the port publicly/);
@@ -132,6 +134,7 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
   const tailscale = functionBody(src, "TailscalePageCreate");
   assert.equal(tailscale.includes("forward TCP port"), false);
   assert.match(tailscale, /Do you already have Tailscale\?/);
+  assert.match(tailscale, /\$Mode == "regular"/);
 
   for (const file of ["write-setup.ps1", "launch-tailscale.ps1", "install-tailscale.ps1", "firewall.ps1"]) {
     const text = fs.readFileSync(path.join(installerDir, "windows", file), "utf8");

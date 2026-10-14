@@ -2,6 +2,7 @@ import { createCsrfMiddleware, createMiddleware, createStart } from "@tanstack/r
 import {
   homeLocation,
   isSpaDocument,
+  publicAccessOffResponse,
   redirectResponse,
   replacementForDocumentError,
 } from "@/lib/files/document-request.mjs";
@@ -15,6 +16,8 @@ import {
  * server functions, which still require a loopback socket and a session.
  */
 const documentMiddleware = createMiddleware().server(async ({ next, request, pathname, handlerType }) => {
+  const blocked = await publicAccessBlock(request, pathname);
+  if (blocked) return blocked;
   if (handlerType === "serverFn") return next();
 
   const accept = request.headers.get("accept");
@@ -44,6 +47,31 @@ const csrfMiddleware = createCsrfMiddleware({
 export const startInstance = createStart(() => ({
   requestMiddleware: [documentMiddleware, csrfMiddleware],
 }));
+
+/**
+ * Both mode keeps Tailscale open. A public or LAN address is refused until
+ * Public access is on. Loopback and the tailnet are never refused here.
+ */
+async function publicAccessBlock(request: Request, pathname: string): Promise<Response | null> {
+  try {
+    const settings = await import("@/lib/files/settings.server");
+    const mode = settings.readReachMode();
+    if (mode !== "both") return null;
+    const access = settings.readPublicAccess();
+    const host = await import("@/lib/files/host-request.server");
+    const { requestReach } = await import("@/lib/files/public-access.mjs");
+    if (requestReach(mode, host.clientAddress(), access, Date.now()) !== "deny") return null;
+  } catch {
+    return null;
+  }
+  if (isSpaDocument(pathname, request.headers.get("accept"), request.method)) {
+    return publicAccessOffResponse();
+  }
+  return Response.json(
+    { error: "Public access is off" },
+    { status: 403, headers: { "cache-control": "no-store" } },
+  );
+}
 
 async function loopbackHome(request: Request): Promise<"/settings" | "/login" | null> {
   let hostname = "";

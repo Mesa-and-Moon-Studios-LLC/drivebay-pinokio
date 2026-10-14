@@ -27,7 +27,7 @@ ShowInstDetails show
 !define MUI_ICON "assets\drivebay.ico"
 !define MUI_UNICON "assets\drivebay.ico"
 !define MUI_WELCOMEPAGE_TITLE "Install Drivebay"
-!define MUI_WELCOMEPAGE_TEXT "Drivebay is a password-locked file browser for every drive on this PC.$\r$\n$\r$\nThis setup includes the program and the runtime it needs. You do not need Node.js, git, or Pinokio.$\r$\n$\r$\nYou will choose Tailscale or a regular connection, pick a free port, and set the password."
+!define MUI_WELCOMEPAGE_TEXT "Drivebay is a password-locked file browser for every drive on this PC.$\r$\n$\r$\nThis setup includes the program and the runtime it needs. You do not need Node.js, git, or Pinokio.$\r$\n$\r$\nYou will choose Tailscale, Tailscale + Local, or a regular connection, pick a free port, and set the password."
 !define MUI_FINISHPAGE_TITLE "Drivebay is installed"
 !define MUI_FINISHPAGE_TEXT "Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices can connect only after you open and forward the port you picked on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
 !define MUI_FINISHPAGE_RUN
@@ -54,6 +54,7 @@ UninstPage custom un.DataPageCreate un.DataPageLeave
 
 Var Mode
 Var ModeTailscale
+Var ModeBoth
 Var ModeRegular
 Var Port
 Var PortField
@@ -106,14 +107,17 @@ Function .onInit
 FunctionEnd
 
 Function DetectUpdate
-  ; Exit 2 tailscale, 3 regular, 0 no install. Writes the saved port when found.
+  ; Exit 2 tailscale, 4 both, 3 regular, 0 no install. Writes the saved port when found.
   ; No nested quotes: NSIS single quotes would end the command.
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$root=Join-Path $$env:LOCALAPPDATA Drivebay; $$cfg=Join-Path $$root config.json; $$code=0; $$portText=$$null; if (Test-Path -LiteralPath $$cfg) { try { $$j=Get-Content -LiteralPath $$cfg -Raw | ConvertFrom-Json; $$m=[string]$$j.mode; $$portNum=0; $$ok=[int]::TryParse([string]$$j.port,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { if ($$m.StartsWith([string][char]116)) { $$code=2; $$portText=[string]$$portNum } elseif ($$m.StartsWith([string][char]114)) { $$code=3; $$portText=[string]$$portNum } } } catch {} }; if ($$code -eq 0) { $$f=Join-Path $$root drivebay.port; $$a=Join-Path $$root pending-account.json; $$d=Join-Path $$root data; $$s=Join-Path $$root auth.secret; if ((Test-Path -LiteralPath $$f) -and ((Test-Path -LiteralPath $$a) -or (Test-Path -LiteralPath $$d) -or (Test-Path -LiteralPath $$s))) { $$rawPort=[System.IO.File]::ReadAllText($$f).Trim(); $$portNum=0; $$ok=[int]::TryParse($$rawPort,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { $$code=3; $$portText=[string]$$portNum } } }; if ($$portText) { $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-update-port.txt), $$portText, $$utf8) }; exit $$code"'
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$root=Join-Path $$env:LOCALAPPDATA Drivebay; $$cfg=Join-Path $$root config.json; $$code=0; $$portText=$$null; if (Test-Path -LiteralPath $$cfg) { try { $$j=Get-Content -LiteralPath $$cfg -Raw | ConvertFrom-Json; $$m=[string]$$j.mode; $$portNum=0; $$ok=[int]::TryParse([string]$$j.port,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { if ($$m.StartsWith([string][char]116)) { $$code=2; $$portText=[string]$$portNum } elseif ($$m.StartsWith([string][char]98)) { $$code=4; $$portText=[string]$$portNum } elseif ($$m.StartsWith([string][char]114)) { $$code=3; $$portText=[string]$$portNum } } } catch {} }; if ($$code -eq 0) { $$f=Join-Path $$root drivebay.port; $$a=Join-Path $$root pending-account.json; $$d=Join-Path $$root data; $$s=Join-Path $$root auth.secret; if ((Test-Path -LiteralPath $$f) -and ((Test-Path -LiteralPath $$a) -or (Test-Path -LiteralPath $$d) -or (Test-Path -LiteralPath $$s))) { $$rawPort=[System.IO.File]::ReadAllText($$f).Trim(); $$portNum=0; $$ok=[int]::TryParse($$rawPort,[ref]$$portNum); if ($$ok -and $$portNum -ge 1024 -and $$portNum -le 65535) { $$code=3; $$portText=[string]$$portNum } } }; if ($$portText) { $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-update-port.txt), $$portText, $$utf8) }; exit $$code"'
   Pop $0
   Pop $1
   ${If} $0 == "2"
     StrCpy $Update "1"
     StrCpy $Mode "tailscale"
+  ${ElseIf} $0 == "4"
+    StrCpy $Update "1"
+    StrCpy $Mode "both"
   ${ElseIf} $0 == "3"
     StrCpy $Update "1"
     StrCpy $Mode "regular"
@@ -139,16 +143,20 @@ Function ModePageCreate
   ${EndIf}
   nsDialogs::Create 1018
   Pop $0
-  ${NSD_CreateLabel} 0 0 100% 52u "How should other devices reach this PC? Tailscale is the safer choice (Recommended). Nothing is opened to the internet. Only your own signed-in devices can reach Drivebay. Regular mode exposes the port publicly."
+  ${NSD_CreateLabel} 0 0 100% 64u "How should other devices reach this PC? Tailscale is the safer choice (Recommended). Nothing is opened to the internet. Only your own signed-in devices can reach Drivebay. Regular mode exposes the port publicly. Tailscale + Local (Both) keeps Tailscale and adds a public path that starts off."
   Pop $0
-  ${NSD_CreateFirstRadioButton} 0 56u 100% 12u "Tailscale (Recommended) - reach Drivebay over your tailnet"
+  ${NSD_CreateFirstRadioButton} 0 68u 100% 12u "Tailscale (Recommended) - reach Drivebay over your tailnet"
   Pop $ModeTailscale
-  ${NSD_CreateAdditionalRadioButton} 0 72u 100% 14u "No Tailscale (Regular mode)"
+  ${NSD_CreateAdditionalRadioButton} 0 84u 100% 12u "Tailscale + Local (Both)"
+  Pop $ModeBoth
+  ${NSD_CreateAdditionalRadioButton} 0 100u 100% 14u "No Tailscale (Regular mode)"
   Pop $ModeRegular
-  ${If} $Mode == "tailscale"
-    ${NSD_SetState} $ModeTailscale ${BST_CHECKED}
-  ${Else}
+  ${If} $Mode == "both"
+    ${NSD_SetState} $ModeBoth ${BST_CHECKED}
+  ${ElseIf} $Mode == "regular"
     ${NSD_SetState} $ModeRegular ${BST_CHECKED}
+  ${Else}
+    ${NSD_SetState} $ModeTailscale ${BST_CHECKED}
   ${EndIf}
   nsDialogs::Show
 FunctionEnd
@@ -158,7 +166,12 @@ Function ModePageLeave
   ${If} $0 == ${BST_CHECKED}
     StrCpy $Mode "tailscale"
   ${Else}
-    StrCpy $Mode "regular"
+    ${NSD_GetState} $ModeBoth $0
+    ${If} $0 == ${BST_CHECKED}
+      StrCpy $Mode "both"
+    ${Else}
+      StrCpy $Mode "regular"
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -263,8 +276,13 @@ Function RouterPageCreate
   ${EndIf}
   nsDialogs::Create 1018
   Pop $2
-  ${NSD_CreateLabel} 0 0 100% 12u "No Tailscale (Regular mode)"
-  Pop $2
+  ${If} $Mode == "both"
+    ${NSD_CreateLabel} 0 0 100% 12u "Tailscale + Local (Both). Public access starts off."
+    Pop $2
+  ${Else}
+    ${NSD_CreateLabel} 0 0 100% 12u "No Tailscale (Regular mode)"
+    Pop $2
+  ${EndIf}
   ${NSD_CreateLabel} 0 14u 100% 78u "You have to open and forward TCP port $Port on your router.$\r$\n$\r$\n1. This PC's local IP is $LocalIp.$\r$\n2. Log in to the router, usually http://192.168.0.1 or http://192.168.1.1.$\r$\n3. Add a port forward for TCP $Port to that local IP.$\r$\n4. Give this PC a reserved or static IP in DHCP so the address does not change.$\r$\n5. Public IP: $PublicText. From outside the network, open $OutsideUrl$\r$\n6. Some ISPs use CGNAT and block this. Tailscale is the easy fallback.$\r$\n7. Use a strong password. It locks every drive on this PC.$\r$\nIf Windows Firewall asks, allow TCP port $Port."
   Pop $2
   ${NSD_CreateCheckbox} 0 96u 100% 18u "I understand I must open and forward port $Port on my router."
@@ -287,7 +305,7 @@ Function TailscalePageCreate
   ${If} $Update == "1"
     Abort
   ${EndIf}
-  ${If} $Mode != "tailscale"
+  ${If} $Mode == "regular"
     Abort
   ${EndIf}
   StrCpy $0 "0"
@@ -323,7 +341,7 @@ Function TailscalePageLeave
   ${If} $Update == "1"
     Return
   ${EndIf}
-  ${If} $Mode != "tailscale"
+  ${If} $Mode == "regular"
     Return
   ${EndIf}
   ${NSD_GetState} $TailscaleHaveYes $0
@@ -340,7 +358,7 @@ Function TailscaleOfferPageCreate
   ${If} $Update == "1"
     Abort
   ${EndIf}
-  ${If} $Mode != "tailscale"
+  ${If} $Mode == "regular"
     Abort
   ${EndIf}
   ${If} $TailscaleHave == "1"
@@ -362,7 +380,7 @@ Function TailscaleOfferPageLeave
   ${If} $Update == "1"
     Return
   ${EndIf}
-  ${If} $Mode != "tailscale"
+  ${If} $Mode == "regular"
     Return
   ${EndIf}
   ${If} $TailscaleHave == "1"
@@ -536,6 +554,8 @@ Function FinishPageShow
     SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Drivebay updated to ${VERSION}.$\r$\n$\r$\nYour account, password, port, and settings were kept.$\r$\n$\r$\nOn this PC, Drivebay opens the settings page."
   ${ElseIf} $Mode == "tailscale"
     SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nOther devices on your tailnet open http://<this-PC-tailscale-name>:$Port/ after Tailscale is signed in on both devices. You do not forward that port on your router.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
+  ${ElseIf} $Mode == "both"
+    SendMessage $mui.FinishPage.Text ${WM_SETTEXT} 0 "STR:Open Drivebay settings on this PC and sign in with the username and password you just chose. This PC does not open the file browser.$\r$\n$\r$\nTailscale + Local (Both). Tailscale still reaches Drivebay. Public access is off until you turn it on from this PC or from a signed-in Tailscale device. Forward TCP port $Port before that public path can work.$\r$\n$\r$\nStart Drivebay from the Start menu. This PC opens the settings page. An icon stays in the notification area while it is running. Uninstall it from the Start menu or from Apps."
   ${EndIf}
 FunctionEnd
 
@@ -600,6 +620,8 @@ Section "Install"
   update_files_done:
   ${If} $Mode == "tailscale"
     DetailPrint "Tailscale mode: other devices use the tailnet address of this PC on port $Port. No router port forward is required."
+  ${ElseIf} $Mode == "both"
+    DetailPrint "Tailscale + Local (Both): Tailscale stays on. Public access starts off. Forward TCP port $Port on your router before that path can work."
   ${Else}
     DetailPrint "You must open and forward TCP port $Port on your router."
   ${EndIf}
@@ -607,7 +629,7 @@ Section "Install"
   Pop $0
 
   ${If} $Update != "1"
-  ${AndIf} $Mode == "tailscale"
+  ${AndIf} $Mode != "regular"
   ${AndIf} $InstallTailscale == "1"
     DetailPrint "Downloading the official Tailscale installer..."
     nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\windows\install-tailscale.ps1" -Quiet'

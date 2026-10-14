@@ -179,14 +179,23 @@ export const getRouterHelp = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
     const settings = await import("./settings.server");
+    const host = await import("./host-request.server");
     const mode = settings.readReachMode();
     const port = settings.readPortSettings().port;
-    if (mode !== "regular") return { mode, port, localIp: "", publicIp: "" };
+    const showRouter = mode === "regular" || mode === "both";
+    const access = mode === "both" ? settings.readPublicAccess() : null;
     return {
       mode,
       port,
-      localIp: settings.thisPcLanIp(),
-      publicIp: await settings.lookupPublicIpv4(),
+      localIp: showRouter ? settings.thisPcLanIp() : "",
+      publicIp: showRouter ? await settings.lookupPublicIpv4() : "",
+      publicAccess: access
+        ? {
+            enabled: access.enabled,
+            offAt: access.offAt,
+            canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
+          }
+        : null,
     };
   });
 
@@ -256,6 +265,25 @@ export const saveServerLock = createServerFn({ method: "POST" })
       applied: saved.applied,
       serverLock: lock.toPublicServerLock(saved.policy, true),
     };
+  });
+
+export const savePublicAccess = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      enabled: z.boolean(),
+      hours: z.union([z.literal(0), z.literal(1), z.literal(4), z.literal(24)]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPublicAccessEditor();
+    const settings = await import("./settings.server");
+    if (settings.readReachMode() !== "both") {
+      throw new Error("Public access is only used in Tailscale + Local mode.");
+    }
+    const saved = settings.writePublicAccess(data.enabled, data.hours);
+    return { enabled: saved.enabled, offAt: saved.offAt, canEdit: true };
   });
 
 export const restartDrivebay = createServerFn({ method: "POST" })

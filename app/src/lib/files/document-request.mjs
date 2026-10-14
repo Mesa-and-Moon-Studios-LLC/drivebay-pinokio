@@ -158,6 +158,36 @@ export function signInHtmlResponse() {
   });
 }
 
+/** Refusal page for a browser when Public access is off. It has no sign-in form. */
+export function publicAccessOffHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drivebay</title>
+</head>
+<body>
+<main>
+<h1>Public access is off</h1>
+<p>This address is not on this PC and not on your Tailscale network. Drivebay did not open a sign-in page.</p>
+<p>Turn public access on from this PC, or from a device that is signed in over Tailscale.</p>
+</main>
+</body>
+</html>
+`;
+}
+
+export function publicAccessOffResponse() {
+  return new Response(publicAccessOffHtml(), {
+    status: 403,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
 /**
  * Replacement for a document that came back as JSON or an auth error.
  * @param {string} requestUrl

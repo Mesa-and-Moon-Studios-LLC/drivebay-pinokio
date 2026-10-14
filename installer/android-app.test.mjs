@@ -20,7 +20,8 @@ test("settings offers the Android APK and hides Google Play until a URL is set",
   const label = settings.indexOf("Google Play");
   const end = settings.indexOf(") : null}", label);
   assert.ok(play !== -1 && label > play && end > label);
-  assert.match(settings, /reachMode === "regular"/);
+  assert.match(settings, /reachMode === "regular" \|\| reachMode === "both"/);
+  assert.match(settings, /Public access: \{publicAccess\.enabled \? "On" : "Off"\}/);
   assert.match(settings, /No Tailscale \(Regular mode\)/);
   assert.match(settings, /192\.168\.0\.1/);
   assert.match(settings, /192\.168\.1\.1/);

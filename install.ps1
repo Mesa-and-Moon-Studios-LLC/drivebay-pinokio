@@ -242,20 +242,23 @@ function Read-Mode {
   $picked = $env:DRIVEBAY_SETUP_MODE
   if (-not [string]::IsNullOrWhiteSpace($picked)) {
     $picked = $picked.Trim().ToLower()
-    if ($picked -ne "tailscale" -and $picked -ne "regular") { throw "Mode must be tailscale or regular." }
+    if ($picked -ne "tailscale" -and $picked -ne "both" -and $picked -ne "regular") { throw "Mode must be tailscale, both, or regular." }
     return $picked
   }
-  if (Test-NonInteractive) { throw "Mode must be tailscale or regular." }
+  if (Test-NonInteractive) { throw "Mode must be tailscale, both, or regular." }
   Write-Host "How should other devices reach this PC?"
   Write-Host "Tailscale is the safer choice. Nothing is opened to the internet. Only your own signed-in devices can reach Drivebay."
   Write-Host "Regular mode exposes the port publicly."
+  Write-Host "Tailscale + Local (Both) keeps Tailscale, and adds a public path you can turn on later. That path starts off."
   Write-Host "  1) Tailscale (Recommended) - reach Drivebay over your tailnet"
-  Write-Host "  2) No Tailscale (Regular mode)"
+  Write-Host "  2) Tailscale + Local (Both)"
+  Write-Host "  3) No Tailscale (Regular mode)"
   while ($true) {
     $answer = Read-Host "Choice [1]"
     if ([string]::IsNullOrWhiteSpace($answer) -or $answer -eq "1" -or $answer.Trim().ToLower() -eq "tailscale") { return "tailscale" }
-    if ($answer -eq "2" -or $answer.Trim().ToLower() -eq "regular") { return "regular" }
-    Write-Host "Enter 1 or 2."
+    if ($answer -eq "2" -or $answer.Trim().ToLower() -eq "both") { return "both" }
+    if ($answer -eq "3" -or $answer.Trim().ToLower() -eq "regular") { return "regular" }
+    Write-Host "Enter 1, 2, or 3."
   }
 }
 
@@ -335,7 +338,12 @@ function Confirm-RouterForward([string]$Mode, [int]$Port) {
   }
   $localIp = Get-LanIpv4
   $publicIp = Get-PublicIpv4
-  Write-Host "No Tailscale (Regular mode)."
+  if ($Mode -eq "both") {
+    Write-Host "Tailscale + Local (Both)."
+    Write-Host "Public access starts off. Tailscale still reaches Drivebay."
+  } else {
+    Write-Host "No Tailscale (Regular mode)."
+  }
   Write-Host "You have to open and forward TCP port $Port on your router."
   if ($localIp) {
     Write-Host "This PC's local IP is $localIp."
@@ -569,7 +577,7 @@ function Read-ExistingInstall([string]$Root) {
     $raw = ""
     try { $raw = [System.IO.File]::ReadAllText($configPath) } catch { $raw = "" }
     $portMatch = [regex]::Match($raw, '"port"\s*:\s*"?(\d+)"?')
-    $modeMatch = [regex]::Match($raw, '"mode"\s*:\s*"(tailscale|regular)"')
+    $modeMatch = [regex]::Match($raw, '"mode"\s*:\s*"(tailscale|both|regular)"')
     $parsed = 0
     if ($portMatch.Success -and $modeMatch.Success -and [int]::TryParse($portMatch.Groups[1].Value, [ref]$parsed)) {
       if ($parsed -ge 1024 -and $parsed -le 65535) {
@@ -594,7 +602,7 @@ function Read-ExistingInstall([string]$Root) {
       }
     }
   }
-  if ($port -lt 1024 -or ($mode -ne "tailscale" -and $mode -ne "regular")) { return }
+  if ($port -lt 1024 -or ($mode -ne "tailscale" -and $mode -ne "both" -and $mode -ne "regular")) { return }
   return ,@{ Port = $port; Mode = $mode }
 }
 
@@ -1265,7 +1273,7 @@ function Start-DrivebayInstall {
 
   $mode = Read-Mode
   $tailscaleChoice = "skip"
-  if ($mode -eq "tailscale") {
+  if ($mode -eq "tailscale" -or $mode -eq "both") {
     $tailscaleChoice = Read-TailscaleChoice
     if ($tailscaleChoice -eq "have") {
       Write-Host "Tailscale is already on this PC."
@@ -1292,7 +1300,7 @@ function Start-DrivebayInstall {
   $startedServer = $false
   if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
     Invoke-Firewall $root
-    if ($mode -eq "tailscale" -and $tailscaleChoice -eq "have" -and (Test-EnvYes "DRIVEBAY_LAUNCH_TAILSCALE")) {
+    if (($mode -eq "tailscale" -or $mode -eq "both") -and $tailscaleChoice -eq "have" -and (Test-EnvYes "DRIVEBAY_LAUNCH_TAILSCALE")) {
       Invoke-Tailscale $root $false $true
     }
     New-StartShortcuts $root
@@ -1309,6 +1317,11 @@ function Start-DrivebayInstall {
   if ($mode -eq "tailscale") {
     Write-Host "Other devices on your tailnet open http://<this-PC-tailscale-name>:${port}/ after Tailscale is signed in on both devices."
     Write-Host "You do not forward that port on your router."
+  } elseif ($mode -eq "both") {
+    Write-Host "Tailscale + Local (Both)."
+    Write-Host "Other devices on your tailnet open http://<this-PC-tailscale-name>:${port}/ after Tailscale is signed in on both devices."
+    Write-Host "Public access is off. The router path stays closed until you turn it on from this PC or from a signed-in Tailscale device."
+    Write-Host "You must open and forward TCP port $port on your router before that public path can work."
   } else {
     Write-Host "You must open and forward TCP port $port on your router."
     Write-Host "Other devices use your public or LAN address on port $port."
