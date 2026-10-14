@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 export const TOKEN_RE = /^db_[0-9a-f]{64}$/;
 export const READ_SCOPE = ["roots", "list", "stat", "search", "download", "thumb"];
 export const WRITE_MINUTES = [15, 60, 240];
+export const APPROVAL_TTL_MS = 10 * 60 * 1000;
 export const AUDIT_CAP = 200;
 export const DEFAULT_RATE_PER_MINUTE = 60;
 
@@ -23,7 +24,7 @@ export function hashToken(token) {
 }
 
 function emptyState() {
-  return { version: 1, tokens: [], audit: [] };
+  return { version: 1, tokens: [], approvals: [], audit: [] };
 }
 
 function asNumber(value) {
@@ -60,6 +61,27 @@ function normalizeToken(raw) {
   };
 }
 
+function normalizeApproval(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (typeof raw.id !== "string" || typeof raw.tokenId !== "string") return null;
+  const status = ["pending", "approved", "denied", "expired", "used"].includes(raw.status) ? raw.status : "expired";
+  return {
+    id: raw.id,
+    tokenId: raw.tokenId,
+    tokenName: typeof raw.tokenName === "string" ? raw.tokenName.slice(0, 80) : "",
+    action: typeof raw.action === "string" ? raw.action : "",
+    path: typeof raw.path === "string" ? raw.path.slice(0, 1024) : "",
+    name: typeof raw.name === "string" ? raw.name.slice(0, 255) : null,
+    size: asNumber(raw.size),
+    status,
+    grant: raw.grant === "once" || raw.grant === "window" ? raw.grant : null,
+    windowMinutes: WRITE_MINUTES.includes(raw.windowMinutes) ? raw.windowMinutes : null,
+    createdAt: asNumber(raw.createdAt) ?? 0,
+    expiresAt: asNumber(raw.expiresAt) ?? 0,
+    decidedAt: asNumber(raw.decidedAt),
+  };
+}
+
 function normalizeState(raw) {
   const state = emptyState();
   if (!raw || typeof raw !== "object") return state;
@@ -67,6 +89,12 @@ function normalizeState(raw) {
     for (const token of raw.tokens) {
       const next = normalizeToken(token);
       if (next) state.tokens.push(next);
+    }
+  }
+  if (Array.isArray(raw.approvals)) {
+    for (const approval of raw.approvals) {
+      const next = normalizeApproval(approval);
+      if (next) state.approvals.push(next);
     }
   }
   if (Array.isArray(raw.audit)) {
@@ -93,6 +121,18 @@ export function readApiAccess(file) {
   } catch {
     return emptyState();
   }
+}
+
+function settle(state, now) {
+  let changed = false;
+  for (const approval of state.approvals) {
+    const open = approval.status === "pending" || (approval.status === "approved" && approval.grant === "once");
+    if (open && approval.expiresAt <= now) {
+      approval.status = "expired";
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 function writeApiAccess(file, state) {
@@ -165,6 +205,9 @@ export function revokeToken(file, id) {
   const token = state.tokens.find((item) => item.id === id);
   if (!token) throw new Error("Token not found");
   state.tokens = state.tokens.filter((item) => item.id !== id);
+  for (const approval of state.approvals) {
+    if (approval.tokenId === id && approval.status === "pending") approval.status = "denied";
+  }
   writeApiAccess(file, state);
   return { id };
 }
@@ -198,6 +241,126 @@ export function takeRate(bucketKey, now, limit = DEFAULT_RATE_PER_MINUTE) {
   return { ok: true, retryAfter: 0 };
 }
 
+function sameRequest(approval, spec) {
+  return (
+    approval.action === spec.action &&
+    approval.path === spec.path &&
+    (approval.name || null) === (spec.name || null) &&
+    (approval.size ?? null) === (spec.size ?? null)
+  );
+}
+
+export function publicApproval(approval) {
+  return {
+    id: approval.id,
+    tokenId: approval.tokenId,
+    tokenName: approval.tokenName,
+    action: approval.action,
+    path: approval.path,
+    name: approval.name,
+    size: approval.size,
+    status: approval.status,
+    grant: approval.grant,
+    windowMinutes: approval.windowMinutes,
+    createdAt: approval.createdAt,
+    expiresAt: approval.expiresAt,
+  };
+}
+
+export function ensureApproval(file, token, spec, now) {
+  const state = readApiAccess(file);
+  settle(state, now);
+  const existing = state.approvals.find(
+    (approval) => approval.status === "pending" && approval.tokenId === token.id && sameRequest(approval, spec),
+  );
+  if (existing) {
+    writeApiAccess(file, state);
+    return publicApproval(existing);
+  }
+  const approval = {
+    id: randomBytes(12).toString("hex"),
+    tokenId: token.id,
+    tokenName: token.name,
+    action: spec.action,
+    path: String(spec.path || "").slice(0, 1024),
+    name: spec.name ? String(spec.name).slice(0, 255) : null,
+    size: spec.size == null ? null : Number(spec.size),
+    status: "pending",
+    grant: null,
+    windowMinutes: null,
+    createdAt: now,
+    expiresAt: now + APPROVAL_TTL_MS,
+    decidedAt: null,
+  };
+  state.approvals.push(approval);
+  writeApiAccess(file, state);
+  return publicApproval(approval);
+}
+
+export function matchApproval(file, tokenId, approvalId, spec, now) {
+  const state = readApiAccess(file);
+  const changed = settle(state, now);
+  if (changed) writeApiAccess(file, state);
+  const approval = state.approvals.find((item) => item.id === approvalId && item.tokenId === tokenId);
+  if (!approval) return { found: false };
+  if (!sameRequest(approval, spec)) return { found: true, status: "mismatch", approval: publicApproval(approval) };
+  if (approval.status === "approved" && approval.grant === "once") {
+    return { found: true, ok: true, approval: publicApproval(approval) };
+  }
+  return { found: true, status: approval.status, grant: approval.grant, approval: publicApproval(approval) };
+}
+
+export function markApprovalUsed(file, approvalId) {
+  const state = readApiAccess(file);
+  const approval = state.approvals.find((item) => item.id === approvalId);
+  if (approval && approval.status === "approved") approval.status = "used";
+  writeApiAccess(file, state);
+}
+
+export function readApprovalForToken(file, approvalId, tokenId, now) {
+  const state = readApiAccess(file);
+  const changed = settle(state, now);
+  if (changed) writeApiAccess(file, state);
+  const approval = state.approvals.find((item) => item.id === approvalId && item.tokenId === tokenId);
+  return approval ? publicApproval(approval) : null;
+}
+
+export function listPendingApprovals(file, now) {
+  const state = readApiAccess(file);
+  const changed = settle(state, now);
+  if (changed) writeApiAccess(file, state);
+  return state.approvals.filter((approval) => approval.status === "pending").map(publicApproval);
+}
+
+export function decideApproval(file, id, allow, windowMinutes, now) {
+  const state = readApiAccess(file);
+  settle(state, now);
+  const approval = state.approvals.find((item) => item.id === id);
+  if (!approval || approval.status !== "pending") throw new Error("That request is no longer pending.");
+  approval.decidedAt = now;
+  if (!allow) {
+    approval.status = "denied";
+    approval.grant = null;
+    approval.windowMinutes = null;
+  } else if (windowMinutes) {
+    const minutes = Number(windowMinutes);
+    if (!WRITE_MINUTES.includes(minutes)) {
+      throw new Error("Write window must be 15 minutes, 1 hour, or 4 hours.");
+    }
+    approval.status = "approved";
+    approval.grant = "window";
+    approval.windowMinutes = minutes;
+    const token = state.tokens.find((item) => item.id === approval.tokenId);
+    if (token) token.writeUntil = now + minutes * 60 * 1000;
+  } else {
+    approval.status = "approved";
+    approval.grant = "once";
+    approval.windowMinutes = null;
+  }
+  writeApiAccess(file, state);
+  return publicApproval(approval);
+}
+
 export function appendAudit(file, entry) {
   const state = readApiAccess(file);
   state.audit.push({
@@ -222,7 +385,7 @@ export function panelFor(file, access, now) {
   const loopback = Boolean(access?.loopback);
   const tailnet = Boolean(access?.tailnet);
   if (!loopback && !tailnet) {
-    return { canManage: false, canWriteWindow: false, tokens: [], audit: [] };
+    return { canManage: false, canWriteWindow: false, tokens: [], approvals: [], audit: [] };
   }
   const tokens = listTokens(file, now).map((token) => {
     if (loopback) return token;
@@ -237,12 +400,13 @@ export function panelFor(file, access, now) {
     };
   });
   if (!loopback) {
-    return { canManage: false, canWriteWindow: true, tokens, audit: [] };
+    return { canManage: false, canWriteWindow: true, tokens, approvals: [], audit: [] };
   }
   return {
     canManage: true,
     canWriteWindow: true,
     tokens,
+    approvals: listPendingApprovals(file, now),
     audit: listAudit(file).slice(0, 50),
   };
 }

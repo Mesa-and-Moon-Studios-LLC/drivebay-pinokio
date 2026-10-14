@@ -1,12 +1,22 @@
 /**
  * Bearer API for a Drivebay token.
  * Reads are allowed. Writes need an open window and still obey the server lock.
- * A closed window is a plain 403 and does not perform the write.
+ * A closed window returns 403 with an approval id and does not perform the write.
+ * A server-lock refusal does not create an approval.
  */
 import { lstat, mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PathError, createInside, insideAny, mutateInside, narrowRoots, readInside } from "./token-paths.mjs";
-import { appendAudit, authenticateToken, hashToken, takeRate } from "./token-store.mjs";
+import {
+  appendAudit,
+  authenticateToken,
+  ensureApproval,
+  hashToken,
+  markApprovalUsed,
+  matchApproval,
+  readApprovalForToken,
+  takeRate,
+} from "./token-store.mjs";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"]);
 const THUMB_MAX = 2 * 1024 * 1024;
@@ -285,6 +295,7 @@ export async function handleTokenApi(request, deps) {
 }
 
 async function dispatch(ctx) {
+  if (ctx.action === "approvals") return pollApproval(ctx);
   const reads = {
     roots: ["GET", readRoots],
     list: ["GET", readList],
@@ -472,13 +483,58 @@ function cleanName(name) {
   return trimmed;
 }
 
+function approvalIdFrom(request, url) {
+  return (request.headers.get("x-drivebay-approval") || url.searchParams.get("approval") || "").trim();
+}
+
+function authorizeWrite(ctx, spec) {
+  const windowOpen = ctx.token.writeUntil != null && ctx.token.writeUntil > ctx.now;
+  if (windowOpen) {
+    if (!spec.approvalId) return { ok: true, consumeId: "" };
+    const matched = matchApproval(ctx.deps.file, ctx.token.id, spec.approvalId, spec, ctx.now);
+    return { ok: true, consumeId: matched.ok ? spec.approvalId : "" };
+  }
+  if (spec.approvalId) {
+    const matched = matchApproval(ctx.deps.file, ctx.token.id, spec.approvalId, spec, ctx.now);
+    if (matched.ok) return { ok: true, consumeId: spec.approvalId };
+    if (matched.status === "mismatch") {
+      return { ok: false, body: { error: "That approval is for a different action.", approval_request_id: spec.approvalId } };
+    }
+    if (matched.found && matched.status && matched.status !== "approved") {
+      const error =
+        matched.status === "pending"
+          ? "Write access is off until this PC approves it."
+          : matched.status === "denied"
+            ? "The request was denied."
+            : matched.status === "expired"
+              ? "The request expired."
+              : "The request was already used.";
+      return { ok: false, body: { error, approval_request_id: spec.approvalId } };
+    }
+  }
+  const approval = ensureApproval(ctx.deps.file, ctx.token, spec, ctx.now);
+  return {
+    ok: false,
+    body: { error: "Write access is off until this PC approves it.", approval_request_id: approval.id },
+  };
+}
+
 async function finishWrite(ctx, spec, run) {
   await guardWrite(ctx.deps, spec.action, spec.size || 0);
-  const windowOpen = ctx.token.writeUntil != null && ctx.token.writeUntil > ctx.now;
-  if (!windowOpen) {
-    return { response: json(403, { error: "Write access is off." }), path: spec.path, detail: "window" };
-  }
-  return run();
+  const gate = authorizeWrite(ctx, spec);
+  if (!gate.ok) return { response: json(403, gate.body), path: spec.path, detail: "approval" };
+  const result = await run();
+  if (gate.consumeId) markApprovalUsed(ctx.deps.file, gate.consumeId);
+  return result;
+}
+
+async function pollApproval(ctx) {
+  if (ctx.request.method !== "GET") return { response: json(405, { error: "Method not allowed" }) };
+  const id = ctx.parts[1] || "";
+  if (!id || ctx.parts.length !== 2) return { response: json(404, { error: "Not found" }) };
+  const approval = readApprovalForToken(ctx.deps.file, id, ctx.token.id, ctx.now);
+  if (!approval) return { response: json(404, { error: "Not found" }), path: id };
+  return { response: json(200, approval), path: approval.path, detail: approval.status };
 }
 
 async function writeUpload(ctx) {
@@ -491,7 +547,13 @@ async function writeUpload(ctx) {
   if (exists && ctx.url.searchParams.get("overwrite") !== "1") {
     return { response: json(409, { error: "Path already exists" }), path: dest.path };
   }
-  const spec = { action: "upload", path: dest.path, size: body.length };
+  const spec = {
+    action: "upload",
+    path: dest.path,
+    name: null,
+    size: body.length,
+    approvalId: approvalIdFrom(ctx.request, ctx.url),
+  };
   return finishWrite(ctx, spec, async () => {
     await writeFile(dest.path, body);
     const st = await stat(dest.path);
@@ -514,7 +576,13 @@ async function writeMkdir(ctx) {
     if (err && err.message === "Not a folder") throw err;
     throw new PathError("invalid", "Invalid path");
   }
-  const spec = { action: "mkdir", path: dest.path, size: 0 };
+  const spec = {
+    action: "mkdir",
+    path: dest.path,
+    name: null,
+    size: null,
+    approvalId: approvalIdFrom(ctx.request, ctx.url),
+  };
   return finishWrite(ctx, spec, async () => {
     await mkdir(dest.path);
     return { response: json(200, { ok: true, path: dest.path }), path: dest.path };
@@ -538,7 +606,13 @@ async function writeRename(ctx) {
       if (!err || err.code !== "ENOENT") throw new PathError("invalid", "Invalid path");
     }
   }
-  const spec = { action: "rename", path: from.path, size: 0 };
+  const spec = {
+    action: "rename",
+    path: from.path,
+    name,
+    size: null,
+    approvalId: approvalIdFrom(ctx.request, ctx.url),
+  };
   return finishWrite(ctx, spec, async () => {
     if (dest !== from.path) await rename(from.path, dest);
     return { response: json(200, { ok: true, path: dest }), path: from.path };
@@ -550,7 +624,13 @@ async function writeDelete(ctx) {
   const raw = String(payload.path || "");
   const roots = await allowedRoots(ctx.token, ctx.deps);
   const target = await mutateInside(raw, roots);
-  const spec = { action: "delete", path: target.path, size: 0 };
+  const spec = {
+    action: "delete",
+    path: target.path,
+    name: null,
+    size: null,
+    approvalId: approvalIdFrom(ctx.request, ctx.url),
+  };
   return finishWrite(ctx, spec, async () => {
     if (target.link) await unlink(target.path);
     else if (target.stat.isDirectory()) await rm(target.path, { recursive: true, force: false });

@@ -7,7 +7,16 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { handleTokenApi } from "../app/src/lib/files/api-v1.mjs";
 import { wantsJsonError } from "../app/src/lib/files/document-request.mjs";
-import { allowWrite, createToken, panelFor, readApiAccess, resetRateLimits, revokeToken } from "../app/src/lib/files/token-store.mjs";
+import {
+  APPROVAL_TTL_MS,
+  allowWrite,
+  createToken,
+  decideApproval,
+  panelFor,
+  readApiAccess,
+  resetRateLimits,
+  revokeToken,
+} from "../app/src/lib/files/token-store.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -288,6 +297,7 @@ test("token management stays on this PC", () => {
     assert.equal(tail.tokens[0].name, "Desk");
     assert.equal(tail.tokens[0].roots, undefined);
     assert.equal(tail.audit.length, 0);
+    assert.equal(tail.approvals.length, 0);
     const pc = panelFor(ctx.file, { loopback: true, tailnet: false }, ctx.now);
     assert.equal(pc.canManage, true);
     assert.equal(pc.canWriteWindow, true);
@@ -304,9 +314,12 @@ test("token management stays on this PC", () => {
   const revoke = api.slice(api.indexOf("export const revokeApiToken"), api.indexOf("export const allowApiWrite"));
   assert.match(revoke, /assertLoopbackRequest/);
   assert.equal(revoke.includes("assertPublicAccessEditor"), false);
-  const allow = api.slice(api.indexOf("export const allowApiWrite"));
+  const allow = api.slice(api.indexOf("export const allowApiWrite"), api.indexOf("export const decideApiApproval"));
   assert.match(allow, /assertPublicAccessEditor/);
   assert.equal(allow.includes("assertLoopbackRequest"), false);
+  const decide = api.slice(api.indexOf("export const decideApiApproval"));
+  assert.match(decide, /assertLoopbackRequest/);
+  assert.equal(decide.includes("assertPublicAccessEditor"), false);
   const access = api.slice(api.indexOf("export const getApiAccess"), api.indexOf("export const createApiToken"));
   assert.equal(access.includes("assertLoopbackRequest"), false);
   assert.match(access, /isLoopbackRequest/);
@@ -319,6 +332,7 @@ test("token management stays on this PC", () => {
   assert.match(ui, /setInterval/);
   assert.match(ui, /API tokens are created on this PC/);
   assert.match(ui, /Allow write for/);
+  assert.match(ui, /waiting/);
   assert.match(ui, /signed-in Tailscale device can open a write window/);
 });
 
@@ -352,8 +366,8 @@ test("writes need an open window and still obey the server lock", async (t) => {
     });
     assert.equal(closed.status, 403);
     const closedBody = await closed.json();
-    assert.equal(closedBody.error, "Write access is off.");
-    assert.equal(Object.hasOwn(closedBody, "approval_request_id"), false);
+    assert.equal(closedBody.error, "Write access is off until this PC approves it.");
+    assert.equal(typeof closedBody.approval_request_id, "string");
     assert.equal(fs.existsSync(folder), false);
 
     allowWrite(ctx.file, record.id, 15, ctx.now);
@@ -432,7 +446,9 @@ test("writes need an open window and still obey the server lock", async (t) => {
       body: JSON.stringify({ path: renamedPath }),
     });
     assert.equal(ended.status, 403);
-    assert.equal((await ended.json()).error, "Write access is off.");
+    const endedBody = await ended.json();
+    assert.equal(endedBody.error, "Write access is off until this PC approves it.");
+    assert.equal(typeof endedBody.approval_request_id, "string");
     assert.equal(fs.existsSync(renamedPath), true);
 
     allowWrite(ctx.file, record.id, 60, ctx.now);
@@ -463,5 +479,96 @@ test("writes need an open window and still obey the server lock", async (t) => {
   } finally {
     cleanup(ctx);
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("one approval performs that write, and a lock does not ask", async () => {
+  const ctx = temp();
+  try {
+    const { token } = createToken(ctx.file, { name: "Wait", roots: [] }, ctx.now);
+    const folder = path.join(ctx.root, "later");
+    const waiting = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    const body = await waiting.json();
+    assert.equal(waiting.status, 403);
+    assert.equal(fs.existsSync(folder), false);
+    const again = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    assert.equal((await again.json()).approval_request_id, body.approval_request_id);
+
+    const locked = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: path.join(ctx.root, "locked") }),
+      assertWrite: () => {
+        throw new Error("This action is turned off in Settings on the PC that runs Drivebay.");
+      },
+    });
+    const lockedBody = await locked.json();
+    assert.equal(locked.status, 403);
+    assert.match(lockedBody.error, /turned off/);
+    assert.equal(Object.hasOwn(lockedBody, "approval_request_id"), false);
+
+    decideApproval(ctx.file, body.approval_request_id, true, 0, ctx.now);
+    const done = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-drivebay-approval": body.approval_request_id,
+      },
+      body: JSON.stringify({ path: folder }),
+    });
+    assert.equal(done.status, 200);
+    assert.equal(fs.existsSync(folder), true);
+    const used = await call(ctx, `/api/v1/approvals/${body.approval_request_id}`, { token });
+    assert.equal((await used.json()).status, "used");
+
+    const pc = panelFor(ctx.file, { loopback: true }, ctx.now);
+    assert.equal(pc.approvals.length, 0);
+  } finally {
+    cleanup(ctx);
+  }
+});
+
+test("a pending approval expires after about 10 minutes", async () => {
+  const ctx = temp();
+  try {
+    const { token } = createToken(ctx.file, { name: "Wait", roots: [] }, ctx.now);
+    const folder = path.join(ctx.root, "later");
+    const waiting = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    const body = await waiting.json();
+    decideApproval(ctx.file, body.approval_request_id, true, 0, ctx.now);
+    ctx.now += APPROVAL_TTL_MS;
+    const late = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-drivebay-approval": body.approval_request_id,
+      },
+      body: JSON.stringify({ path: folder }),
+    });
+    assert.equal(late.status, 403);
+    assert.equal(fs.existsSync(folder), false);
+    const polled = await call(ctx, `/api/v1/approvals/${body.approval_request_id}`, { token });
+    assert.equal((await polled.json()).status, "expired");
+    assert.throws(() => decideApproval(ctx.file, body.approval_request_id, true, 0, ctx.now), /no longer pending/);
+  } finally {
+    cleanup(ctx);
   }
 });

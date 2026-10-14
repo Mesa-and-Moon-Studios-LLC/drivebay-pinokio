@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { allowApiWrite, createApiToken, getApiAccess, revokeApiToken } from "@/lib/files/api.functions";
+import { allowApiWrite, createApiToken, decideApiApproval, getApiAccess, revokeApiToken } from "@/lib/files/api.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,16 @@ type TokenRow = {
   expired: boolean;
 };
 
+type ApprovalRow = {
+  id: string;
+  tokenName: string;
+  action: string;
+  path: string;
+  name: string | null;
+  size: number | null;
+  expiresAt: number;
+};
+
 type AuditRow = {
   at: number;
   tokenName: string;
@@ -30,12 +40,19 @@ type Panel = {
   canManage: boolean;
   canWriteWindow: boolean;
   tokens: TokenRow[];
+  approvals: ApprovalRow[];
   audit: AuditRow[];
 };
 
 function when(value: number | null): string {
   if (!value) return "Never";
   return new Date(value).toLocaleString();
+}
+
+function actionLabel(approval: ApprovalRow): string {
+  const size = approval.size == null ? "" : ` (${approval.size} bytes)`;
+  const name = approval.name ? ` to ${approval.name}` : "";
+  return `${approval.action}${name}${size}`;
 }
 
 export function ApiTokens() {
@@ -59,7 +76,7 @@ export function ApiTokens() {
         if (alive) setPanel(next);
       })
       .catch(() => {
-        if (alive) setPanel({ canManage: false, canWriteWindow: false, tokens: [], audit: [] });
+        if (alive) setPanel({ canManage: false, canWriteWindow: false, tokens: [], approvals: [], audit: [] });
       });
     const timer = window.setInterval(() => {
       getApiAccess()
@@ -113,6 +130,19 @@ export function ApiTokens() {
     }
   }
 
+  async function onDecide(id: string, allow: boolean, windowMinutes: 0 | 15 | 60 | 240) {
+    setBusy(true);
+    try {
+      await decideApiApproval({ data: { id, allow, minutes: windowMinutes } });
+      toast.success(allow ? "Request approved" : "Request denied");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update the request");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onRevoke(id: string) {
     setBusy(true);
     try {
@@ -126,20 +156,54 @@ export function ApiTokens() {
     }
   }
 
+  const waiting = panel?.approvals.length ?? 0;
+
   return (
     <section className="space-y-3">
-      <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">API tokens</p>
+      <div className="flex items-center gap-2">
+        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">API tokens</p>
+        {waiting > 0 ? (
+          <span className="rounded-sm border border-border px-1.5 py-0.5 font-mono text-[10px] text-fg">{waiting} waiting</span>
+        ) : null}
+      </div>
       <div className="space-y-4 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
         <p>
           A token is a key for the folders it is allowed to read. Drivebay shows the secret once, then stores only a hash.
           Clients send <span className="font-mono text-fg">Authorization: Bearer</span>. Reads cover roots, list, stat,
-          search, download with Range, and thumbnails. Writes stay off until you allow a window, and they still follow
-          the server lock on this PC.
+          search, download with Range, and thumbnails. Writes stay off until you allow a window or approve one action, and
+          they still follow the server lock on this PC. A later Android build can show the same yes or no card.
         </p>
         {panel == null ? <p>Loading tokens…</p> : null}
         {panel && !panel.canManage && !panel.canWriteWindow ? (
           <p>API tokens are created on this PC. A signed-in Tailscale device can open a write window for a token.</p>
         ) : null}
+        {panel?.canManage
+          ? panel.approvals.map((approval) => (
+              <div key={approval.id} className="space-y-2 rounded-sm border border-border px-3 py-2">
+                <p className="text-sm text-fg">
+                  {approval.tokenName} wants to {actionLabel(approval)}
+                </p>
+                <p className="font-mono break-all">{approval.path}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" disabled={busy} onClick={() => void onDecide(approval.id, true, 0)}>
+                    Yes
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onDecide(approval.id, true, 15)}>
+                    Allow write for 15 min
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onDecide(approval.id, true, 60)}>
+                    Allow write for 1 h
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onDecide(approval.id, true, 240)}>
+                    Allow write for 4 h
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onDecide(approval.id, false, 0)}>
+                    No
+                  </Button>
+                </div>
+              </div>
+            ))
+          : null}
         {secret ? (
           <div className="space-y-2">
             <p className="text-fg">Copy this token now. It cannot be shown again.</p>
