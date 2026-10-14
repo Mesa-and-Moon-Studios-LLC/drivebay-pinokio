@@ -2,6 +2,9 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.28
+- The Donate menu includes PayPal: `https://www.paypal.com/donate/?business=AAGD9Q6BU4WCE&currency_code=USD&item_name=Support%20Drivebay%20-%20Mesa%20and%20Moon%20Studios`. `.github/FUNDING.yml` lists that same link under `custom`. GitHub Sponsors and Ko-fi stay blank, so those choices stay out of the menu.
+
 ## 3.27
 - Settings has a Donate button. It opens a menu of GitHub Sponsors, PayPal, and Ko-fi. The addresses are `DONATE_GITHUB_SPONSORS_URL`, `DONATE_PAYPAL_URL`, and `DONATE_KOFI_URL` in `app/src/lib/donate.mjs`. A blank address hides that choice. With every address blank, the button stays off the page.
 - `.github/FUNDING.yml` keeps those links as comments. `github: lordstryfe` stays commented until GitHub Sponsors is approved.

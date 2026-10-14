@@ -1,10 +1,11 @@
 // The one place to fill Donate links. A blank string hides that choice.
 // With every string blank, the settings Donate button stays off the page.
-// .github/FUNDING.yml repeats these as comments. github: lordstryfe stays
+// .github/FUNDING.yml lists the same links. github: lordstryfe stays
 // commented there until GitHub Sponsors is approved.
 
 export const DONATE_GITHUB_SPONSORS_URL = "";
-export const DONATE_PAYPAL_URL = "";
+export const DONATE_PAYPAL_URL =
+  "https://www.paypal.com/donate/?business=AAGD9Q6BU4WCE&currency_code=USD&item_name=Support%20Drivebay%20-%20Mesa%20and%20Moon%20Studios";
 export const DONATE_KOFI_URL = "";
 
 const DONATE_CHOICES = [
