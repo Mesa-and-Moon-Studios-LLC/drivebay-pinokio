@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -21,8 +22,9 @@ function cleanup(ctx) {
   fs.rmSync(ctx.dir, { recursive: true, force: true });
 }
 
-function samePath(actual, expected) {
-  assert.equal(fs.realpathSync(actual), fs.realpathSync(expected));
+async function samePath(actual, expected) {
+  // fs.realpathSync leaves Windows 8.3 names alone. The API uses fs.promises.realpath, which expands them.
+  assert.equal(await realpath(actual), await realpath(expected));
 }
 
 async function call(ctx, pathname, opts = {}) {
@@ -72,7 +74,7 @@ test("bearer reads stay inside the root and record last use", async () => {
     const roots = await call(ctx, "/api/v1/roots", { token });
     assert.equal(roots.status, 200);
     const rootBody = await roots.json();
-    samePath(rootBody.roots[0].path, ctx.root);
+    await samePath(rootBody.roots[0].path, ctx.root);
 
     const listed = await call(ctx, `/api/v1/list?path=${encodeURIComponent(ctx.root)}`, { token });
     const listBody = await listed.json();
@@ -211,7 +213,7 @@ test("a symlink alias of the root still reads the real folder", async (t) => {
     assert.equal(await viaAlias.text(), "hello");
     const roots = await call(ctx, "/api/v1/roots", { token, drive: alias });
     const body = await roots.json();
-    samePath(body.roots[0].path, ctx.root);
+    await samePath(body.roots[0].path, ctx.root);
   } finally {
     cleanup(ctx);
   }
@@ -234,7 +236,7 @@ test("an optional root allowlist narrows reads", async () => {
     const roots = await call(ctx, "/api/v1/roots", { token });
     const body = await roots.json();
     assert.equal(body.roots.length, 1);
-    samePath(body.roots[0].path, only);
+    await samePath(body.roots[0].path, only);
   } finally {
     cleanup(ctx);
   }
