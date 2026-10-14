@@ -1,7 +1,7 @@
-Drivebay 3.29 adds Ko-fi to the Donate menu.
+Drivebay 3.30 uses the Mesa and Moon Studios repository.
 
-This release includes Drivebay-Setup-3.29.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.30.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-The settings Donate button opens PayPal and Ko-fi. Ko-fi is https://ko-fi.com/mesaandmoonstudios. .github/FUNDING.yml lists ko_fi: mesaandmoonstudios. GitHub Sponsors stays blank, so that choice stays out of the menu. github: lordstryfe stays commented until GitHub Sponsors is approved.
+Install, uninstall, update checks, and the settings feature-request link use https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio. The Android APK stays at https://github.com/lordstryfe/drivebay/releases/latest. github: lordstryfe stays commented until GitHub Sponsors is approved.
