@@ -136,7 +136,7 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   const nsi = fs.readFileSync(path.join(root, "installer/drivebay.nsi"), "utf8");
   assert.match(nsi, /Open Drivebay settings/);
   assert.equal(nsi.includes("Open Drivebay in my browser"), false);
-  assert.match(script, /\$script:SourceRef = "cursor\/windows-script-install-d803"/);
+  assert.match(script, /\$script:SourceRef = "main"/);
   const tree = script.slice(script.indexOf("function Get-DrivebayTree"), script.indexOf("function Install-PortableNode"));
   const checkout = tree.indexOf("installer\\launcher.mjs");
   const branchZip = tree.indexOf("archive/refs/heads/$ref.zip");

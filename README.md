@@ -69,13 +69,7 @@ Or in CMD:
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
 ```
 
-This copy of the script installs branch `cursor/windows-script-install-d803` and builds that server. It does not install the latest GitHub release or `main`. Release v3.20 has no server archive, so an earlier copy of this script downloaded `main`, and `main` opens the file browser on this PC. Running `install.ps1` from a checkout uses the files in that checkout. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
-
-Until this is on `main`, use the branch script:
-
-```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/install.ps1 | iex
-```
+The script downloads the latest GitHub release server archive (`drivebay-server-win-x64.zip`) and installs that build. If the latest release has no server archive, it downloads `main`. Running `install.ps1` from a checkout uses the files in that checkout. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
 
 A first-time install asks for the same choices as the .exe installer:
 
@@ -103,12 +97,6 @@ Or in CMD:
 
 ```
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"
-```
-
-Until this is on `main`, use the branch script:
-
-```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/uninstall.ps1 | iex
 ```
 
 It stops node on the Drivebay port, `DrivebayTray.exe`, and the launcher. It removes the startup Run entry, scheduled tasks, Start menu and desktop shortcuts, and the program files under `%LOCALAPPDATA%\Drivebay` and `%LOCALAPPDATA%\Programs\Drivebay`. Anything already gone is skipped. It asks before deleting the saved password and settings. Type YES to delete them.
@@ -211,13 +199,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.21.
 
-Until this install is on main, paste this in PowerShell:
-
-```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/install.ps1 | iex
-```
-
-After it is on main, the update command is:
+Paste this in PowerShell:
 
 ```
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
@@ -225,13 +207,7 @@ irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.p
 
 The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.21. In Pinokio, use Update.
 
-To uninstall, paste this in PowerShell until the script is on main:
-
-```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/uninstall.ps1 | iex
-```
-
-After it is on main, the uninstall command is:
+To uninstall, paste this in PowerShell:
 
 ```
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex

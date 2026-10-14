@@ -151,15 +151,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "Until this install is on main, paste this in PowerShell:",
-      },
-      {
-        kind: "code",
-        text: "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/install.ps1 | iex",
-      },
-      {
-        kind: "p",
-        text: "After it is on main, the update command is:",
+        text: "Paste this in PowerShell:",
       },
       {
         kind: "code",
@@ -171,15 +163,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "To uninstall, paste this in PowerShell until the script is on main:",
-      },
-      {
-        kind: "code",
-        text: "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/uninstall.ps1 | iex",
-      },
-      {
-        kind: "p",
-        text: "After it is on main, the uninstall command is:",
+        text: "To uninstall, paste this in PowerShell:",
       },
       {
         kind: "code",

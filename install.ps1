@@ -13,9 +13,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::
 
 $script:Repo = "lordstryfe/drivebay-pinokio"
 # "main" installs the latest release server zip, or main when that zip is missing.
-# This branch is not in the v3.20 release, and that release has no server zip, so the
-# old script downloaded main. Main opens /login and then the file browser.
-$script:SourceRef = "cursor/windows-script-install-d803"
+$script:SourceRef = "main"
 
 function Test-NonInteractive {
   return ($env:DRIVEBAY_SETUP_ONLY -eq "1" -or $env:DRIVEBAY_NONINTERACTIVE -eq "1")
