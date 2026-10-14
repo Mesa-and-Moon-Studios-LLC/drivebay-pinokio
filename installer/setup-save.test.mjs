@@ -93,7 +93,7 @@ test("tray source stays on C# 5 and exposes the menu", () => {
   assert.equal(cs.includes("=>"), false);
   assert.equal(cs.includes("out var"), false);
   for (const label of [
-    "Open Drivebay",
+    "Open settings",
     "Copy address",
     "Start server",
     "Stop server",

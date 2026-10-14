@@ -1,4 +1,4 @@
-import { genericOAuthClient } from "better-auth/client/plugins";
+import { genericOAuthClient } from "./generic-oauth-client";
 import { createAuthClient } from "better-auth/react";
 import { GROK_PROVIDERS } from "./providers";
 

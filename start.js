@@ -12,7 +12,7 @@ module.exports = {
         message: "node run-dev.cjs",
         on: [
           {
-            event: "/(http:\\/\\/[0-9.:]+)/",
+            event: "/Drivebay ready (http:\\/\\/[0-9A-Za-z.:]+(?:\\/settings)?)/",
             done: true,
           },
         ],

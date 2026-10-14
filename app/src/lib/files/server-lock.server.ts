@@ -4,9 +4,9 @@
  * File lives on the host only:
  *   <dataDir>/server-lock.json
  *
- * There is NO web/API write path. Edit the JSON on the PC (or via env),
- * then restart Drivebay. Clients may *read* a public subset so the UI can
- * hide disabled controls — they cannot change the policy.
+ * Settings on this PC (a signed-in loopback request) can write the file.
+ * The process reads the file on every check, so a save applies immediately.
+ * Web and APK clients on LAN or Tailscale can read the policy and cannot write it.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -45,8 +45,10 @@ export type PublicServerLock = {
   maxUploadMb: number;
   allowedRoots: string[];
   note: string;
-  /** Always true — clients cannot write this file through the app. */
-  lockedOnServer: true;
+  /** True when this request is not the host PC, so Settings stays read-only. */
+  lockedOnServer: boolean;
+  /** True only for a loopback request. The write API checks this again. */
+  canEdit: boolean;
   /** Absolute path of the lock file (for host admin reference in Settings). */
   lockFile: string;
 };
@@ -135,7 +137,10 @@ export function readServerLock(): ServerLockPolicy {
   }
 }
 
-export function toPublicServerLock(policy: ServerLockPolicy = readServerLock()): PublicServerLock {
+export function toPublicServerLock(
+  policy: ServerLockPolicy = readServerLock(),
+  canEdit = false,
+): PublicServerLock {
   return {
     allowPortChangeFromUi: policy.allowPortChangeFromUi,
     allowDelete: policy.allowDelete,
@@ -145,9 +150,35 @@ export function toPublicServerLock(policy: ServerLockPolicy = readServerLock()):
     maxUploadMb: policy.maxUploadMb,
     allowedRoots: [...policy.allowedRoots],
     note: policy.note,
-    lockedOnServer: true,
+    lockedOnServer: !canEdit,
+    canEdit,
     lockFile: resolveServerLockFile(),
   };
+}
+
+function samePolicy(a: ServerLockPolicy, b: ServerLockPolicy): boolean {
+  if (a.allowPortChangeFromUi !== b.allowPortChangeFromUi) return false;
+  if (a.allowDelete !== b.allowDelete) return false;
+  if (a.allowRename !== b.allowRename) return false;
+  if (a.allowCreateFolder !== b.allowCreateFolder) return false;
+  if (a.allowUpload !== b.allowUpload) return false;
+  if (a.maxUploadMb !== b.maxUploadMb) return false;
+  if (a.allowedRoots.length !== b.allowedRoots.length) return false;
+  return a.allowedRoots.every((root, i) => root === b.allowedRoots[i]);
+}
+
+/** Write UTF-8 JSON with no BOM. The next policy read in this process sees it. */
+export function writeServerLock(
+  input: Partial<ServerLockPolicy>,
+): { policy: ServerLockPolicy; applied: "live" | "restart" } {
+  const current = readServerLock();
+  const next = normalizePolicy({ ...current, ...input, note: input.note ?? current.note });
+  const file = resolveServerLockFile();
+  mkdirSync(dirname(file), { recursive: true });
+  const body = JSON.stringify(next, null, 2) + "\n";
+  writeFileSync(file, body, "utf8");
+  const back = readServerLock();
+  return { policy: back, applied: samePolicy(next, back) ? "live" : "restart" };
 }
 
 export function assertPolicy(action: keyof Pick<
@@ -156,7 +187,7 @@ export function assertPolicy(action: keyof Pick<
 >): void {
   const p = readServerLock();
   if (!p[action]) {
-    throw new Error("This action is disabled by server-lock policy (edit data/server-lock.json on the host).");
+    throw new Error("This action is turned off in Settings on the PC that runs Drivebay.");
   }
 }
 

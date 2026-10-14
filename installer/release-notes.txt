@@ -1,0 +1,9 @@
+Drivebay 3.21 is the Windows install that opens Settings on this PC. Other devices still open the file browser.
+
+This release includes Drivebay-Setup-3.21.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+
+irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+
+Tailscale is the recommended setup and the default. Nothing is opened to the internet, and only signed-in devices can reach Drivebay. Tailscale + Local (Both) keeps Tailscale on and adds a public path that starts off. Public access stays off until you turn it on from this PC or a signed-in Tailscale device, and it can turn itself off after 1, 4, or 24 hours. Regular mode still exposes the port and shows the router steps.
+
+Settings on this PC has a How-to guide. Running the install again updates Drivebay and keeps the account, password, port, mode, and settings. Setup names the program if the chosen port is already in use, and it says Drivebay is ready only after /api/health answers.

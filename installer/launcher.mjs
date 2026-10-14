@@ -256,13 +256,18 @@ async function main() {
   if (existing && pidAlive(existing) && existing !== process.pid) {
     const ready = await waitForLogin(origin, home, 4_000);
     if (ready) {
-      log(home, `Drivebay is already running at ${origin}/login`);
+      log(home, `Drivebay is already running. This PC opens settings at ${origin}/settings`);
       if (config.mode === "tailscale") {
         log(home, `Tailscale: other devices on your tailnet use http://<this-pc-tailscale-name>:${port}/`);
+      } else if (config.mode === "both") {
+        log(
+          home,
+          `Tailscale + Local: Tailscale stays open. Public access starts off until you turn it on from this PC or over Tailscale.`,
+        );
       } else {
         log(home, `Forward TCP port ${port} on your router if other devices cannot connect.`);
       }
-      openBrowser(`${origin}/login`);
+      openBrowser(`${origin}/settings`);
       return;
     }
   }
@@ -295,9 +300,12 @@ async function main() {
   const serverEnv = {
     ...process.env,
     DRIVEBAY_STANDALONE: "true",
+      DRIVEBAY_LAUNCHER: fileURLToPath(import.meta.url),
+      DRIVEBAY_HOME: home,
       DRIVEBAY_DATA_DIR: path.join(home, "data"),
       DRIVEBAY_PORT_FILE: path.join(home, "drivebay.port"),
       DRIVEBAY_FALLBACK_PORT: String(port),
+      DRIVEBAY_MODE: config.mode === "tailscale" || config.mode === "both" ? config.mode : "regular",
       PORT: String(port),
       NITRO_PORT: String(port),
       HOST: "0.0.0.0",
@@ -344,6 +352,11 @@ async function main() {
       home,
       `Tailscale mode: devices on your tailnet reach this PC at http://<this-pc-tailscale-name>:${port}/. No router port forward is required.`,
     );
+  } else if (config.mode === "both") {
+    log(
+      home,
+      `Tailscale + Local (Both): Tailscale stays open at http://<this-pc-tailscale-name>:${port}/. Public access starts off. Forward TCP port ${port} before that path can work.`,
+    );
   } else {
     log(home, `You must open and forward TCP port ${port} on your router.`);
   }
@@ -354,7 +367,8 @@ async function main() {
     shutdown(1);
   }
   await ensureAccount(home, origin);
-  openBrowser(`${origin}/login`);
+  // This PC opens settings. Other devices still use the shared address for the file browser.
+  openBrowser(`${origin}/settings`);
   child.ref();
 }
 

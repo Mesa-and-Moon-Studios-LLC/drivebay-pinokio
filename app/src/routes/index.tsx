@@ -1,8 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useState, type ComponentType } from "react";
+import { pageAfterSignIn } from "@/lib/host-page.mjs";
 
 export const Route = createFileRoute("/")({
   ssr: false,
+  beforeLoad: () => {
+    if (typeof window === "undefined") return;
+    if (pageAfterSignIn(window.location.hostname, null) === "/settings") {
+      throw redirect({ to: "/settings", replace: true });
+    }
+  },
   component: HomePage,
 });
 

@@ -28,7 +28,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Port and account helper tests
-        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs
+        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs installer/script-install.test.mjs installer/pending-account.test.mjs installer/server-lock.test.mjs installer/document-routes.test.mjs installer/public-access.test.mjs installer/uninstall.test.mjs installer/android-app.test.mjs
 
       - name: Build production server
         working-directory: app
@@ -82,17 +82,30 @@ jobs:
           }
           Get-ChildItem installer\dist
 
+      - name: Pack server archive
+        shell: pwsh
+        run: |
+          $dest = "installer\dist\drivebay-server-win-x64.zip"
+          if (Test-Path $dest) { Remove-Item $dest -Force }
+          Compress-Archive -Path "installer\staging\*" -DestinationPath $dest
+          Get-Item $dest | Select-Object FullName, Length
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: Drivebay-Setup
-          path: installer/dist/*.exe
+          path: |
+            installer/dist/*.exe
+            installer/dist/*.zip
           if-no-files-found: error
 
       - name: Attach installer to the GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/dist/*.exe
-          generate_release_notes: true
+          name: Drivebay ${{ github.ref_name }}
+          body_path: installer/release-notes.txt
+          files: |
+            installer/dist/*.exe
+            installer/dist/*.zip
           fail_on_unmatched_files: true

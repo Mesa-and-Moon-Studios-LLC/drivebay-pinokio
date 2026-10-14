@@ -4,10 +4,9 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import type { DirListing, Drive, PreviewPayload, SearchResult } from "./types";
 
 export const hasOwner = createServerFn({ method: "GET" }).handler(async () => {
-  const { getSql } = await import("@/lib/db");
-  const sql = await getSql();
-  const rows = await sql<{ n: number }>`select count(*)::int as n from "user"`;
-  return (rows[0]?.n ?? 0) > 0;
+  const { accountFirstRun } = await import("@/lib/auth/pending-account.server");
+  const first = await accountFirstRun();
+  return { owned: first.mode === "unlock", username: first.username };
 });
 
 export const listDrives = createServerFn({ method: "GET" })
@@ -176,6 +175,30 @@ export const searchFiles = createServerFn({ method: "POST" })
     return fs.searchEntries(data.root, data.query, data.showHidden);
   });
 
+export const getRouterHelp = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const settings = await import("./settings.server");
+    const host = await import("./host-request.server");
+    const mode = settings.readReachMode();
+    const port = settings.readPortSettings().port;
+    const showRouter = mode === "regular" || mode === "both";
+    const access = mode === "both" ? settings.readPublicAccess() : null;
+    return {
+      mode,
+      port,
+      localIp: showRouter ? settings.thisPcLanIp() : "",
+      publicIp: showRouter ? await settings.lookupPublicIpv4() : "",
+      publicAccess: access
+        ? {
+            enabled: access.enabled,
+            offAt: access.offAt,
+            canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
+          }
+        : null,
+    };
+  });
+
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
@@ -183,9 +206,10 @@ export const getSettings = createServerFn({ method: "GET" })
     const lock = await import("./server-lock.server");
     const access = await import("./drive-access.server");
     const driveAccess = await access.listDrivesWithAccess();
+    const host = await import("./host-request.server");
     return {
       ...settings.readAppSettings(),
-      serverLock: lock.toPublicServerLock(),
+      serverLock: lock.toPublicServerLock(lock.readServerLock(), host.isLoopbackRequest()),
       driveAccess,
     };
   });
@@ -217,4 +241,56 @@ export const savePortSettings = createServerFn({ method: "POST" })
     const lock = await import("./server-lock.server");
     lock.assertPolicy("allowPortChangeFromUi");
     return settings.writePortSettings(data.style, data.port);
+  });
+
+const serverLockInput = z.object({
+  allowPortChangeFromUi: z.boolean(),
+  allowDelete: z.boolean(),
+  allowRename: z.boolean(),
+  allowCreateFolder: z.boolean(),
+  allowUpload: z.boolean(),
+  maxUploadMb: z.number().int().min(1).max(8192),
+  allowedRoots: z.array(z.string().trim().min(1).max(400)).max(64),
+});
+
+export const saveServerLock = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(serverLockInput)
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const lock = await import("./server-lock.server");
+    const saved = lock.writeServerLock(data);
+    return {
+      applied: saved.applied,
+      serverLock: lock.toPublicServerLock(saved.policy, true),
+    };
+  });
+
+export const savePublicAccess = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      enabled: z.boolean(),
+      hours: z.union([z.literal(0), z.literal(1), z.literal(4), z.literal(24)]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPublicAccessEditor();
+    const settings = await import("./settings.server");
+    if (settings.readReachMode() !== "both") {
+      throw new Error("Public access is only used in Tailscale + Local mode.");
+    }
+    const saved = settings.writePublicAccess(data.enabled, data.hours);
+    return { enabled: saved.enabled, offAt: saved.offAt, canEdit: true };
+  });
+
+export const restartDrivebay = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const restart = await import("./host-restart.server");
+    return restart.scheduleStandaloneRestart();
   });
