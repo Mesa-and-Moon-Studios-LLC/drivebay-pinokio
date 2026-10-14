@@ -57,9 +57,10 @@ for (const name of ["pglite.wasm", "initdb.wasm", "pglite.data"]) {
 fs.rmSync(staging, { recursive: true, force: true });
 fs.mkdirSync(staging, { recursive: true });
 fs.cpSync(output, path.join(staging, "app"), { recursive: true });
-for (const name of ["launcher.mjs", "lib.mjs", "start-drivebay.vbs", "stop-drivebay.vbs"]) {
+for (const name of ["launcher.mjs", "lib.mjs", "reset-password.mjs", "drivebay.cmd", "start-drivebay.vbs", "stop-drivebay.vbs"]) {
   fs.copyFileSync(path.join(here, name), path.join(staging, name));
 }
+fs.copyFileSync(path.join(root, "reset-password.ps1"), path.join(staging, "reset-password.ps1"));
 const trayExe = path.join(here, "DrivebayTray.exe");
 if (!fs.existsSync(trayExe)) {
   console.error("Missing installer/DrivebayTray.exe. Build it with csc before staging.");

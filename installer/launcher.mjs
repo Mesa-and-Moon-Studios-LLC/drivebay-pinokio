@@ -127,6 +127,26 @@ function alertUser(home, message) {
   ).unref();
 }
 
+function rotateAuthSecret(home) {
+  const secret = crypto.randomBytes(32).toString("hex");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "auth.secret"), `${secret}\n`, { mode: 0o600 });
+}
+
+function startDetached(home) {
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    env: {
+      ...process.env,
+      DRIVEBAY_HOME: home,
+      DRIVEBAY_NO_BROWSER: "1",
+    },
+  });
+  child.unref();
+}
+
 function authSecret(home) {
   const file = path.join(home, "auth.secret");
   try {
@@ -235,6 +255,24 @@ async function stop(home) {
 
 async function main() {
   const home = defaultHome();
+
+  if (process.argv[2] === "reset-password") {
+    const { runResetCommand } = await import("./reset-password.mjs");
+    const existing = readPid(home);
+    const wasRunning = Boolean(existing && pidAlive(existing) && existing !== process.pid);
+    const code = await runResetCommand({
+      home,
+      argv: process.argv.slice(2),
+      wasRunning,
+      stop: () => stop(home),
+      log: (message) => log(home, message),
+      rotateSecret: () => rotateAuthSecret(home),
+      shredPending: () => shred(path.join(home, "pending-account.json")),
+      startAgain: () => startDetached(home),
+    });
+    process.exit(code);
+  }
+
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(path.join(home, "data"), { recursive: true });
 
