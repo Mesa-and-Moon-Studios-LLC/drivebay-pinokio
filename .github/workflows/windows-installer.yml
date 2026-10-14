@@ -56,9 +56,20 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
-          if ($LASTEXITCODE -eq 3010) { exit 0 }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $dest = "${env:ProgramFiles(x86)}\NSIS"
+          $makensis = Join-Path $dest "makensis.exe"
+          if (Test-Path $makensis) { exit 0 }
+          $zip = Join-Path $env:TEMP "nsis-3.11.zip"
+          curl.exe -fsSL -L -o $zip "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11.zip"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS download failed ($LASTEXITCODE)" }
+          $size = (Get-Item $zip).Length
+          if ($size -lt 1000000) { throw "NSIS download is too small ($size bytes)" }
+          $unpack = Join-Path $env:TEMP "nsis-3.11-unpack"
+          if (Test-Path $unpack) { Remove-Item $unpack -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath $unpack
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item -Path (Join-Path $unpack "nsis-3.11\*") -Destination $dest -Recurse -Force
+          if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
 
       - name: Compile installer
         shell: pwsh
