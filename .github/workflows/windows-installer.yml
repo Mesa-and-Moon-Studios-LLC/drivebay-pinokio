@@ -56,9 +56,22 @@ jobs:
       - name: Install NSIS
         shell: pwsh
         run: |
-          choco install nsis -y --no-progress
-          if ($LASTEXITCODE -eq 3010) { exit 0 }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $makensis = "${env:ProgramFiles(x86)}\NSIS\makensis.exe"
+          if (Test-Path $makensis) { exit 0 }
+          for ($try = 1; $try -le 3; $try++) {
+            choco install nsis -y --no-progress
+            if (Test-Path $makensis) { exit 0 }
+            Write-Host "Chocolatey did not install makensis (attempt $try, exit $LASTEXITCODE)."
+            Start-Sleep -Seconds (10 * $try)
+          }
+          $setup = Join-Path $env:TEMP "nsis-3.11-setup.exe"
+          Write-Host "Downloading the NSIS 3.11 installer."
+          Invoke-WebRequest -Uri "https://downloads.sourceforge.net/project/nsis/NSIS%203/3.11/nsis-3.11-setup.exe" -OutFile $setup
+          $proc = Start-Process -FilePath $setup -ArgumentList "/S" -Wait -PassThru
+          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            throw "NSIS setup failed ($($proc.ExitCode))"
+          }
+          if (-not (Test-Path $makensis)) { throw "makensis not found at $makensis" }
 
       - name: Compile installer
         shell: pwsh
