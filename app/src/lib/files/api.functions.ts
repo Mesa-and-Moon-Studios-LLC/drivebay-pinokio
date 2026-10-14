@@ -301,7 +301,11 @@ export const getApiAccess = createServerFn({ method: "GET" })
     const host = await import("./host-request.server");
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
-    return store.panelFor(access.resolveApiAccessFile(), { loopback: host.isLoopbackRequest() }, Date.now());
+    return store.panelFor(
+      access.resolveApiAccessFile(),
+      { loopback: host.isLoopbackRequest(), tailnet: host.isTailnetRequest() },
+      Date.now(),
+    );
   });
 
 export const createApiToken = createServerFn({ method: "POST" })
@@ -332,4 +336,20 @@ export const revokeApiToken = createServerFn({ method: "POST" })
     const store = await import("./token-store.mjs");
     const access = await import("./api-v1.server");
     return store.revokeToken(access.resolveApiAccessFile(), data.id);
+  });
+
+export const allowApiWrite = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      id: z.string().trim().min(8).max(64),
+      minutes: z.union([z.literal(15), z.literal(60), z.literal(240)]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertPublicAccessEditor();
+    const store = await import("./token-store.mjs");
+    const access = await import("./api-v1.server");
+    return store.allowWrite(access.resolveApiAccessFile(), data.id, data.minutes, Date.now());
   });

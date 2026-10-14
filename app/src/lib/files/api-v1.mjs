@@ -1,10 +1,11 @@
 /**
  * Bearer API for a Drivebay token.
- * This version is read-only: roots, list, stat, search, download, and thumbnails.
+ * Reads are allowed. Writes need an open window and still obey the server lock.
+ * A closed window is a plain 403 and does not perform the write.
  */
-import { lstat, open, readdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PathError, insideAny, narrowRoots, readInside } from "./token-paths.mjs";
+import { PathError, createInside, insideAny, mutateInside, narrowRoots, readInside } from "./token-paths.mjs";
 import { appendAudit, authenticateToken, hashToken, takeRate } from "./token-store.mjs";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"]);
@@ -64,6 +65,24 @@ function entryOf(dir, name, st) {
   };
 }
 
+class LockError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "LockError";
+  }
+}
+
+async function guardWrite(deps, action, bytes) {
+  if (typeof deps.assertWrite !== "function") {
+    throw new LockError("This action is turned off in Settings on the PC that runs Drivebay.");
+  }
+  try {
+    await deps.assertWrite(action, bytes);
+  } catch (err) {
+    throw new LockError(err && err.message ? err.message : "This action is turned off in Settings on the PC that runs Drivebay.");
+  }
+}
+
 function hasScope(token, name) {
   return Array.isArray(token.scope) && token.scope.includes(name);
 }
@@ -110,11 +129,16 @@ async function readSpan(file, start, length) {
 }
 
 function safeError(err) {
-  if (err instanceof PathError) return err.message;
+  if (err instanceof PathError || err instanceof LockError) return err.message;
   const known = new Set([
     "Not a folder",
     "Not a file",
+    "Path already exists",
+    "Name is required",
+    "Invalid name",
     "Type at least 2 characters",
+    "Body is too large",
+    "Invalid JSON",
     "This token cannot do that.",
   ]);
   if (err && known.has(err.message)) return err.message;
@@ -122,6 +146,7 @@ function safeError(err) {
 }
 
 function statusFor(err) {
+  if (err instanceof LockError) return 403;
   if (err instanceof PathError) {
     if (err.code === "not_found") return 404;
     if (err.code === "invalid") return 400;
@@ -205,7 +230,7 @@ async function searchTree(root, query, roots) {
 
 /**
  * @param {Request} request
- * @param {{ file: string, roots: () => Promise<unknown>, now?: () => number, ratePerMinute?: number }} deps
+ * @param {{ file: string, roots: () => Promise<unknown>, assertWrite?: (action: string, bytes: number) => void, now?: () => number, ratePerMinute?: number, maxUploadBytes?: number }} deps
  */
 export async function handleTokenApi(request, deps) {
   const now = typeof deps.now === "function" ? deps.now() : Date.now();
@@ -274,6 +299,17 @@ async function dispatch(ctx) {
     if (!hasScope(ctx.token, ctx.action)) {
       return { response: json(403, { error: "This token cannot do that." }), detail: "scope" };
     }
+    return fn(ctx);
+  }
+  const writes = {
+    upload: ["PUT", writeUpload],
+    mkdir: ["POST", writeMkdir],
+    rename: ["POST", writeRename],
+    delete: ["POST", writeDelete],
+  };
+  if (writes[ctx.action]) {
+    const [method, fn] = writes[ctx.action];
+    if (ctx.request.method !== method) return { response: json(405, { error: "Method not allowed" }) };
     return fn(ctx);
   }
   return { response: json(404, { error: "Not found" }) };
@@ -405,4 +441,120 @@ async function readThumb(ctx) {
     }),
     path: found.path,
   };
+}
+
+async function readJsonBody(request) {
+  const buf = Buffer.from(await request.arrayBuffer());
+  if (buf.length > 65536) throw new Error("Body is too large");
+  if (buf.length === 0) throw new Error("Invalid JSON");
+  try {
+    return JSON.parse(buf.toString("utf8"));
+  } catch {
+    throw new Error("Invalid JSON");
+  }
+}
+
+async function readUpload(request, deps) {
+  const cap = typeof deps.maxUploadBytes === "number" ? deps.maxUploadBytes : 512 * 1024 * 1024;
+  const declared = Number(request.headers.get("content-length") || "0");
+  if (Number.isFinite(declared) && declared > cap) await guardWrite(deps, "upload", declared);
+  const buf = Buffer.from(await request.arrayBuffer());
+  if (buf.length > cap) await guardWrite(deps, "upload", buf.length);
+  return buf;
+}
+
+function cleanName(name) {
+  const trimmed = String(name ?? "").trim();
+  if (!trimmed) throw new Error("Name is required");
+  if (trimmed === "." || trimmed === ".." || /[\\/]/.test(trimmed) || trimmed.includes("\0") || trimmed.length > 255) {
+    throw new Error("Invalid name");
+  }
+  return trimmed;
+}
+
+async function finishWrite(ctx, spec, run) {
+  await guardWrite(ctx.deps, spec.action, spec.size || 0);
+  const windowOpen = ctx.token.writeUntil != null && ctx.token.writeUntil > ctx.now;
+  if (!windowOpen) {
+    return { response: json(403, { error: "Write access is off." }), path: spec.path, detail: "window" };
+  }
+  return run();
+}
+
+async function writeUpload(ctx) {
+  const raw = ctx.url.searchParams.get("path") || "";
+  const body = await readUpload(ctx.request, ctx.deps);
+  const roots = await allowedRoots(ctx.token, ctx.deps);
+  const dest = await createInside(raw, roots);
+  if (dest.stat && dest.stat.isDirectory()) throw new Error("Path already exists");
+  const exists = Boolean(dest.stat && dest.stat.isFile());
+  if (exists && ctx.url.searchParams.get("overwrite") !== "1") {
+    return { response: json(409, { error: "Path already exists" }), path: dest.path };
+  }
+  const spec = { action: "upload", path: dest.path, size: body.length };
+  return finishWrite(ctx, spec, async () => {
+    await writeFile(dest.path, body);
+    const st = await stat(dest.path);
+    return { response: json(200, { ok: true, path: dest.path, size: st.size }), path: dest.path };
+  });
+}
+
+async function writeMkdir(ctx) {
+  const payload = await readJsonBody(ctx.request);
+  const raw = String(payload.path || "");
+  const roots = await allowedRoots(ctx.token, ctx.deps);
+  const dest = await createInside(raw, roots);
+  if (dest.stat) throw new Error("Path already exists");
+  try {
+    const parentStat = await stat(path.dirname(dest.path));
+    if (!parentStat.isDirectory()) throw new Error("Not a folder");
+  } catch (err) {
+    if (err instanceof PathError) throw err;
+    if (err && err.code === "ENOENT") throw new PathError("not_found", "Path not found");
+    if (err && err.message === "Not a folder") throw err;
+    throw new PathError("invalid", "Invalid path");
+  }
+  const spec = { action: "mkdir", path: dest.path, size: 0 };
+  return finishWrite(ctx, spec, async () => {
+    await mkdir(dest.path);
+    return { response: json(200, { ok: true, path: dest.path }), path: dest.path };
+  });
+}
+
+async function writeRename(ctx) {
+  const payload = await readJsonBody(ctx.request);
+  const raw = String(payload.path || "");
+  const name = cleanName(payload.name);
+  const roots = await allowedRoots(ctx.token, ctx.deps);
+  const from = await mutateInside(raw, roots);
+  const dest = path.join(path.dirname(from.path), name);
+  if (!insideAny(dest, roots)) throw new PathError("outside", "Path is outside the allowed roots.");
+  if (dest !== from.path) {
+    try {
+      await lstat(dest);
+      throw new Error("Path already exists");
+    } catch (err) {
+      if (err && err.message === "Path already exists") throw err;
+      if (!err || err.code !== "ENOENT") throw new PathError("invalid", "Invalid path");
+    }
+  }
+  const spec = { action: "rename", path: from.path, size: 0 };
+  return finishWrite(ctx, spec, async () => {
+    if (dest !== from.path) await rename(from.path, dest);
+    return { response: json(200, { ok: true, path: dest }), path: from.path };
+  });
+}
+
+async function writeDelete(ctx) {
+  const payload = await readJsonBody(ctx.request);
+  const raw = String(payload.path || "");
+  const roots = await allowedRoots(ctx.token, ctx.deps);
+  const target = await mutateInside(raw, roots);
+  const spec = { action: "delete", path: target.path, size: 0 };
+  return finishWrite(ctx, spec, async () => {
+    if (target.link) await unlink(target.path);
+    else if (target.stat.isDirectory()) await rm(target.path, { recursive: true, force: false });
+    else await unlink(target.path);
+    return { response: json(200, { ok: true }), path: target.path };
+  });
 }

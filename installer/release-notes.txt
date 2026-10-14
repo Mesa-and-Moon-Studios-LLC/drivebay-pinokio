@@ -1,11 +1,11 @@
-Drivebay 3.22 adds read-only API tokens on this PC.
+Drivebay 3.23 adds a timed write window for API tokens.
 
-This release includes Drivebay-Setup-3.22.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.23.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-On this PC, Settings can create, list, and revoke a token. The secret is shown once, as db_ plus 32 random bytes, and Drivebay stores only a hash. Each token has a name, a read scope (roots, list, stat, search, download with Range, and thumbnails), an optional folder allowlist, an expiry, and a last-used time.
+On this PC, or from a signed-in Tailscale device, choose Allow write for 15 minutes, 1 hour, or 4 hours. During that window a token can upload, create a folder, rename, and delete. When the window ends, the token is read-only again and a write is not performed.
 
-Clients send Authorization: Bearer to GET /api/v1/roots, /api/v1/list, /api/v1/stat, /api/v1/search, /api/v1/download, and /api/v1/thumb. A path stays inside the allowed folders. A symlink that points outside is refused. Calls are rate limited, and the settings page shows an audit log.
+Writes still follow the server lock on this PC. A symlink is not followed into a write, and deleting a symlink removes the link.
 
-Creating, listing, and revoking a token stays on this PC.
+Read-only tokens from 3.22 stay the same: the secret is shown once, only a hash is stored, and reads use Authorization: Bearer.

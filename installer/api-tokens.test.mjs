@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { handleTokenApi } from "../app/src/lib/files/api-v1.mjs";
 import { wantsJsonError } from "../app/src/lib/files/document-request.mjs";
-import { createToken, panelFor, readApiAccess, resetRateLimits, revokeToken } from "../app/src/lib/files/token-store.mjs";
+import { allowWrite, createToken, panelFor, readApiAccess, resetRateLimits, revokeToken } from "../app/src/lib/files/token-store.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -38,8 +38,10 @@ async function call(ctx, pathname, opts = {}) {
   return handleTokenApi(request, {
     file: ctx.file,
     roots: async () => [{ id: "root", path: opts.drive || ctx.root, label: "Root" }],
+    assertWrite: opts.assertWrite || (() => {}),
     now: () => ctx.now,
     ratePerMinute: opts.ratePerMinute || 1000,
+    maxUploadBytes: opts.maxUploadBytes,
   });
 }
 
@@ -276,12 +278,19 @@ test("token management stays on this PC", () => {
   const ctx = temp();
   try {
     createToken(ctx.file, { name: "Desk", roots: [ctx.root] }, ctx.now);
-    const quiet = panelFor(ctx.file, { loopback: false, tailnet: true }, ctx.now);
+    const quiet = panelFor(ctx.file, { loopback: false, tailnet: false }, ctx.now);
     assert.equal(quiet.canManage, false);
+    assert.equal(quiet.canWriteWindow, false);
     assert.equal(quiet.tokens.length, 0);
-    assert.equal(quiet.audit.length, 0);
+    const tail = panelFor(ctx.file, { loopback: false, tailnet: true }, ctx.now);
+    assert.equal(tail.canWriteWindow, true);
+    assert.equal(tail.canManage, false);
+    assert.equal(tail.tokens[0].name, "Desk");
+    assert.equal(tail.tokens[0].roots, undefined);
+    assert.equal(tail.audit.length, 0);
     const pc = panelFor(ctx.file, { loopback: true, tailnet: false }, ctx.now);
     assert.equal(pc.canManage, true);
+    assert.equal(pc.canWriteWindow, true);
     assert.deepEqual(pc.tokens[0].roots, [ctx.root]);
     assert.equal(pc.tokens[0].name, "Desk");
   } finally {
@@ -292,9 +301,12 @@ test("token management stays on this PC", () => {
   const create = api.slice(api.indexOf("export const createApiToken"), api.indexOf("export const revokeApiToken"));
   assert.match(create, /assertLoopbackRequest/);
   assert.equal(create.includes("assertPublicAccessEditor"), false);
-  const revoke = api.slice(api.indexOf("export const revokeApiToken"));
+  const revoke = api.slice(api.indexOf("export const revokeApiToken"), api.indexOf("export const allowApiWrite"));
   assert.match(revoke, /assertLoopbackRequest/);
   assert.equal(revoke.includes("assertPublicAccessEditor"), false);
+  const allow = api.slice(api.indexOf("export const allowApiWrite"));
+  assert.match(allow, /assertPublicAccessEditor/);
+  assert.equal(allow.includes("assertLoopbackRequest"), false);
   const access = api.slice(api.indexOf("export const getApiAccess"), api.indexOf("export const createApiToken"));
   assert.equal(access.includes("assertLoopbackRequest"), false);
   assert.match(access, /isLoopbackRequest/);
@@ -306,6 +318,8 @@ test("token management stays on this PC", () => {
   assert.match(ui, /Audit log/);
   assert.match(ui, /setInterval/);
   assert.match(ui, /API tokens are created on this PC/);
+  assert.match(ui, /Allow write for/);
+  assert.match(ui, /signed-in Tailscale device can open a write window/);
 });
 
 test("the v1 route is registered and API paths stay JSON", () => {
@@ -316,8 +330,138 @@ test("the v1 route is registered and API paths stay JSON", () => {
   assert.match(route, /handleApiV1/);
   assert.match(tree, /\/api\/v1\/\$/);
   assert.match(server, /listEnabledDrives/);
+  assert.match(server, /assertPolicy/);
+  assert.match(server, /assertUploadSize/);
   assert.match(server, /allowedRoots/);
   assert.match(server, /api-access\.json/);
   assert.equal(wantsJsonError("/api/v1/download", ""), true);
   assert.equal(wantsJsonError("/api/v1/roots", null), true);
+});
+
+test("writes need an open window and still obey the server lock", async (t) => {
+  const ctx = temp();
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-write-out-"));
+  try {
+    const { token, record } = createToken(ctx.file, { name: "Writer", roots: [] }, ctx.now);
+    const folder = path.join(ctx.root, "made");
+    const closed = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    assert.equal(closed.status, 403);
+    const closedBody = await closed.json();
+    assert.equal(closedBody.error, "Write access is off.");
+    assert.equal(Object.hasOwn(closedBody, "approval_request_id"), false);
+    assert.equal(fs.existsSync(folder), false);
+
+    allowWrite(ctx.file, record.id, 15, ctx.now);
+    const opened = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: folder }),
+    });
+    assert.equal(opened.status, 200);
+    assert.equal(fs.statSync(folder).isDirectory(), true);
+
+    const nested = path.join(folder, "missing-parent", "child");
+    const oneLevel = await call(ctx, "/api/v1/mkdir", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: nested }),
+    });
+    assert.equal(oneLevel.status, 404);
+    assert.equal(fs.existsSync(path.join(folder, "missing-parent")), false);
+
+    const file = path.join(ctx.root, "note.txt");
+    const upload = await call(ctx, `/api/v1/upload?path=${encodeURIComponent(file)}`, {
+      token,
+      method: "PUT",
+      body: "hello",
+    });
+    assert.equal(upload.status, 200);
+    assert.equal(fs.readFileSync(file, "utf8"), "hello");
+    const again = await call(ctx, `/api/v1/upload?path=${encodeURIComponent(file)}`, {
+      token,
+      method: "PUT",
+      body: "nope",
+    });
+    assert.equal(again.status, 409);
+    assert.equal(fs.readFileSync(file, "utf8"), "hello");
+    const replaced = await call(ctx, `/api/v1/upload?path=${encodeURIComponent(file)}&overwrite=1`, {
+      token,
+      method: "PUT",
+      body: "next",
+    });
+    assert.equal(replaced.status, 200);
+    assert.equal(fs.readFileSync(file, "utf8"), "next");
+
+    const renamed = await call(ctx, "/api/v1/rename", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: file, name: "renamed.txt" }),
+    });
+    assert.equal(renamed.status, 200);
+    const renamedPath = path.join(ctx.root, "renamed.txt");
+    assert.equal(fs.readFileSync(renamedPath, "utf8"), "next");
+
+    const locked = await call(ctx, "/api/v1/delete", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: renamedPath }),
+      assertWrite: () => {
+        throw new Error("This action is turned off in Settings on the PC that runs Drivebay.");
+      },
+    });
+    assert.equal(locked.status, 403);
+    const lockedBody = await locked.json();
+    assert.match(lockedBody.error, /turned off/);
+    assert.equal(Object.hasOwn(lockedBody, "approval_request_id"), false);
+    assert.equal(fs.existsSync(renamedPath), true);
+
+    ctx.now += 15 * 60 * 1000;
+    const ended = await call(ctx, "/api/v1/delete", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: renamedPath }),
+    });
+    assert.equal(ended.status, 403);
+    assert.equal((await ended.json()).error, "Write access is off.");
+    assert.equal(fs.existsSync(renamedPath), true);
+
+    allowWrite(ctx.file, record.id, 60, ctx.now);
+    const link = path.join(ctx.root, "escape");
+    fs.writeFileSync(path.join(outside, "secret.txt"), "keep");
+    try {
+      fs.symlinkSync(outside, link, "dir");
+    } catch (err) {
+      t.skip(`symlink not available: ${err.message}`);
+      return;
+    }
+    const viaLink = await call(ctx, `/api/v1/upload?path=${encodeURIComponent(path.join(link, "secret.txt"))}&overwrite=1`, {
+      token,
+      method: "PUT",
+      body: "changed",
+    });
+    assert.equal(viaLink.status, 403);
+    assert.equal(fs.readFileSync(path.join(outside, "secret.txt"), "utf8"), "keep");
+    const removed = await call(ctx, "/api/v1/delete", {
+      token,
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: link }),
+    });
+    assert.equal(removed.status, 200);
+    assert.equal(fs.existsSync(link), false);
+    assert.equal(fs.readFileSync(path.join(outside, "secret.txt"), "utf8"), "keep");
+  } finally {
+    cleanup(ctx);
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });

@@ -8,6 +8,7 @@ import { dirname } from "node:path";
 
 export const TOKEN_RE = /^db_[0-9a-f]{64}$/;
 export const READ_SCOPE = ["roots", "list", "stat", "search", "download", "thumb"];
+export const WRITE_MINUTES = [15, 60, 240];
 export const AUDIT_CAP = 200;
 export const DEFAULT_RATE_PER_MINUTE = 60;
 
@@ -55,6 +56,7 @@ function normalizeToken(raw) {
     expiresAt: asNumber(raw.expiresAt),
     createdAt: asNumber(raw.createdAt) ?? 0,
     lastUsedAt: asNumber(raw.lastUsedAt),
+    writeUntil: asNumber(raw.writeUntil),
   };
 }
 
@@ -111,6 +113,7 @@ export function publicToken(token, now) {
     expiresAt: token.expiresAt,
     createdAt: token.createdAt,
     lastUsedAt: token.lastUsedAt,
+    writeUntil: token.writeUntil != null && token.writeUntil > now ? token.writeUntil : null,
     expired,
   };
 }
@@ -130,6 +133,7 @@ export function createToken(file, input, now) {
     expiresAt,
     createdAt: now,
     lastUsedAt: null,
+    writeUntil: null,
   };
   const state = readApiAccess(file);
   state.tokens.push(record);
@@ -140,6 +144,20 @@ export function createToken(file, input, now) {
 export function listTokens(file, now) {
   const state = readApiAccess(file);
   return state.tokens.map((token) => publicToken(token, now));
+}
+
+export function allowWrite(file, id, minutes, now) {
+  const windowMinutes = Number(minutes);
+  if (!WRITE_MINUTES.includes(windowMinutes)) {
+    throw new Error("Write window must be 15 minutes, 1 hour, or 4 hours.");
+  }
+  const state = readApiAccess(file);
+  const token = state.tokens.find((item) => item.id === id);
+  if (!token) throw new Error("Token not found");
+  if (token.expiresAt != null && token.expiresAt <= now) throw new Error("Token is expired");
+  token.writeUntil = now + windowMinutes * 60 * 1000;
+  writeApiAccess(file, state);
+  return publicToken(token, now);
 }
 
 export function revokeToken(file, id) {
@@ -199,15 +217,32 @@ export function listAudit(file) {
   return readApiAccess(file).audit.slice().reverse();
 }
 
-/** What the settings page may show. Creating and revoking a token stays on this PC. */
+/** What the settings page may show. Loopback manages tokens. Tailscale may open a write window. */
 export function panelFor(file, access, now) {
   const loopback = Boolean(access?.loopback);
+  const tailnet = Boolean(access?.tailnet);
+  if (!loopback && !tailnet) {
+    return { canManage: false, canWriteWindow: false, tokens: [], audit: [] };
+  }
+  const tokens = listTokens(file, now).map((token) => {
+    if (loopback) return token;
+    return {
+      id: token.id,
+      name: token.name,
+      prefix: token.prefix,
+      expiresAt: token.expiresAt,
+      lastUsedAt: token.lastUsedAt,
+      writeUntil: token.writeUntil,
+      expired: token.expired,
+    };
+  });
   if (!loopback) {
-    return { canManage: false, tokens: [], audit: [] };
+    return { canManage: false, canWriteWindow: true, tokens, audit: [] };
   }
   return {
     canManage: true,
-    tokens: listTokens(file, now),
+    canWriteWindow: true,
+    tokens,
     audit: listAudit(file).slice(0, 50),
   };
 }
