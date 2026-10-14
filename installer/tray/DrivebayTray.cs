@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Text;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -217,6 +218,8 @@ internal static class Program
             SetStartWithWindows(!ReadStartWithWindows());
             startupItem.Checked = ReadStartWithWindows();
         };
+        ToolStripMenuItem resetItem = new ToolStripMenuItem("Reset password");
+        resetItem.Click += delegate { ResetPassword(); };
         ToolStripMenuItem quitItem = new ToolStripMenuItem("Quit");
         quitItem.Click += delegate { Quit(); };
 
@@ -230,6 +233,7 @@ internal static class Program
         menu.Items.Add(logsItem);
         menu.Items.Add(startupItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(resetItem);
         menu.Items.Add(quitItem);
         menu.Opening += delegate
         {
@@ -500,6 +504,137 @@ internal static class Program
         catch (Exception ex)
         {
             Log("Could not open the browser: " + ex.Message);
+        }
+    }
+
+    static void ResetPassword()
+    {
+        string first = "";
+        string second = "";
+        try
+        {
+            using (Form form = new Form())
+            {
+                form.Text = "Reset Drivebay password";
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.StartPosition = FormStartPosition.CenterScreen;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowInTaskbar = true;
+                form.ClientSize = new Size(400, 210);
+                Label help = new Label();
+                help.Text = "This resets the password on this PC only. Type the new password twice. Other devices must sign in again. A phone cannot reset it.";
+                help.Left = 12;
+                help.Top = 12;
+                help.Width = 376;
+                help.Height = 48;
+                TextBox firstBox = new TextBox();
+                firstBox.PasswordChar = '*';
+                firstBox.Left = 12;
+                firstBox.Top = 68;
+                firstBox.Width = 376;
+                TextBox secondBox = new TextBox();
+                secondBox.PasswordChar = '*';
+                secondBox.Left = 12;
+                secondBox.Top = 100;
+                secondBox.Width = 376;
+                Button ok = new Button();
+                ok.Text = "Reset password";
+                ok.DialogResult = DialogResult.OK;
+                ok.Left = 196;
+                ok.Top = 140;
+                ok.Width = 110;
+                Button cancel = new Button();
+                cancel.Text = "Cancel";
+                cancel.DialogResult = DialogResult.Cancel;
+                cancel.Left = 312;
+                cancel.Top = 140;
+                form.Controls.Add(help);
+                form.Controls.Add(firstBox);
+                form.Controls.Add(secondBox);
+                form.Controls.Add(ok);
+                form.Controls.Add(cancel);
+                form.AcceptButton = ok;
+                form.CancelButton = cancel;
+                DialogResult result = form.ShowDialog();
+                if (result != DialogResult.OK)
+                {
+                    firstBox.Text = "";
+                    secondBox.Text = "";
+                    return;
+                }
+                first = firstBox.Text;
+                second = secondBox.Text;
+                firstBox.Text = "";
+                secondBox.Text = "";
+            }
+            if (first != second)
+            {
+                MessageBox.Show("Those passwords do not match.", "Drivebay");
+                return;
+            }
+            if (first.Length < 8)
+            {
+                MessageBox.Show("Use at least 8 characters.", "Drivebay");
+                return;
+            }
+            string node = Path.Combine(InstallDir(), "runtime", "node.exe");
+            string launcher = Path.Combine(InstallDir(), "launcher.mjs");
+            if (!File.Exists(node) || !File.Exists(launcher))
+            {
+                MessageBox.Show("Drivebay's reset program is missing. Update Drivebay on this PC.", "Drivebay");
+                return;
+            }
+            bool wasRunning = state == RunState.Running || state == RunState.Starting || Probe(ReadPort());
+            userStopped = true;
+            StopServerProcess();
+            ProcessStartInfo info = new ProcessStartInfo();
+            info.FileName = node;
+            info.Arguments = "\"" + launcher + "\" reset-password --stdin";
+            info.WorkingDirectory = InstallDir();
+            info.CreateNoWindow = true;
+            info.UseShellExecute = false;
+            info.RedirectStandardInput = true;
+            info.RedirectStandardOutput = true;
+            info.RedirectStandardError = true;
+            info.StandardOutputEncoding = Encoding.UTF8;
+            info.StandardErrorEncoding = Encoding.UTF8;
+            info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
+            Process process = Process.Start(info);
+            if (process == null)
+            {
+                MessageBox.Show("Password reset failed.", "Drivebay");
+                return;
+            }
+            process.StandardInput.WriteLine(first);
+            process.StandardInput.Close();
+            string error = process.StandardError.ReadToEnd();
+            process.StandardOutput.ReadToEnd();
+            process.WaitForExit(120000);
+            if (process.ExitCode == 0)
+            {
+                MessageBox.Show("Password updated. Sign in again on every device. Settings, drives, and API tokens were kept.", "Drivebay");
+            }
+            else if (error.Length > 0 && error.Length < 240)
+            {
+                MessageBox.Show(error.Trim(), "Drivebay");
+            }
+            else
+            {
+                MessageBox.Show("Password reset failed.", "Drivebay");
+            }
+            userStopped = false;
+            if (wasRunning) StartServer(false);
+        }
+        catch (Exception ex)
+        {
+            Log("Password reset failed.");
+            MessageBox.Show("Password reset failed.", "Drivebay");
+        }
+        finally
+        {
+            first = "";
+            second = "";
         }
     }
 

@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.31.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.32.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.31** — see [Changelog](#changelog) below.
+Current version: **3.32** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.31.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.32.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.31` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.32` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -53,7 +53,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.31`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.32`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -81,7 +81,7 @@ A first-time install asks for the same choices as the .exe installer:
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.31`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.32`.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -199,7 +199,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.31.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.32.
 
 Paste this in PowerShell:
 
@@ -207,7 +207,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.31. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.32. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -216,6 +216,21 @@ irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
 Uninstall stops Drivebay, removes shortcuts and the startup entry, and deletes the program files. It asks before deleting the saved password and settings. Type YES to delete them. Set DRIVEBAY_UNINSTALL_KEEP_DATA=1 to keep them, or DRIVEBAY_UNINSTALL_FORCE=1 to delete them without asking. The last line is Drivebay is uninstalled. If a Pinokio copy is still running, uninstall says so and leaves that copy running.
+
+### Reset a forgotten password
+
+A forgotten password can only be reset on this PC. A phone, a browser, or another computer cannot reset it. Settings, drives, and API tokens stay. Every signed-in device has to sign in again.
+
+1. On this PC, right-click the Drivebay icon in the notification area.
+2. Choose Reset password.
+3. Type the new password twice. It is masked, and it is not printed or saved in a log.
+4. Sign in with the new password.
+
+On this PC you can also open PowerShell and run drivebay reset-password. It asks for the new password twice. Paste this:
+
+```
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/reset-password.ps1 | iex
+```
 
 ### Common problems
 
@@ -280,6 +295,10 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.32
+- The Windows installer and the server report 3.32. `/api/health` returns version 3.32. Download [Drivebay-Setup-3.32.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.32.exe).
+- A forgotten password can be reset on this PC only. The tray menu has Reset password, and PowerShell can run `drivebay reset-password`. The login page explains that. There is no remote reset. The new password replaces the saved account hash and signs every device out. Settings, drives, and API tokens stay.
 
 ### 3.31
 - The Windows installer and the server report 3.31. `/api/health` returns version 3.31. Download [Drivebay-Setup-3.31.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.31.exe). The command-line install uses drivebay-server-win-x64.zip from that release.

@@ -724,7 +724,7 @@ function Read-DrivebayVersion([string]$Source) {
     $line = Get-Content -LiteralPath $file -TotalCount 1
     if ($line -match "(\d+\.\d+)") { return $Matches[1] }
   }
-  return "3.31"
+  return "3.32"
 }
 
 function Save-DrivebayAccount([string]$Root, [string]$SetupScript, [int]$Port, [string]$Mode, [string]$Version, [string]$UserName, [string]$Password) {
@@ -1161,7 +1161,7 @@ function Copy-ServerFiles([string]$Source, [string]$Root, [bool]$Prebuilt) {
       $from = Join-Path $Source $dir
       if (Test-Path -LiteralPath $from) { Copy-ItemReplace $from (Join-Path $Root $dir) }
     }
-    foreach ($file in @("launcher.mjs", "lib.mjs", "start-drivebay.vbs", "stop-drivebay.vbs", "VERSION.txt", "DrivebayTray.exe")) {
+    foreach ($file in @("launcher.mjs", "lib.mjs", "reset-password.mjs", "reset-password.ps1", "drivebay.cmd", "start-drivebay.vbs", "stop-drivebay.vbs", "VERSION.txt", "DrivebayTray.exe")) {
       $from = Join-Path $Source $file
       if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination (Join-Path $Root $file) -Force }
     }
@@ -1173,8 +1173,12 @@ function Copy-ServerFiles([string]$Source, [string]$Root, [bool]$Prebuilt) {
   }
   Copy-ItemReplace $output (Join-Path $Root "app")
   $installer = Join-Path $Source "installer"
-  foreach ($file in @("launcher.mjs", "lib.mjs", "start-drivebay.vbs", "stop-drivebay.vbs")) {
+  foreach ($file in @("launcher.mjs", "lib.mjs", "reset-password.mjs", "drivebay.cmd", "start-drivebay.vbs", "stop-drivebay.vbs")) {
     Copy-Item -LiteralPath (Join-Path $installer $file) -Destination (Join-Path $Root $file) -Force
+  }
+  $resetScript = Join-Path $Source "reset-password.ps1"
+  if (Test-Path -LiteralPath $resetScript) {
+    Copy-Item -LiteralPath $resetScript -Destination (Join-Path $Root "reset-password.ps1") -Force
   }
   $ver = Join-Path $Source "VERSION.txt"
   if (Test-Path -LiteralPath $ver) { Copy-Item -LiteralPath $ver -Destination (Join-Path $Root "VERSION.txt") -Force }

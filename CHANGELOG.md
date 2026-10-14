@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.32
+- The Windows installer and the server report 3.32. `/api/health` returns `version` 3.32. The release files are `Drivebay-Setup-3.32.exe` and `drivebay-server-win-x64.zip`.
+- A forgotten password can be reset on this PC only. Right-click the Drivebay tray icon and choose Reset password, or run `drivebay reset-password` in PowerShell. The new password is typed locally, masked, twice. It is not printed or logged. Drivebay updates the Better Auth credential hash for the saved account and deletes its sessions. Settings, drives, and API tokens stay. The login page has Forgot password? and explains that a phone or another computer cannot reset it.
+
 ## 3.31
 - The Windows installer and the server report 3.31. `/api/health` returns `version` 3.31. The release files are `Drivebay-Setup-3.31.exe` and `drivebay-server-win-x64.zip`.
 - Android app 3.30.0 (versionCode 30) lives in `android/`. A download from the phone saves into Downloads/Drivebay with a progress notification (speed and time left), then offers Open and Share. Large files download in 8 MB ranges, can pause, resume, and cancel, retry with backoff, and continue after the connection drops or the app restarts. Files of 50 MB and up can stay on Wi-Fi. The session cookie from the WebView is sent with each request.

@@ -23,6 +23,7 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState(false);
 
   useEffect(() => {
     if (!isPending && user) {
@@ -166,6 +167,24 @@ function LoginPage() {
             {busy ? "Working…" : owned ? "Unlock" : "Create lock"}
           </Button>
         </form>
+        {owned && (
+          <div className="mt-4 text-sm leading-relaxed text-fg-muted">
+            <button
+              type="button"
+              className="underline decoration-fg-subtle underline-offset-2"
+              onClick={() => setForgot((open) => !open)}
+            >
+              Forgot password?
+            </button>
+            {forgot && (
+              <p className="mt-2">
+                A password can only be reset on this PC. Right-click the Drivebay icon in the
+                notification area and choose Reset password. Type the new password twice. It cannot
+                be reset from a phone, a browser, or another computer.
+              </p>
+            )}
+          </div>
+        )}
         <p className="mt-4 text-center font-mono text-[10px] tracking-wide text-fg-subtle">{APP_VERSION}</p>
       </section>
     </main>
