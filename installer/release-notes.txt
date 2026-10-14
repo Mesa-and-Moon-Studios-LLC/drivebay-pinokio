@@ -1,9 +1,11 @@
-Drivebay 3.21 is the Windows install that opens Settings on this PC. Other devices still open the file browser.
+Drivebay 3.22 adds read-only API tokens on this PC.
 
-This release includes Drivebay-Setup-3.21.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.22.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-Tailscale is the recommended setup and the default. Nothing is opened to the internet, and only signed-in devices can reach Drivebay. Tailscale + Local (Both) keeps Tailscale on and adds a public path that starts off. Public access stays off until you turn it on from this PC or a signed-in Tailscale device, and it can turn itself off after 1, 4, or 24 hours. Regular mode still exposes the port and shows the router steps.
+On this PC, Settings can create, list, and revoke a token. The secret is shown once, as db_ plus 32 random bytes, and Drivebay stores only a hash. Each token has a name, a read scope (roots, list, stat, search, download with Range, and thumbnails), an optional folder allowlist, an expiry, and a last-used time.
 
-Settings on this PC has a How-to guide. Running the install again updates Drivebay and keeps the account, password, port, mode, and settings. Setup names the program if the chosen port is already in use, and it says Drivebay is ready only after /api/health answers.
+Clients send Authorization: Bearer to GET /api/v1/roots, /api/v1/list, /api/v1/stat, /api/v1/search, /api/v1/download, and /api/v1/thumb. A path stays inside the allowed folders. A symlink that points outside is refused. Calls are rate limited, and the settings page shows an audit log.
+
+Creating, listing, and revoking a token stays on this PC.

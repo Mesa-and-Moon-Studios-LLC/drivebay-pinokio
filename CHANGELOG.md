@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.22
+- Settings on this PC can create, list, and revoke a read-only API token. The secret is shown once, as `db_` plus 32 random bytes, and the file stores only a SHA-256 hash plus a short prefix. Each token has a name, a read scope (roots, list, stat, search, download with Range, and thumbnails), an optional folder allowlist, an expiry, and a last-used time.
+- Clients send `Authorization: Bearer` to `GET /api/v1/roots`, `/api/v1/list`, `/api/v1/stat`, `/api/v1/search`, `/api/v1/download`, and `/api/v1/thumb`. A path is refused when its real path leaves the allowed folders, including through a symlink. Calls are rate limited. This PC's settings page shows an audit log. Creating, listing, and revoking a token stays on this PC.
+
 ## 3.21
 - Settings on this PC has a How-to guide. Each part is collapsed until you open it. It covers the Android app, Tailscale sign-in, the three modes, public access and its timer, router forwarding, server lock, the port, update and uninstall, and common problems. The same words are in the README.
 - The mode choice recommends Tailscale and selects it by default. The note says Tailscale is safer because nothing is opened to the internet and only signed-in devices can reach Drivebay, while Regular mode exposes the port publicly. Tailscale + Local (Both) is the third choice. It keeps Tailscale on and adds a public path that starts off. `DRIVEBAY_SETUP_MODE=both` selects it without prompts. The router steps show for Both and for Regular.

@@ -147,7 +147,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.21.",
+        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.22.",
       },
       {
         kind: "p",
@@ -159,7 +159,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.21. In Pinokio, use Update.",
+        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.22. In Pinokio, use Update.",
       },
       {
         kind: "p",
