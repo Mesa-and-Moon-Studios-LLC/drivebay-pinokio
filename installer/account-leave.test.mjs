@@ -89,7 +89,7 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
     assert.ok(ch.charCodeAt(0) <= 127, `non-ASCII installer character ${JSON.stringify(ch)}`);
   }
   assert.match(src, /Tailscale - reach Drivebay over your tailnet/);
-  assert.match(src, /Regular - this network, without Tailscale/);
+  assert.match(src, /No Tailscale \(Regular mode\)/);
   assert.equal(src.includes("\u2014"), false);
   assert.equal(src.includes("\u2013"), false);
 
@@ -110,6 +110,11 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
   const dialogAt = router.indexOf("nsDialogs::Create");
   assert.match(router, /\$Mode == "tailscale"/);
   assert.ok(abortAt !== -1 && abortAt < dialogAt);
+  assert.match(router, /192\.168\.0\.1/);
+  assert.match(router, /192\.168\.1\.1/);
+  assert.match(router, /CGNAT/);
+  assert.match(router, /Use a strong password/);
+  assert.match(router, /reserved or static IP/);
 
   const port = functionBody(src, "PortPageCreate");
   const portDialog = port.indexOf("nsDialogs::Create");

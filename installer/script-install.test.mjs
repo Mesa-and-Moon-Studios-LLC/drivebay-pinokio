@@ -77,6 +77,12 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   assert.match(script, /UTF8Encoding \$false|UTF8Encoding \$false/);
   assert.match(script, /You do not open that port on your router/);
   assert.match(script, /You have to open and forward TCP port/);
+  assert.match(script, /No Tailscale \(Regular mode\)/);
+  assert.match(script, /192\.168\.0\.1/);
+  assert.match(script, /192\.168\.1\.1/);
+  assert.match(script, /Some ISPs use CGNAT and block this/);
+  assert.match(script, /Tailscale is the easy fallback/);
+  assert.match(script, /Use a strong password/);
   const routerFn = script.slice(
     script.indexOf("function Confirm-RouterForward"),
     script.indexOf("function Read-YesNo"),
@@ -256,6 +262,13 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.match(uninstall, /Type YES to also delete the saved password and settings/);
     assert.match(String(regular.result.stdout), /http:\/\/127\.0\.0\.1:\d+\/settings/);
     assert.match(String(regular.result.stdout), /open and forward TCP port/);
+    assert.match(String(regular.result.stdout), /This PC's local IP/);
+    assert.match(String(regular.result.stdout), /192\.168\.0\.1/);
+    assert.match(String(regular.result.stdout), /192\.168\.1\.1/);
+    assert.match(String(regular.result.stdout), /reserved or static IP/);
+    assert.match(String(regular.result.stdout), /From outside the network, open http:\/\//);
+    assert.match(String(regular.result.stdout), /Some ISPs use CGNAT and block this/);
+    assert.match(String(regular.result.stdout), /Use a strong password/);
   } finally {
     fs.rmSync(regular.home, { recursive: true, force: true });
   }
@@ -273,6 +286,7 @@ test("setup-only writes a UTF-8 password and requires the router YES only for Re
     assert.match(out, /You do not open that port on your router/);
     assert.match(out, /You can install Tailscale and set it up later/);
     assert.equal(out.includes("Type YES to confirm"), false);
+    assert.equal(out.includes("CGNAT"), false);
     assert.equal(out.includes("Downloading the official Tailscale installer"), false);
   } finally {
     fs.rmSync(tailscale.home, { recursive: true, force: true });

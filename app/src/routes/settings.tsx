@@ -6,7 +6,7 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getSettings, restartDrivebay, saveDriveAccess, savePortSettings, saveServerLock } from "@/lib/files/api.functions";
+import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, saveServerLock } from "@/lib/files/api.functions";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,9 @@ function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [savingPass, setSavingPass] = useState(false);
+  const [reachMode, setReachMode] = useState<"regular" | "tailscale" | "unknown">("unknown");
+  const [localIp, setLocalIp] = useState("");
+  const [publicIp, setPublicIp] = useState("");
 
   useEffect(() => {
     clearStoredNext();
@@ -91,6 +94,16 @@ function SettingsPage() {
       })
       .catch(() => {
         if (alive) setLoaded(true);
+      });
+    getRouterHelp()
+      .then((help) => {
+        if (!alive) return;
+        setReachMode(help.mode);
+        setLocalIp(help.localIp || "");
+        setPublicIp(help.publicIp || "");
+      })
+      .catch(() => {
+        /* Settings still load when the router note cannot. */
       });
     return () => {
       alive = false;
@@ -603,6 +616,43 @@ function SettingsPage() {
             </Button>
           </form>
         </section>
+
+        {reachMode === "regular" ? (
+          <section className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
+              No Tailscale (Regular mode)
+            </p>
+            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
+              <p>Other devices outside your network reach this PC only after the router forwards the port.</p>
+              <ol className="list-decimal space-y-2 pl-5">
+                <li>
+                  This PC&apos;s local IP is{" "}
+                  <span className="font-mono text-fg">{localIp || "not found. Run ipconfig and use the IPv4 address."}</span>.
+                </li>
+                <li>
+                  Log in to the router. The page is usually{" "}
+                  <span className="font-mono text-fg">http://192.168.0.1</span> or{" "}
+                  <span className="font-mono text-fg">http://192.168.1.1</span>.
+                </li>
+                <li>
+                  Add a port forward for TCP <span className="font-mono text-fg">{port || "the port"}</span> to that local IP.
+                </li>
+                <li>Give this PC a reserved or static IP in the router&apos;s DHCP settings so the address does not change.</li>
+                <li>
+                  This PC&apos;s public IP is{" "}
+                  <span className="font-mono text-fg">{publicIp || "not found. Search the web for what is my ip."}</span>.
+                  From outside the network, open{" "}
+                  <span className="font-mono text-fg">
+                    {publicIp ? `http://${publicIp}:${port || "port"}/` : `http://<public-ip>:${port || "port"}/`}
+                  </span>
+                  .
+                </li>
+                <li>Some ISPs use CGNAT and block this. Tailscale is the easy fallback.</li>
+              </ol>
+              <p className="text-fg">Use a strong password. It is the lock for every drive on this PC.</p>
+            </div>
+          </section>
+        ) : null}
 
         <section className="space-y-3">
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Get the Android app</p>

@@ -300,6 +300,7 @@ async function main() {
       DRIVEBAY_DATA_DIR: path.join(home, "data"),
       DRIVEBAY_PORT_FILE: path.join(home, "drivebay.port"),
       DRIVEBAY_FALLBACK_PORT: String(port),
+      DRIVEBAY_MODE: config.mode === "tailscale" ? "tailscale" : "regular",
       PORT: String(port),
       NITRO_PORT: String(port),
       HOST: "0.0.0.0",

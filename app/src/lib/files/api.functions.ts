@@ -175,6 +175,21 @@ export const searchFiles = createServerFn({ method: "POST" })
     return fs.searchEntries(data.root, data.query, data.showHidden);
   });
 
+export const getRouterHelp = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const settings = await import("./settings.server");
+    const mode = settings.readReachMode();
+    const port = settings.readPortSettings().port;
+    if (mode !== "regular") return { mode, port, localIp: "", publicIp: "" };
+    return {
+      mode,
+      port,
+      localIp: settings.thisPcLanIp(),
+      publicIp: await settings.lookupPublicIpv4(),
+    };
+  });
+
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {

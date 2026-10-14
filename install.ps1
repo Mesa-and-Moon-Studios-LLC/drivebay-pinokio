@@ -248,9 +248,9 @@ function Read-Mode {
   if (Test-NonInteractive) { throw "Mode must be tailscale or regular." }
   Write-Host "How should other devices reach this PC?"
   Write-Host "Both modes use a local port. Tailscale reaches it over your tailnet, with no router change."
-  Write-Host "Regular mode needs that port forwarded on your router."
+  Write-Host "No Tailscale (Regular mode) needs that port forwarded on your router."
   Write-Host "  1) Tailscale - reach Drivebay over your tailnet"
-  Write-Host "  2) Regular - this network, without Tailscale"
+  Write-Host "  2) No Tailscale (Regular mode)"
   while ($true) {
     $answer = Read-Host "Choice [2]"
     if ([string]::IsNullOrWhiteSpace($answer) -or $answer -eq "2" -or $answer.Trim().ToLower() -eq "regular") { return "regular" }
@@ -294,14 +294,66 @@ function Read-ListenPort([string]$Mode) {
   }
 }
 
+function Get-LanIpv4 {
+  $best = ""
+  try {
+    $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
+    foreach ($nic in $nics) {
+      if ($nic.OperationalStatus -ne [System.Net.NetworkInformation.OperationalStatus]::Up) { continue }
+      foreach ($addr in $nic.GetIPProperties().UnicastAddresses) {
+        if ($addr.Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { continue }
+        $ip = $addr.Address.ToString()
+        if ($ip -eq "127.0.0.1" -or $ip.StartsWith("169.254.")) { continue }
+        if ($ip.StartsWith("192.168.") -or $ip.StartsWith("10.") -or $ip -match "^172\.(1[6-9]|2[0-9]|3[0-1])\.") { return $ip }
+        if (-not $best) { $best = $ip }
+      }
+    }
+  } catch {
+  }
+  if ($best) { return $best }
+  return ""
+}
+
+function Get-PublicIpv4 {
+  foreach ($url in @("https://api.ipify.org", "https://ifconfig.me/ip")) {
+    try {
+      $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 3
+      $text = ""
+      if ($null -ne $response.Content) { $text = ([string]$response.Content).Trim() }
+      if ($text -match "^\d{1,3}(\.\d{1,3}){3}$") { return $text }
+    } catch {
+    }
+  }
+  return ""
+}
+
 function Confirm-RouterForward([string]$Mode, [int]$Port) {
   if ($Mode -eq "tailscale") {
     Write-Host "Tailscale mode. Devices on your tailnet reach this PC at http://<this-PC-tailscale-name>:${Port}/ after you sign in to Tailscale on both devices."
     Write-Host "You do not open that port on your router."
     return
   }
+  $localIp = Get-LanIpv4
+  $publicIp = Get-PublicIpv4
+  Write-Host "No Tailscale (Regular mode)."
   Write-Host "You have to open and forward TCP port $Port on your router."
-  Write-Host "Phones and other computers cannot reach Drivebay until your router forwards port $Port to this PC."
+  if ($localIp) {
+    Write-Host "This PC's local IP is $localIp."
+  } else {
+    Write-Host "This PC's local IP could not be found. Run ipconfig and use the IPv4 address."
+  }
+  Write-Host "Log in to the router. The page is usually http://192.168.0.1 or http://192.168.1.1."
+  Write-Host "Add a port forward for TCP $Port to that local IP."
+  Write-Host "Give this PC a reserved or static IP in the router's DHCP settings so the address does not change."
+  if ($publicIp) {
+    Write-Host "This PC's public IP is $publicIp."
+    Write-Host "From outside the network, open http://${publicIp}:${Port}/"
+  } else {
+    Write-Host "This PC's public IP could not be looked up. Search the web for what is my ip."
+    Write-Host "From outside the network, open http://<public-ip>:${Port}/"
+  }
+  Write-Host "Some ISPs use CGNAT and block this. Tailscale is the easy fallback."
+  Write-Host "Use a strong password. It is the lock for every drive on this PC."
   Write-Host "If Windows Firewall asks, allow Drivebay or TCP port $Port as well."
   $ack = $env:DRIVEBAY_SETUP_ACK
   if ([string]::IsNullOrWhiteSpace($ack)) {

@@ -57,6 +57,10 @@ Var ModeTailscale
 Var ModeRegular
 Var Port
 Var PortField
+Var LocalIp
+Var PublicIp
+Var OutsideUrl
+Var PublicText
 Var Username
 Var Password
 Var UsernameField
@@ -135,11 +139,11 @@ Function ModePageCreate
   ${EndIf}
   nsDialogs::Create 1018
   Pop $0
-  ${NSD_CreateLabel} 0 0 100% 36u "How should other devices reach this PC? Both modes use a local port. Tailscale reaches it over your tailnet, with no router change. Regular mode needs that port forwarded on your router."
+  ${NSD_CreateLabel} 0 0 100% 36u "How should other devices reach this PC? Both modes use a local port. Tailscale reaches it over your tailnet, with no router change. No Tailscale (Regular mode) needs that port forwarded on your router."
   Pop $0
   ${NSD_CreateFirstRadioButton} 0 42u 100% 12u "Tailscale - reach Drivebay over your tailnet"
   Pop $ModeTailscale
-  ${NSD_CreateAdditionalRadioButton} 0 58u 100% 14u "Regular - this network, without Tailscale"
+  ${NSD_CreateAdditionalRadioButton} 0 58u 100% 14u "No Tailscale (Regular mode)"
   Pop $ModeRegular
   ${If} $Mode == "tailscale"
     ${NSD_SetState} $ModeTailscale ${BST_CHECKED}
@@ -220,6 +224,24 @@ Function PortPageLeave
   ${EndIf}
 FunctionEnd
 
+Function CollectRouterAddresses
+  StrCpy $LocalIp ""
+  StrCpy $PublicIp ""
+  ; Writes local IP, newline, public IP. No nested quotes.
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$local=$$null; $$best=$$null; $$public=$$null; try { $$nics=[System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces(); foreach ($$nic in $$nics) { if ($$nic.OperationalStatus -ne [System.Net.NetworkInformation.OperationalStatus]::Up) { continue }; foreach ($$addr in $$nic.GetIPProperties().UnicastAddresses) { if ($$addr.Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { continue }; $$ip=$$addr.Address.ToString(); $$loop=-join @([char]49,[char]50,[char]55,[char]46,[char]48,[char]46,[char]48,[char]46,[char]49); $$apipa=-join @([char]49,[char]54,[char]57,[char]46,[char]50,[char]53,[char]52,[char]46); if ($$ip -eq $$loop -or $$ip.StartsWith($$apipa)) { continue }; if (-not $$best) { $$best=$$ip }; $$p192=-join @([char]49,[char]57,[char]50,[char]46,[char]49,[char]54,[char]56,[char]46); $$p10=-join @([char]49,[char]48,[char]46); if ($$ip.StartsWith($$p192) -or $$ip.StartsWith($$p10)) { $$local=$$ip } } } } catch {}; if (-not $$local) { $$local=$$best }; try { $$url=-join @([char]104,[char]116,[char]116,[char]112,[char]115,[char]58,[char]47,[char]47,[char]97,[char]112,[char]105,[char]46,[char]105,[char]112,[char]105,[char]102,[char]121,[char]46,[char]111,[char]114,[char]103); $$r=Invoke-WebRequest -UseBasicParsing -Uri $$url -TimeoutSec 3; $$text=([string]$$r.Content).Trim(); $$parts=$$text.Split([char]46); $$okIp=($$parts.Count -eq 4); foreach ($$part in $$parts) { $$n=0; if (-not [int]::TryParse($$part,[ref]$$n) -or $$n -lt 0 -or $$n -gt 255) { $$okIp=$$false } }; if ($$okIp) { $$public=$$text } } catch {}; $$utf8=New-Object System.Text.UTF8Encoding $$false; $$body=[string]$$local + [char]10 + [string]$$public; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-router-ip.txt), $$body, $$utf8); exit 0"'
+  Pop $0
+  Pop $1
+  IfFileExists "$TEMP\drivebay-router-ip.txt" 0 router_ip_done
+    FileOpen $R9 "$TEMP\drivebay-router-ip.txt" r
+    FileRead $R9 $R8
+    FileRead $R9 $R7
+    FileClose $R9
+    Delete "$TEMP\drivebay-router-ip.txt"
+    StrCpy $LocalIp $R8
+    StrCpy $PublicIp $R7
+  router_ip_done:
+FunctionEnd
+
 Function RouterPageCreate
   ; Tailscale reaches the local port over the tailnet. No router forward.
   ${If} $Update == "1"
@@ -228,14 +250,23 @@ Function RouterPageCreate
   ${If} $Mode == "tailscale"
     Abort
   ${EndIf}
+  Call CollectRouterAddresses
+  ${If} $LocalIp == ""
+    StrCpy $LocalIp "not found. Run ipconfig and use the IPv4 address."
+  ${EndIf}
+  ${If} $PublicIp == ""
+    StrCpy $OutsideUrl "http://<public-ip>:$Port/"
+    StrCpy $PublicText "not found. Search the web for what is my ip."
+  ${Else}
+    StrCpy $OutsideUrl "http://$PublicIp:$Port/"
+    StrCpy $PublicText $PublicIp
+  ${EndIf}
   nsDialogs::Create 1018
-  Pop $0
-  ${NSD_CreateLabel} 0 0 100% 12u "Open this port on your router"
-  Pop $0
-  ${NSD_CreateLabel} 0 16u 100% 18u "TCP port $Port"
-  Pop $0
-  ${NSD_CreateLabel} 0 38u 100% 48u "You have to open and forward TCP port $Port on your router.$\r$\n$\r$\nPhones and other computers cannot reach Drivebay until your router forwards port $Port to this PC.$\r$\n$\r$\nIf Windows Firewall asks, allow Drivebay or TCP port $Port as well."
-  Pop $0
+  Pop $2
+  ${NSD_CreateLabel} 0 0 100% 12u "No Tailscale (Regular mode)"
+  Pop $2
+  ${NSD_CreateLabel} 0 14u 100% 78u "You have to open and forward TCP port $Port on your router.$\r$\n$\r$\n1. This PC's local IP is $LocalIp.$\r$\n2. Log in to the router, usually http://192.168.0.1 or http://192.168.1.1.$\r$\n3. Add a port forward for TCP $Port to that local IP.$\r$\n4. Give this PC a reserved or static IP in DHCP so the address does not change.$\r$\n5. Public IP: $PublicText. From outside the network, open $OutsideUrl$\r$\n6. Some ISPs use CGNAT and block this. Tailscale is the easy fallback.$\r$\n7. Use a strong password. It locks every drive on this PC.$\r$\nIf Windows Firewall asks, allow TCP port $Port."
+  Pop $2
   ${NSD_CreateCheckbox} 0 96u 100% 18u "I understand I must open and forward port $Port on my router."
   Pop $HAck
   nsDialogs::Show
