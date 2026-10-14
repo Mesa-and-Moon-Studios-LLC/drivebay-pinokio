@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.27
+- Settings has a Donate button. It opens a menu of GitHub Sponsors, PayPal, and Ko-fi. The addresses are `DONATE_GITHUB_SPONSORS_URL`, `DONATE_PAYPAL_URL`, and `DONATE_KOFI_URL` in `app/src/lib/donate.mjs`. A blank address hides that choice. With every address blank, the button stays off the page.
+- `.github/FUNDING.yml` keeps those links as comments. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
+
 ## 3.26
 - The suggested port is 8765. Setup skips 42000-42999, the range Pinokio's Caddy (`z:\pinokio\bin\miniforge\Library\bin\caddy.exe`) claims while Pinokio is running, and picks the next free port outside that range when 8765 is taken.
 - An update keeps a saved port outside that range. A saved port from 42000 to 42999 moves automatically. Setup prints the new address and updates the firewall rule and the shortcut.

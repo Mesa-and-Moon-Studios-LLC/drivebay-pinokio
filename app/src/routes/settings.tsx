@@ -10,6 +10,7 @@ import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortS
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
+import { DonateMenu } from "@/components/settings/donate-menu";
 import { HowToGuide } from "@/components/settings/how-to";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -759,6 +760,8 @@ function SettingsPage() {
         <ApiTokens />
 
         <HowToGuide />
+
+        <DonateMenu />
 
         <section className="space-y-3">
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">About</p>

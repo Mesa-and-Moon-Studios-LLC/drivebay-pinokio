@@ -1,0 +1,7 @@
+# Support Drivebay.
+# Set the same links in app/src/lib/donate.mjs:
+# DONATE_GITHUB_SPONSORS_URL, DONATE_PAYPAL_URL, DONATE_KOFI_URL.
+# Uncomment a line here when that link is ready.
+# github: lordstryfe
+# ko_fi:
+# custom:
