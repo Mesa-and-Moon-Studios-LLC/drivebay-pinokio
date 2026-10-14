@@ -1,11 +1,9 @@
-Drivebay 3.26 moves the suggested port to 8765 so Pinokio's Caddy does not take it.
+Drivebay 3.27 adds a Donate button on the settings page.
 
-This release includes Drivebay-Setup-3.26.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.27.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 
-Pinokio's Caddy (z:\pinokio\bin\miniforge\Library\bin\caddy.exe) claims ports from 42000 to 42999 while Pinokio is running, even when Drivebay is not installed in Pinokio. The suggested port is 8765. If that port is taken, setup picks the next free port outside that range.
+The button opens a menu of GitHub Sponsors, PayPal, and Ko-fi. Each address is a constant in app/src/lib/donate.mjs: DONATE_GITHUB_SPONSORS_URL, DONATE_PAYPAL_URL, and DONATE_KOFI_URL. A blank constant hides that choice. With every constant blank, the button stays off the page. The constants are blank in this release.
 
-An update keeps a saved port outside 42000-42999. A saved port in that range moves automatically. Setup prints the new address and updates the firewall rule and the shortcut.
-
-If a port is already in use, setup names the program. When the program is Pinokio's Caddy, the message says so and asks for a different port outside that range.
+.github/FUNDING.yml holds the same links as comments. github: lordstryfe stays commented until GitHub Sponsors is approved.

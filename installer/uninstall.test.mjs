@@ -391,7 +391,7 @@ test("install.ps1 updates an existing install and keeps the account", async () =
     assert.equal(result.status, 0, out);
     assert.match(result.stdout || "", /saved account and settings stay/);
     assert.match(result.stdout || "", /Drivebay is uninstalled\./);
-    assert.match(result.stdout || "", /Drivebay updated to 3\.26/);
+    assert.match(result.stdout || "", /Drivebay updated to 3\.27/);
     assert.equal((result.stdout || "").includes("Drivebay is ready"), false);
     assert.equal(out.includes("Enter a different port"), false);
     assert.equal(out.includes("Saving the Drivebay account"), false);
@@ -406,7 +406,7 @@ test("install.ps1 updates an existing install and keeps the account", async () =
     const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
     assert.equal(config.port, oldPort);
     assert.equal(config.mode, "tailscale");
-    assert.equal(config.version, "3.26");
+    assert.equal(config.version, "3.27");
     assert.equal(config.note, "keep-me");
     assert.equal(fs.readFileSync(path.join(home, "drivebay.port"), "utf8").trim(), String(oldPort));
     const installed = fs.readFileSync(path.join(home, "uninstall.ps1"), "utf8");
