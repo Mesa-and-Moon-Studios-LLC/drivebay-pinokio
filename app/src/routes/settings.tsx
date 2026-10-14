@@ -9,6 +9,7 @@ import { emailToUsername } from "@/lib/files/identity";
 import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveServerLock } from "@/lib/files/api.functions";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, pageAfterSignIn, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
+import { ApiTokens } from "@/components/settings/api-tokens";
 import { HowToGuide } from "@/components/settings/how-to";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -754,6 +755,8 @@ function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <ApiTokens />
 
         <HowToGuide />
 

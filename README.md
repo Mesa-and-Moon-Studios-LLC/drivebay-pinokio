@@ -8,7 +8,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/lordstryfe/drivebay-pinokio
 ```
 
-Current version: **3.21** — see [Changelog](#changelog) below.
+Current version: **3.22** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -31,9 +31,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.21.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.22.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.21` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.22` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -51,7 +51,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.21`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.22`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -79,7 +79,7 @@ A first-time install asks for the same choices as the .exe installer:
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.21`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.22`.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -197,7 +197,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.21.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.22.
 
 Paste this in PowerShell:
 
@@ -205,7 +205,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.21. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.22. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -223,7 +223,26 @@ Cannot reach this PC. On Tailscale, both devices must be signed in to the same a
 
 Some ISPs use CGNAT and block a router forward, so http://<public-ip>:<port>/ never opens. Tailscale is the easy fallback, because nothing is opened to the internet.
 
+## API tokens
+
+On this PC, Settings can create, list, and revoke a read-only token. The secret is shown once, as `db_` plus 32 random bytes, and Drivebay stores only a hash. Each token has a name, a read scope, an optional folder allowlist, an expiry, and a last-used time. The read scope is roots, list, stat, search, download with Range, and thumbnails.
+
+Clients send `Authorization: Bearer` to these paths:
+
+- `GET /api/v1/roots`
+- `GET /api/v1/list?path=`
+- `GET /api/v1/stat?path=`
+- `GET /api/v1/search?path=&q=`
+- `GET /api/v1/download?path=` (supports `Range: bytes=`)
+- `GET /api/v1/thumb?path=`
+
+A path has to stay inside the drives this PC already allows, then inside the token's folders when those are set. A symlink that points outside is refused. Calls are rate limited. The settings page on this PC shows an audit log. Creating, listing, and revoking a token stays on this PC.
+
 ## Changelog
+
+### 3.22
+- Settings on this PC can create, list, and revoke a read-only API token. The secret is shown once (`db_` plus 32 random bytes) and only a hash is stored. Each token has a name, the read scope (roots, list, stat, search, download with Range, thumbnails), an optional folder allowlist, an expiry, and a last-used time.
+- Clients send `Authorization: Bearer` to `GET /api/v1/roots`, `list`, `stat`, `search`, `download`, and `thumb`. Paths stay inside the allowed folders, including through a symlink. Calls are rate limited, and this PC's settings page shows an audit log.
 
 ### 3.21
 - Settings on this PC has a How-to guide with the same sections as the [How-to guide](#how-to-guide) above. Each part is collapsed until you open it.

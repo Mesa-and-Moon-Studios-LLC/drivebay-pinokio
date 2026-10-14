@@ -511,7 +511,7 @@ test("ready is printed only after /api/health names Drivebay", async () => {
     child.unref();
     return { pid: child.pid, port: chosen };
   }
-  const good = serve('{"ok":true,"name":"Drivebay","version":"3.21"}', 200);
+  const good = serve('{"ok":true,"name":"Drivebay","version":"3.22"}', 200);
   const foreign = serve('{"error":"Unauthorized"}', 401);
   await new Promise((resolve, reject) => {
     const started = Date.now();

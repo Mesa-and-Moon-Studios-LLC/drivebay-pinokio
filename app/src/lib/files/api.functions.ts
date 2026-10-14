@@ -294,3 +294,42 @@ export const restartDrivebay = createServerFn({ method: "POST" })
     const restart = await import("./host-restart.server");
     return restart.scheduleStandaloneRestart();
   });
+
+export const getApiAccess = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    const store = await import("./token-store.mjs");
+    const access = await import("./api-v1.server");
+    return store.panelFor(access.resolveApiAccessFile(), { loopback: host.isLoopbackRequest() }, Date.now());
+  });
+
+export const createApiToken = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      name: z.string().trim().min(1).max(80),
+      roots: z.array(z.string().trim().min(1).max(400)).max(32),
+      days: z.union([z.literal(0), z.literal(7), z.literal(30), z.literal(90)]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const store = await import("./token-store.mjs");
+    const access = await import("./api-v1.server");
+    const now = Date.now();
+    const expiresAt = data.days === 0 ? null : now + data.days * 24 * 60 * 60 * 1000;
+    return store.createToken(access.resolveApiAccessFile(), { name: data.name, roots: data.roots, expiresAt }, now);
+  });
+
+export const revokeApiToken = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ id: z.string().trim().min(8).max(64) }))
+  .handler(async ({ data }) => {
+    const host = await import("./host-request.server");
+    host.assertLoopbackRequest();
+    const store = await import("./token-store.mjs");
+    const access = await import("./api-v1.server");
+    return store.revokeToken(access.resolveApiAccessFile(), data.id);
+  });
