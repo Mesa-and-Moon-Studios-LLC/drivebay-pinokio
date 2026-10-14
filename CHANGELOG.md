@@ -3,6 +3,7 @@
 All user-facing Drivebay versions. Newest first.
 
 ## 3.21
+- Command-line uninstall: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex`. It stops Drivebay, removes shortcuts and startup entries, and deletes the program files. It asks before deleting the saved account. `-KeepData` keeps that account. `-Force` deletes it. Installing again runs this uninstall first and keeps the account.
 - Opening `/` in a browser on this PC shows sign-in when you are signed out, and settings after you sign in. A Tailscale or LAN address shows the file browser sign-in. Those pages are HTML. JSON errors stay on API calls.
 - Settings on this PC can change Server lock: port, delete, rename, new folder, upload, max upload, and which drives or folders are allowed. The save is UTF-8 and takes effect immediately. Other devices can read the lock and cannot change it.
 - Command-line setup no longer prints an error or stops when DrivebayTray.exe is not already running. If the tray cannot be built, the launcher starts instead and this PC still opens settings.

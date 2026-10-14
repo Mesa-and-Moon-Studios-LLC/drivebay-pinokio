@@ -83,7 +83,40 @@ Setup asks for the same choices as the .exe installer:
 4. **Tailscale** (only if you chose Tailscale). You can download the official installer and launch Tailscale.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-A Start menu shortcut named **Drivebay** starts it. On this PC that opens the settings page, and the tray icon stays. The file browser is not opened on this PC. `uninstall.ps1` in `%LOCALAPPDATA%\Drivebay` removes the program. It asks before deleting the saved password.
+Running the install again stops the old server and tray and removes the old program files first, including a copy left by the Windows installer or an older script. The saved account and settings stay. To delete those as well, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
+
+A Start menu shortcut named **Drivebay** starts it. On this PC that opens the settings page, and the tray icon stays. The file browser is not opened on this PC.
+
+## Uninstall from the command line (Windows)
+
+Paste this in PowerShell:
+
+```
+irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+```
+
+Or in CMD:
+
+```
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"
+```
+
+Until this is on `main`, use the branch script:
+
+```
+irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows-script-install-d803/uninstall.ps1 | iex
+```
+
+It stops node on the Drivebay port, `DrivebayTray.exe`, and the launcher. It removes the startup Run entry, scheduled tasks, Start menu and desktop shortcuts, and the program files under `%LOCALAPPDATA%\Drivebay` and `%LOCALAPPDATA%\Programs\Drivebay`. Anything already gone is skipped. It asks before deleting the saved password and settings. Type YES to delete them.
+
+For a script, save the file and run one of these:
+
+```
+powershell -ExecutionPolicy Bypass -File uninstall.ps1 -KeepData
+powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Force
+```
+
+`-KeepData` leaves the account and settings. `-Force` deletes them without asking. With `irm | iex`, set `DRIVEBAY_UNINSTALL_KEEP_DATA=1` or `DRIVEBAY_UNINSTALL_FORCE=1` before the command. The last line is `Drivebay is uninstalled.`
 
 Search: type in the search box and press Enter (or Ctrl/Cmd+K). It looks through the current folder and its subfolders. Hidden folders follow the eye toggle.
 

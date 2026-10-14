@@ -249,102 +249,81 @@ function Save-DrivebayAccount([string]$Root, [string]$SetupScript, [int]$Port, [
   }
 }
 
-function Write-UninstallScript([string]$Root) {
-  $path = Join-Path $Root "uninstall.ps1"
-  $text = @'
-# Removes the Drivebay command-line install.
-# The password database stays unless you type YES.
-$ErrorActionPreference = "Continue"
-try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch {}
-
-$Root = $PSScriptRoot
-if (-not $Root) { $Root = Join-Path $env:LOCALAPPDATA "Drivebay" }
-
-Write-Host "Stopping Drivebay."
-$tray = Join-Path $Root "DrivebayTray.exe"
-if (Test-Path -LiteralPath $tray) {
-  try { & $tray --quit } catch {}
-  Start-Sleep -Milliseconds 400
+function Get-PowerShellExe {
+  $powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+  if ($powershell) { return $powershell.Source }
+  return (Get-Process -Id $PID).Path
 }
-$node = Join-Path $Root "runtime\node.exe"
-$launcher = Join-Path $Root "launcher.mjs"
-if ((Test-Path -LiteralPath $node) -and (Test-Path -LiteralPath $launcher)) {
-  try { & $node $launcher --stop } catch {}
+
+function Resolve-UninstallScript {
+  if ($PSScriptRoot) {
+    $beside = Join-Path $PSScriptRoot "uninstall.ps1"
+    if (Test-Path -LiteralPath $beside) { return $beside }
+  }
+  if ($script:UninstallSource -and (Test-Path -LiteralPath $script:UninstallSource)) {
+    return $script:UninstallSource
+  }
+  $ref = $env:DRIVEBAY_INSTALL_REF
+  if ([string]::IsNullOrWhiteSpace($ref)) { $ref = $script:SourceRef }
+  if ([string]::IsNullOrWhiteSpace($ref)) { $ref = "main" }
+  $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("drivebay-uninstall-" + [guid]::NewGuid().ToString("n") + ".ps1")
+  $url = "https://raw.githubusercontent.com/$script:Repo/$ref/uninstall.ps1"
+  Download-File $url $temp
+  $script:UninstallSource = $temp
+  return $temp
 }
-$trayProc = @(Get-Process -Name "DrivebayTray" -ErrorAction SilentlyContinue)
-if ($trayProc.Count -gt 0) {
+
+function Invoke-ExistingUninstall([string]$Root) {
+  $wipe = ($env:DRIVEBAY_UNINSTALL_FORCE -eq "1")
+  $env:DRIVEBAY_UNINSTALL_HOME = $Root
+  if (-not [string]::IsNullOrWhiteSpace($env:DRIVEBAY_SETUP_HOME)) {
+    $env:DRIVEBAY_UNINSTALL_SCOPE = "home"
+  }
+  if ($wipe) {
+    $env:DRIVEBAY_UNINSTALL_KEEP_DATA = "0"
+    Write-Host "Removing any previous Drivebay install, including the saved account and settings."
+  } else {
+    $env:DRIVEBAY_UNINSTALL_KEEP_DATA = "1"
+    $env:DRIVEBAY_UNINSTALL_FORCE = ""
+    Write-Host "Removing any previous Drivebay install. The saved account and settings stay."
+  }
+  $scriptPath = Resolve-UninstallScript
+  $ps = Get-PowerShellExe
+  $old = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $hasNative = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
   $oldNative = $null
-  $hasNative = Test-Path variable:PSNativeCommandUseErrorActionPreference
   if ($hasNative) {
     $oldNative = $PSNativeCommandUseErrorActionPreference
     $PSNativeCommandUseErrorActionPreference = $false
   }
-  $oldError = $ErrorActionPreference
-  $ErrorActionPreference = "Continue"
-  try { & taskkill.exe /IM DrivebayTray.exe /F 1>$null 2>$null } catch {}
-  $ErrorActionPreference = $oldError
-  if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
-}
-
-$firewall = Join-Path $Root "windows\firewall.ps1"
-if (Test-Path -LiteralPath $firewall) {
-  $ps = $null
-  $powershell = Get-Command powershell.exe -ErrorAction SilentlyContinue
-  if ($powershell) { $ps = $powershell.Source } else { $ps = (Get-Process -Id $PID).Path }
-  try { & $ps -NoProfile -ExecutionPolicy Bypass -File $firewall -Action remove } catch {}
-}
-
-$programs = Join-Path ([Environment]::GetFolderPath("Programs")) "Drivebay"
-foreach ($name in @("Drivebay.lnk", "Uninstall Drivebay.lnk", "Stop Drivebay.lnk")) {
-  $link = Join-Path $programs $name
-  if (Test-Path -LiteralPath $link) { Remove-Item -LiteralPath $link -Force }
-}
-if (Test-Path -LiteralPath $programs) {
-  $left = @(Get-ChildItem -LiteralPath $programs -Force -ErrorAction SilentlyContinue)
-  if ($left.Count -eq 0) { Remove-Item -LiteralPath $programs -Force }
-}
-$desktop = Join-Path ([Environment]::GetFolderPath("Desktop")) "Drivebay.lnk"
-if (Test-Path -LiteralPath $desktop) { Remove-Item -LiteralPath $desktop -Force }
-
-try {
-  $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-  $run = Get-ItemProperty -Path $runKey -Name Drivebay -ErrorAction SilentlyContinue
-  if ($run -and $run.Drivebay -and ($run.Drivebay -like ("*" + $Root + "*"))) {
-    Remove-ItemProperty -Path $runKey -Name Drivebay -ErrorAction SilentlyContinue
+  try {
+    & $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $scriptPath
+    $code = $LASTEXITCODE
+  } catch {
+    $code = 1
+  } finally {
+    $ErrorActionPreference = $old
+    if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
   }
-} catch {}
-
-Write-Host "Drivebay program files, shortcuts, and the startup entry will be removed."
-Write-Host "The password database stays unless you type YES."
-$answer = ""
-try { $answer = Read-Host "Type YES to also delete the saved password and settings" } catch { $answer = "" }
-$deleteData = ($answer -eq "YES")
-
-$program = @(
-  "app", "runtime", "windows", "assets",
-  "launcher.mjs", "lib.mjs", "DrivebayTray.exe", "DrivebayTray.exe.config",
-  "start-drivebay.vbs", "stop-drivebay.vbs", "VERSION.txt", "uninstall.ps1"
-)
-foreach ($name in $program) {
-  $target = Join-Path $Root $name
-  if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+  if ($code -ne 0) { throw "Drivebay could not be removed (exit $code)." }
 }
 
-if ($deleteData) {
-  foreach ($name in @(
-    "config.json", "drivebay.port", "pending-account.json", "auth.secret",
-    "drivebay.log", "drivebay.pid", "setup.log", "data"
-  )) {
-    $target = Join-Path $Root $name
-    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+function Copy-UninstallScript([string]$Root) {
+  $source = Resolve-UninstallScript
+  $dest = Join-Path $Root "uninstall.ps1"
+  $same = $false
+  try {
+    if ((Test-Path -LiteralPath $source) -and (Test-Path -LiteralPath $dest)) {
+      $left = [System.IO.Path]::GetFullPath($source)
+      $right = [System.IO.Path]::GetFullPath($dest)
+      $same = $left.Equals($right, [StringComparison]::OrdinalIgnoreCase)
+    }
+  } catch {
+    $same = $false
   }
-  Write-Host "Removed Drivebay, including the saved password and settings."
-} else {
-  Write-Host "Removed Drivebay. The saved password and settings are still in $Root."
-}
-'@
-  $utf8 = New-Object System.Text.UTF8Encoding $false
-  [System.IO.File]::WriteAllText($path, $text.Replace("`n", "`r`n"), $utf8)
+  if ($same) { return }
+  Copy-Item -LiteralPath $source -Destination $dest -Force
 }
 
 function New-StartShortcuts([string]$Root) {
@@ -754,6 +733,7 @@ function Start-DrivebayInstall {
     if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { throw "LOCALAPPDATA is not set." }
     $root = Join-Path $env:LOCALAPPDATA "Drivebay"
   }
+  Invoke-ExistingUninstall $root
   New-Item -ItemType Directory -Force -Path $root | Out-Null
 
   $source = $null
@@ -800,7 +780,7 @@ function Start-DrivebayInstall {
   Save-DrivebayAccount $root $setupScript $port $mode (Read-DrivebayVersion $source) $account.User $account.Password
   $account.Password = $null
 
-  Write-UninstallScript $root
+  Copy-UninstallScript $root
   if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
     Invoke-Firewall $root
     if ($mode -eq "tailscale") { Invoke-Tailscale $root $installTailscale $launchTailscale }
