@@ -2,6 +2,10 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.23
+- This PC, or a signed-in Tailscale device, can open a write window on a token for 15 minutes, 1 hour, or 4 hours. During the window, `PUT /api/v1/upload`, `POST /api/v1/mkdir`, `POST /api/v1/rename`, and `POST /api/v1/delete` accept the bearer token. When the window ends, the token is read-only again and a write is not performed.
+- Those writes still obey the server lock toggles on this PC. A locked action is refused. Upload will not follow a symlink, and deleting a symlink removes the link rather than the target. A new folder is one level, and the parent has to exist.
+
 ## 3.22
 - Settings on this PC can create, list, and revoke a read-only API token. The secret is shown once, as `db_` plus 32 random bytes, and the file stores only a SHA-256 hash plus a short prefix. Each token has a name, a read scope (roots, list, stat, search, download with Range, and thumbnails), an optional folder allowlist, an expiry, and a last-used time.
 - Clients send `Authorization: Bearer` to `GET /api/v1/roots`, `/api/v1/list`, `/api/v1/stat`, `/api/v1/search`, `/api/v1/download`, and `/api/v1/thumb`. A path is refused when its real path leaves the allowed folders, including through a symlink. Calls are rate limited. This PC's settings page shows an audit log. Creating, listing, and revoking a token stays on this PC.

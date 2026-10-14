@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { createApiToken, getApiAccess, revokeApiToken } from "@/lib/files/api.functions";
+import { allowApiWrite, createApiToken, getApiAccess, revokeApiToken } from "@/lib/files/api.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ type TokenRow = {
   roots?: string[];
   expiresAt: number | null;
   lastUsedAt: number | null;
+  writeUntil: number | null;
   expired: boolean;
 };
 
@@ -27,6 +28,7 @@ type AuditRow = {
 
 type Panel = {
   canManage: boolean;
+  canWriteWindow: boolean;
   tokens: TokenRow[];
   audit: AuditRow[];
 };
@@ -41,6 +43,7 @@ export function ApiTokens() {
   const [name, setName] = useState("");
   const [roots, setRoots] = useState("");
   const [days, setDays] = useState<0 | 7 | 30 | 90>(0);
+  const [minutes, setMinutes] = useState<Record<string, 15 | 60 | 240>>({});
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -56,7 +59,7 @@ export function ApiTokens() {
         if (alive) setPanel(next);
       })
       .catch(() => {
-        if (alive) setPanel({ canManage: false, tokens: [], audit: [] });
+        if (alive) setPanel({ canManage: false, canWriteWindow: false, tokens: [], audit: [] });
       });
     const timer = window.setInterval(() => {
       getApiAccess()
@@ -97,6 +100,19 @@ export function ApiTokens() {
     }
   }
 
+  async function onAllow(id: string) {
+    setBusy(true);
+    try {
+      await allowApiWrite({ data: { id, minutes: minutes[id] ?? 15 } });
+      toast.success("Write window opened");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not allow writes");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onRevoke(id: string) {
     setBusy(true);
     try {
@@ -117,10 +133,13 @@ export function ApiTokens() {
         <p>
           A token is a key for the folders it is allowed to read. Drivebay shows the secret once, then stores only a hash.
           Clients send <span className="font-mono text-fg">Authorization: Bearer</span>. Reads cover roots, list, stat,
-          search, download with Range, and thumbnails.
+          search, download with Range, and thumbnails. Writes stay off until you allow a window, and they still follow
+          the server lock on this PC.
         </p>
         {panel == null ? <p>Loading tokens…</p> : null}
-        {panel && !panel.canManage ? <p>API tokens are created on this PC.</p> : null}
+        {panel && !panel.canManage && !panel.canWriteWindow ? (
+          <p>API tokens are created on this PC. A signed-in Tailscale device can open a write window for a token.</p>
+        ) : null}
         {secret ? (
           <div className="space-y-2">
             <p className="text-fg">Copy this token now. It cannot be shown again.</p>
@@ -163,26 +182,49 @@ export function ApiTokens() {
             </Button>
           </form>
         ) : null}
-        {panel?.canManage
+        {panel && (panel.canManage || panel.canWriteWindow)
           ? panel.tokens.map((token) => (
               <div key={token.id} className="space-y-1 rounded-sm border border-border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm text-fg">
                     {token.name} <span className="font-mono text-fg-muted">{token.prefix}</span>
                   </p>
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onRevoke(token.id)}>
-                    Revoke
-                  </Button>
+                  {panel.canManage ? (
+                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onRevoke(token.id)}>
+                      Revoke
+                    </Button>
+                  ) : null}
                 </div>
                 <p>
                   Expires {token.expiresAt ? when(token.expiresAt) : "never"}
-                  {token.expired ? " (expired)" : ""}. Last used {when(token.lastUsedAt)}.
+                  {token.expired ? " (expired)" : ""}. Last used {when(token.lastUsedAt)}. Write until {when(token.writeUntil)}.
                 </p>
-                {token.roots && token.roots.length ? (
-                  <p className="font-mono break-all">{token.roots.join("\n")}</p>
-                ) : (
-                  <p>Every drive this PC already allows.</p>
-                )}
+                {panel.canWriteWindow ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Allow write for ${token.name}`}
+                      className="rounded-sm border border-border bg-bg px-2 py-1 text-sm text-fg"
+                      value={minutes[token.id] ?? 15}
+                      onChange={(event) =>
+                        setMinutes((current) => ({ ...current, [token.id]: Number(event.target.value) as 15 | 60 | 240 }))
+                      }
+                    >
+                      <option value={15}>15 min</option>
+                      <option value={60}>1 h</option>
+                      <option value={240}>4 h</option>
+                    </select>
+                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void onAllow(token.id)}>
+                      Allow write for
+                    </Button>
+                  </div>
+                ) : null}
+                {panel.canManage ? (
+                  token.roots && token.roots.length ? (
+                    <p className="font-mono break-all">{token.roots.join("\n")}</p>
+                  ) : (
+                    <p>Every drive this PC already allows.</p>
+                  )
+                ) : null}
               </div>
             ))
           : null}
