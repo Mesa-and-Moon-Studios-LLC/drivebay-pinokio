@@ -112,12 +112,12 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.ok(
     readme.includes(
-      "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex",
+      "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex",
     ),
   );
   assert.ok(
     readme.includes(
-      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"',
+      'powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex"',
     ),
   );
 
@@ -517,7 +517,7 @@ test("ready is printed only after /api/health names Drivebay", async () => {
     child.unref();
     return { pid: child.pid, port: chosen };
   }
-  const good = serve('{"ok":true,"name":"Drivebay","version":"3.29"}', 200);
+  const good = serve('{"ok":true,"name":"Drivebay","version":"3.30"}', 200);
   const foreign = serve('{"error":"Unauthorized"}', 401);
   await new Promise((resolve, reject) => {
     const started = Date.now();
@@ -615,7 +615,7 @@ test("a saved port in Pinokio's Caddy range moves on update", async () => {
     const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
     assert.equal(config.mode, "tailscale");
     assert.equal(config.note, "keep-me");
-    assert.equal(config.version, "3.29");
+    assert.equal(config.version, "3.30");
     assert.ok(config.port < 42000 || config.port > 42999, String(config.port));
     if (held) assert.notEqual(config.port, 8765);
     else assert.equal(config.port, 8765);

@@ -1,14 +1,16 @@
 # Drivebay
 
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.30.exe)**
+
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
 **Install this URL in Pinokio:**
 
 ```
-https://github.com/lordstryfe/drivebay-pinokio
+https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.29** — see [Changelog](#changelog) below.
+Current version: **3.30** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -19,7 +21,7 @@ Current version: **3.29** — see [Changelog](#changelog) below.
 
 2. Open **Pinokio**.
 3. Go to **Discover** (or **Download from URL**).
-4. Paste `https://github.com/lordstryfe/drivebay-pinokio` and download.
+4. Paste `https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio` and download.
 5. Click **Install**. Choose **Static** (you pick the port) or **Random** (new port each Start).
 6. If you chose Static, forward **that same port** on your router.
 7. Click **Start**. On this PC, Drivebay opens the settings page. It does not open the file browser. Other devices use the address Pinokio shows.
@@ -31,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.29.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.30.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.29` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.30` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -51,7 +53,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.29`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.30`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -60,13 +62,13 @@ Your username and password are stored in a `data` folder next to the app. **Upda
 No installer and no Pinokio. Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
 Or in CMD:
 
 ```
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex"
 ```
 
 The script downloads the latest GitHub release server archive (`drivebay-server-win-x64.zip`) and installs that build. If the latest release has no server archive, it downloads `main`. Running `install.ps1` from a checkout uses the files in that checkout. If Node.js 22 is missing, it downloads a portable Node into `%LOCALAPPDATA%\Drivebay` (no administrator account required).
@@ -79,7 +81,7 @@ A first-time install asks for the same choices as the .exe installer:
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.29`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.30`.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -90,13 +92,13 @@ A Start menu shortcut named **Drivebay** starts it. On this PC that opens the se
 Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex
 ```
 
 Or in CMD:
 
 ```
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex"
 ```
 
 It stops node on the Drivebay port, `DrivebayTray.exe`, and the launcher. It removes the startup Run entry, scheduled tasks, Start menu and desktop shortcuts, and the program files under `%LOCALAPPDATA%\Drivebay` and `%LOCALAPPDATA%\Programs\Drivebay`. Anything already gone is skipped. It asks before deleting the saved password and settings. Type YES to delete them.
@@ -197,20 +199,20 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.29.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.30.
 
 Paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.29. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.30. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
 ```
-irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/uninstall.ps1 | iex
 ```
 
 Uninstall stops Drivebay, removes shortcuts and the startup entry, and deletes the program files. It asks before deleting the saved password and settings. Type YES to delete them. Set DRIVEBAY_UNINSTALL_KEEP_DATA=1 to keep them, or DRIVEBAY_UNINSTALL_FORCE=1 to delete them without asking. The last line is Drivebay is uninstalled. If a Pinokio copy is still running, uninstall says so and leaves that copy running.
@@ -279,6 +281,9 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 
 ## Changelog
 
+### 3.30
+- The repository is https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio. Install, uninstall, update checks, and the settings feature-request link use that path. The Windows download is [Drivebay-Setup-3.30.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.30.exe).
+
 ### 3.29
 - The Donate menu includes Ko-fi: https://ko-fi.com/mesaandmoonstudios `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
 
@@ -313,7 +318,7 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 - A first-time Tailscale install asks whether Tailscale is already on this PC. Yes continues. No can download the official Tailscale installer, then walks through sign-in or a free account, or skip Tailscale for later. `DRIVEBAY_TAILSCALE` can be `have`, `install`, or `skip`.
 - Setup refuses a port that is already in use, including Pinokio's Caddy, and names the program that holds it. It prints the ready line only after this Drivebay server answers `/api/health`. Uninstall says when a Pinokio copy is still running.
 - Settings includes **Get the Android app**, with a link to the latest APK. The Google Play button stays hidden until `PLAY_STORE_URL` in `app/src/lib/version.ts` is set.
-- Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex`
+- Command-line Windows install. No installer and no Pinokio. PowerShell: `irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex`
 - On this PC, starting Drivebay opens the settings page. It does not open the file browser. The tray icon stays. Other devices still use the Tailscale or LAN address.
 
 ### 3.20
