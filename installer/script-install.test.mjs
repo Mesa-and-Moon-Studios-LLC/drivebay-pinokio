@@ -78,6 +78,16 @@ test("install.ps1 stays ASCII and the README has both one-liners", () => {
   assert.match(script, /You do not open that port on your router/);
   assert.match(script, /You have to open and forward TCP port/);
   assert.match(script, /No Tailscale \(Regular mode\)/);
+  assert.match(script, /Tailscale \(Recommended\)/);
+  assert.match(script, /Tailscale is the safer choice/);
+  assert.match(script, /Nothing is opened to the internet/);
+  assert.match(script, /Regular mode exposes the port publicly/);
+  assert.match(script, /Choice \[1\]/);
+  const modeFn = script.slice(script.indexOf("function Read-Mode"), script.indexOf("function Read-ListenPort"));
+  const blank = modeFn.indexOf("IsNullOrWhiteSpace($answer)");
+  const tailReturn = modeFn.indexOf('return "tailscale"', blank);
+  const regularReturn = modeFn.indexOf('return "regular"', blank);
+  assert.ok(blank !== -1 && tailReturn !== -1 && regularReturn !== -1 && tailReturn < regularReturn);
   assert.match(script, /192\.168\.0\.1/);
   assert.match(script, /192\.168\.1\.1/);
   assert.match(script, /Some ISPs use CGNAT and block this/);

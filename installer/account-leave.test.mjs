@@ -88,8 +88,13 @@ test("installer script keeps confirm in $Confirm and skips the router page for T
   for (const ch of src) {
     assert.ok(ch.charCodeAt(0) <= 127, `non-ASCII installer character ${JSON.stringify(ch)}`);
   }
-  assert.match(src, /Tailscale - reach Drivebay over your tailnet/);
+  assert.match(src, /Tailscale \(Recommended\) - reach Drivebay over your tailnet/);
   assert.match(src, /No Tailscale \(Regular mode\)/);
+  assert.match(src, /Tailscale is the safer choice/);
+  assert.match(src, /Nothing is opened to the internet/);
+  assert.match(src, /Regular mode exposes the port publicly/);
+  const init = functionBody(src, ".onInit");
+  assert.match(init, /StrCpy \$Mode "tailscale"/);
   assert.equal(src.includes("\u2014"), false);
   assert.equal(src.includes("\u2013"), false);
 

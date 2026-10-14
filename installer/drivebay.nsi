@@ -93,7 +93,7 @@ Var SetupError
 !macroend
 
 Function .onInit
-  StrCpy $Mode "regular"
+  StrCpy $Mode "tailscale"
   StrCpy $Port "42013"
   StrCpy $InstallTailscale "0"
   StrCpy $LaunchTailscale "0"
@@ -139,11 +139,11 @@ Function ModePageCreate
   ${EndIf}
   nsDialogs::Create 1018
   Pop $0
-  ${NSD_CreateLabel} 0 0 100% 36u "How should other devices reach this PC? Both modes use a local port. Tailscale reaches it over your tailnet, with no router change. No Tailscale (Regular mode) needs that port forwarded on your router."
+  ${NSD_CreateLabel} 0 0 100% 52u "How should other devices reach this PC? Tailscale is the safer choice (Recommended). Nothing is opened to the internet. Only your own signed-in devices can reach Drivebay. Regular mode exposes the port publicly."
   Pop $0
-  ${NSD_CreateFirstRadioButton} 0 42u 100% 12u "Tailscale - reach Drivebay over your tailnet"
+  ${NSD_CreateFirstRadioButton} 0 56u 100% 12u "Tailscale (Recommended) - reach Drivebay over your tailnet"
   Pop $ModeTailscale
-  ${NSD_CreateAdditionalRadioButton} 0 58u 100% 14u "No Tailscale (Regular mode)"
+  ${NSD_CreateAdditionalRadioButton} 0 72u 100% 14u "No Tailscale (Regular mode)"
   Pop $ModeRegular
   ${If} $Mode == "tailscale"
     ${NSD_SetState} $ModeTailscale ${BST_CHECKED}

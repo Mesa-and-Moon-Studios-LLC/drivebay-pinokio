@@ -247,14 +247,14 @@ function Read-Mode {
   }
   if (Test-NonInteractive) { throw "Mode must be tailscale or regular." }
   Write-Host "How should other devices reach this PC?"
-  Write-Host "Both modes use a local port. Tailscale reaches it over your tailnet, with no router change."
-  Write-Host "No Tailscale (Regular mode) needs that port forwarded on your router."
-  Write-Host "  1) Tailscale - reach Drivebay over your tailnet"
+  Write-Host "Tailscale is the safer choice. Nothing is opened to the internet. Only your own signed-in devices can reach Drivebay."
+  Write-Host "Regular mode exposes the port publicly."
+  Write-Host "  1) Tailscale (Recommended) - reach Drivebay over your tailnet"
   Write-Host "  2) No Tailscale (Regular mode)"
   while ($true) {
-    $answer = Read-Host "Choice [2]"
-    if ([string]::IsNullOrWhiteSpace($answer) -or $answer -eq "2" -or $answer.Trim().ToLower() -eq "regular") { return "regular" }
-    if ($answer -eq "1" -or $answer.Trim().ToLower() -eq "tailscale") { return "tailscale" }
+    $answer = Read-Host "Choice [1]"
+    if ([string]::IsNullOrWhiteSpace($answer) -or $answer -eq "1" -or $answer.Trim().ToLower() -eq "tailscale") { return "tailscale" }
+    if ($answer -eq "2" -or $answer.Trim().ToLower() -eq "regular") { return "regular" }
     Write-Host "Enter 1 or 2."
   }
 }

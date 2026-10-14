@@ -39,7 +39,7 @@ The setup screens are:
 
 1. **Welcome.** The runtime is included.
 2. **Folder.** Where to put the program. This is a per-user install.
-3. **Mode.** **Tailscale** (over your tailnet, no router change) or **No Tailscale (Regular mode)** (this network, which needs a router port forward).
+3. **Mode.** **Tailscale (Recommended)** is the default. Nothing is opened to the internet, and only your own signed-in devices can reach Drivebay. **No Tailscale (Regular mode)** exposes the port publicly and needs a router port forward.
 4. **Tailscale** (only if you chose Tailscale). The page asks **Do you already have Tailscale?** and selects Yes when Tailscale is already installed. Yes goes on to the port, username, and password. No offers two choices: download and install Tailscale for Windows from the official installer (quiet MSI from `pkgs.tailscale.com`), then sign in or create a free Tailscale account, or **Skip**. Skip says you can install Tailscale and set it up later, then continues.
 5. **Port.** Required in both modes. A free port from 1024 to 65535. The suggested port is 42013. This page runs on a first-time install.
 6. **Router** (No Tailscale / Regular only). After the port is chosen, setup prints this PC's local IP, asks you to log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP **that port** to the local IP, and reserve that IP in DHCP. It prints the public IP when it can, and tells you to open `http://<public-ip>:<port>/` from outside the network. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. You must check the box to continue. Tailscale skips this page. Allow the same port in Windows Firewall if Windows asks. The same steps stay on this PC's settings page while Regular mode is on.
@@ -79,7 +79,7 @@ irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/cursor/windows
 
 A first-time install asks for the same choices as the .exe installer:
 
-1. **Mode.** Tailscale, or No Tailscale (Regular mode).
+1. **Mode.** Tailscale (Recommended) is the default. Press Enter to keep it. Nothing is opened to the internet, and only your own signed-in devices can reach Drivebay. No Tailscale (Regular mode) exposes the port publicly.
 2. **Tailscale** (only if you chose Tailscale). It asks **Do you already have Tailscale?** and preselects Yes when `Tailscale.exe` is already installed. Yes goes straight to the port, username, and password. No offers: download and install Tailscale (the official quiet installer), then sign in or create a free account, or Skip. Skip prints that you can install Tailscale and set it up later, then continues. For a script, set `DRIVEBAY_TAILSCALE` to `have`, `install`, or `skip`.
 3. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013. If that port is already in use, setup names the program and asks for another port.
 4. **Router** (No Tailscale / Regular only). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale skips this page. The same steps are on this PC's settings page while Regular mode is on.
@@ -138,6 +138,7 @@ Treat the password like a house key. Do not share the Pinokio link and the passw
 ## Changelog
 
 ### 3.21
+- The install mode choice recommends Tailscale and selects it by default. Tailscale keeps the port off the public internet. Regular mode exposes it.
 - No Tailscale (Regular mode) stays available. After the port, setup and this PC's settings page walk through the router forward: local IP, router login, TCP forward, a reserved DHCP address, and `http://<public-ip>:<port>/` from outside. CGNAT can block that path. Tailscale is the easy fallback. Use a strong password.
 - Installing again, from `install.ps1` or the .exe, updates Drivebay. It keeps the account, password, port, mode, and settings, restarts, checks `/api/health`, and prints `Drivebay updated to 3.21`. A first-time install is the only path that asks for the port, username, password, and Tailscale.
 - A first-time Tailscale install asks whether Tailscale is already on this PC. Yes continues. No can download the official Tailscale installer, then walks through sign-in or a free account, or skip Tailscale for later. `DRIVEBAY_TAILSCALE` can be `have`, `install`, or `skip`.
