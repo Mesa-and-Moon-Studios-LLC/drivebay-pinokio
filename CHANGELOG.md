@@ -2,6 +2,9 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.29
+- The Donate menu includes Ko-fi: `https://ko-fi.com/mesaandmoonstudios`. `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
+
 ## 3.28
 - The Donate menu includes PayPal: `https://www.paypal.com/donate/?business=AAGD9Q6BU4WCE&currency_code=USD&item_name=Support%20Drivebay%20-%20Mesa%20and%20Moon%20Studios`. `.github/FUNDING.yml` lists that same link under `custom`. GitHub Sponsors and Ko-fi stay blank, so those choices stay out of the menu.
 

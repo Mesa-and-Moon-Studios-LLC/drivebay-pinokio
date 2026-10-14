@@ -6,7 +6,7 @@
 export const DONATE_GITHUB_SPONSORS_URL = "";
 export const DONATE_PAYPAL_URL =
   "https://www.paypal.com/donate/?business=AAGD9Q6BU4WCE&currency_code=USD&item_name=Support%20Drivebay%20-%20Mesa%20and%20Moon%20Studios";
-export const DONATE_KOFI_URL = "";
+export const DONATE_KOFI_URL = "https://ko-fi.com/mesaandmoonstudios";
 
 const DONATE_CHOICES = [
   { label: "GitHub Sponsors", url: DONATE_GITHUB_SPONSORS_URL },
