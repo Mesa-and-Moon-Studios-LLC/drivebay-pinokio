@@ -3,6 +3,7 @@
 All user-facing Drivebay versions. Newest first.
 
 ## 3.21
+- Setup checks the chosen port before it saves. If Pinokio, Caddy, or any other program is already listening, it names that program and asks for another port. A scripted install stops with that same message. After start, setup calls `/api/health` and prints the ready line only when this Drivebay server answers. Uninstall says when a Pinokio copy is still running and leaves that copy running.
 - Settings on this PC includes Get the Android app, with a link to the latest APK at https://github.com/lordstryfe/drivebay/releases/latest. The Google Play button stays hidden until `PLAY_STORE_URL` is set.
 - Command-line uninstall: `irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/uninstall.ps1 | iex`. It stops Drivebay, removes shortcuts and startup entries, and deletes the program files. It asks before deleting the saved account. `-KeepData` keeps that account. `-Force` deletes it. Installing again runs this uninstall first and keeps the account.
 - Opening `/` in a browser on this PC shows sign-in when you are signed out, and settings after you sign in. A Tailscale or LAN address shows the file browser sign-in. Those pages are HTML. JSON errors stay on API calls.

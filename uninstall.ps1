@@ -480,6 +480,54 @@ function Resolve-DeleteData([string]$DataRoot) {
   return ($answer.Trim() -eq "YES")
 }
 
+function Get-PinokioDrivebayNote {
+  $hits = New-Object System.Collections.Generic.List[string]
+  function Consider([string]$Name, [string]$Exe, [string]$Cmd, [int]$ProcId) {
+    if ($ProcId -eq $PID) { return }
+    $blob = ([string]$Name) + " " + ([string]$Exe) + " " + ([string]$Cmd)
+    if ($blob -match '(?i)uninstall\.ps1' -or $blob -match '(?i)install\.ps1' -or $blob -match '(?i)--test') { return }
+    $pinokio = $blob -match '(?i)pinokio'
+    $caddy = $Name -match '(?i)^caddy(\.exe)?$'
+    $drivebay = $blob -match '(?i)drivebay'
+    if (-not $pinokio) { return }
+    if (-not $caddy -and -not $drivebay) { return }
+    $label = $Name
+    if ([string]::IsNullOrWhiteSpace($label)) { $label = "pid " + $ProcId }
+    if (-not [string]::IsNullOrWhiteSpace($Exe)) { $label = $label + " (" + $Exe + ")" }
+    if (-not $hits.Contains($label)) { [void]$hits.Add($label) }
+  }
+  try {
+    $cim = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    foreach ($proc in $cim) {
+      $procId = 0
+      if ($proc.ProcessId) { $procId = [int]$proc.ProcessId }
+      Consider ([string]$proc.Name) ([string]$proc.ExecutablePath) ([string]$proc.CommandLine) $procId
+    }
+  } catch {
+  }
+  if ($hits.Count -eq 0 -and (Test-Path -LiteralPath "/proc")) {
+    $dirs = @(Get-ChildItem -LiteralPath "/proc" -Directory -ErrorAction SilentlyContinue)
+    foreach ($dir in $dirs) {
+      if ($dir.Name -notmatch '^\d+$') { continue }
+      $procId = [int]$dir.Name
+      if ($procId -eq $PID) { continue }
+      $name = ""
+      $cmd = ""
+      $comm = Join-Path $dir.FullName "comm"
+      $cmdline = Join-Path $dir.FullName "cmdline"
+      if (Test-Path -LiteralPath $comm) {
+        try { $name = [System.IO.File]::ReadAllText($comm).Trim() } catch { $name = "" }
+      }
+      if (Test-Path -LiteralPath $cmdline) {
+        try { $cmd = [System.IO.File]::ReadAllText($cmdline).Replace([char]0, " ") } catch { $cmd = "" }
+      }
+      Consider $name "" $cmd $procId
+    }
+  }
+  if ($hits.Count -eq 0) { return "" }
+  return "A Pinokio copy of Drivebay is still running: " + ($hits -join "; ") + ". This uninstall leaves Pinokio running. Stop Drivebay in Pinokio to free its port."
+}
+
 function Start-DrivebayUninstall {
   Write-Host "Stopping Drivebay."
   $dataRoot = Get-DataRoot
@@ -502,6 +550,8 @@ function Start-DrivebayUninstall {
   } elseif (-not [string]::IsNullOrWhiteSpace($dataRoot) -and (Test-Path -LiteralPath $dataRoot)) {
     Write-Host "The saved account and settings are still in $dataRoot."
   }
+  $pinokio = Get-PinokioDrivebayNote
+  if (-not [string]::IsNullOrWhiteSpace($pinokio)) { Write-Host $pinokio }
   Write-Host "Drivebay is uninstalled."
 }
 

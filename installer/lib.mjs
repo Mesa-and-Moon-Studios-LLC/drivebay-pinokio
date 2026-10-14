@@ -29,16 +29,38 @@ export function parsePort(value) {
   return port;
 }
 
-/** True when nothing is accepting TCP connections on 0.0.0.0:port. */
+/**
+ * True when nothing is accepting this port.
+ * A connect probe runs first. On Windows a bind can succeed while Caddy
+ * (SO_REUSEADDR) is already listening, so a successful bind is not enough.
+ */
 export function isPortFree(port) {
   const checked = parsePort(port);
   return new Promise((resolve) => {
-    const server = net.createServer();
-    server.unref();
-    server.once("error", () => resolve(false));
-    server.listen({ port: checked, host: "0.0.0.0", exclusive: true }, () => {
-      server.close(() => resolve(true));
+    let settled = false;
+    const finish = (free) => {
+      if (settled) return;
+      settled = true;
+      resolve(free);
+    };
+    const probe = net.connect({ host: "127.0.0.1", port: checked });
+    probe.unref();
+    const tryBind = () => {
+      probe.removeAllListeners();
+      probe.destroy();
+      const server = net.createServer();
+      server.unref();
+      server.once("error", () => finish(false));
+      server.listen({ port: checked, host: "0.0.0.0", exclusive: true }, () => {
+        server.close(() => finish(true));
+      });
+    };
+    probe.once("connect", () => {
+      probe.destroy();
+      finish(false);
     });
+    probe.once("error", () => tryBind());
+    probe.setTimeout(400, () => tryBind());
   });
 }
 

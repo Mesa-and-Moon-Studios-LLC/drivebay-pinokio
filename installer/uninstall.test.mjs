@@ -103,6 +103,8 @@ test("uninstall.ps1 is a one-liner script and install runs it first", () => {
   assert.match(script, /Programs/);
   assert.match(script, /Get-ListenerPids/);
   assert.match(script, /DrivebayTray\.exe/);
+  assert.match(script, /A Pinokio copy of Drivebay is still running/);
+  assert.match(script, /This uninstall leaves Pinokio running/);
 
   const install = fs.readFileSync(path.join(root, "install.ps1"), "utf8");
   const remove = install.indexOf("Invoke-ExistingUninstall $root");
@@ -260,6 +262,44 @@ test("a node listening on the saved port stops when the pid file is missing", as
     if (alive(pid)) {
       try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
     }
+    fs.rmSync(localApp, { recursive: true, force: true });
+  }
+});
+
+test("uninstall mentions a Pinokio copy that is still running", async () => {
+  const ps = powershell();
+  if (!ps) {
+    if (process.platform === "win32") assert.fail("powershell is required on Windows");
+    return;
+  }
+  const localApp = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-pinokio-"));
+  const home = path.join(localApp, "Drivebay");
+  fs.mkdirSync(path.join(home, "app"), { recursive: true });
+  fs.writeFileSync(path.join(home, "app", "old.txt"), "old");
+  const child = spawn(
+    process.execPath,
+    ["-e", "setInterval(()=>{},1000)", "pinokio", "drivebay"],
+    { detached: true, stdio: "ignore" },
+  );
+  child.unref();
+  const env = { ...process.env, LOCALAPPDATA: localApp };
+  delete env.DRIVEBAY_UNINSTALL_HOME;
+  delete env.DRIVEBAY_UNINSTALL_SCOPE;
+  delete env.DRIVEBAY_SETUP_HOME;
+  delete env.DRIVEBAY_UNINSTALL_FORCE;
+  delete env.DRIVEBAY_UNINSTALL_KEEP_DATA;
+  try {
+    const result = runPwsh(ps, path.join(root, "uninstall.ps1"), ["-KeepData"], env);
+    const out = `${result.stdout || ""}\n${result.stderr || ""}`;
+    assert.equal(result.status, 0, out);
+    assert.equal(/ERROR/i.test(result.stderr || ""), false, out);
+    assert.match(result.stdout || "", /A Pinokio copy of Drivebay is still running/);
+    assert.match(result.stdout || "", /This uninstall leaves Pinokio running/);
+    assert.match(result.stdout || "", /Drivebay is uninstalled\./);
+    assert.equal(alive(child.pid), true);
+    assert.equal(fs.existsSync(path.join(home, "app", "old.txt")), false);
+  } finally {
+    try { process.kill(child.pid, "SIGKILL"); } catch { /* already gone */ }
     fs.rmSync(localApp, { recursive: true, force: true });
   }
 });

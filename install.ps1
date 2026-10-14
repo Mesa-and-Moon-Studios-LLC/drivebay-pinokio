@@ -46,7 +46,24 @@ function Assert-Port([string]$Text) {
   return $port
 }
 
-function Test-PortFree([int]$Port) {
+function Test-TcpOpen([int]$Port) {
+  $client = $null
+  try {
+    $client = New-Object System.Net.Sockets.TcpClient
+    $async = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+    if (-not $async.AsyncWaitHandle.WaitOne(500, $false)) { return $false }
+    try { $client.EndConnect($async) } catch { return $false }
+    return [bool]$client.Connected
+  } catch {
+    return $false
+  } finally {
+    if ($null -ne $client) {
+      try { $client.Close() } catch {}
+    }
+  }
+}
+
+function Test-BindFree([int]$Port) {
   $listener = $null
   try {
     $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, $Port)
@@ -59,6 +76,141 @@ function Test-PortFree([int]$Port) {
       try { $listener.Stop() } catch {}
     }
   }
+}
+
+function Get-ListenerProcessIds([int]$Port) {
+  $ids = New-Object System.Collections.Generic.List[int]
+  function Add-Id([int]$Value) {
+    if ($Value -gt 0 -and $Value -ne $PID -and -not $ids.Contains($Value)) { [void]$ids.Add($Value) }
+  }
+  try {
+    $conns = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    foreach ($conn in $conns) { Add-Id ([int]$conn.OwningProcess) }
+  } catch {
+  }
+  $lines = @()
+  $netstat = $null
+  $netArgs = @()
+  if ($env:OS -eq "Windows_NT") {
+    $netstat = Get-Command netstat.exe -ErrorAction SilentlyContinue
+    $netArgs = @("-ano", "-p", "tcp")
+  } else {
+    $netstat = Get-Command netstat -ErrorAction SilentlyContinue
+    $netArgs = @("-ltnp")
+  }
+  if ($netstat) {
+    $oldPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $hasNative = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $oldNative = $null
+    if ($hasNative) {
+      $oldNative = $PSNativeCommandUseErrorActionPreference
+      $PSNativeCommandUseErrorActionPreference = $false
+    }
+    try { $lines = @(& $netstat.Source @netArgs 2>$null) } catch { $lines = @() }
+    finally {
+      $ErrorActionPreference = $oldPref
+      if ($hasNative) { $PSNativeCommandUseErrorActionPreference = $oldNative }
+    }
+  }
+  $pattern = ":" + $Port + "(\s|$)"
+  foreach ($line in $lines) {
+    $row = [string]$line
+    if ($row -notmatch $pattern) { continue }
+    if ($row -notmatch "LISTEN") { continue }
+    $slash = [regex]::Match($row, "(\d+)/")
+    if ($slash.Success) {
+      Add-Id ([int]$slash.Groups[1].Value)
+      continue
+    }
+    $tail = [regex]::Match($row, "(\d+)\s*$")
+    if ($tail.Success) { Add-Id ([int]$tail.Groups[1].Value) }
+  }
+  return @($ids)
+}
+
+function Read-ProcessBlob([int]$ProcId) {
+  $name = ""
+  $exe = ""
+  $cmd = ""
+  try {
+    $proc = Get-Process -Id $ProcId -ErrorAction SilentlyContinue
+    if ($proc) {
+      $name = [string]$proc.ProcessName
+      try { if ($proc.Path) { $exe = [string]$proc.Path } } catch {}
+    }
+  } catch {
+  }
+  if ($env:OS -eq "Windows_NT") {
+    try {
+      $cim = Get-CimInstance Win32_Process -Filter ("ProcessId = " + $ProcId) -ErrorAction SilentlyContinue
+      if ($cim) {
+        if ($cim.Name -and -not $name) { $name = [string]$cim.Name }
+        if ($cim.ExecutablePath) { $exe = [string]$cim.ExecutablePath }
+        if ($cim.CommandLine) { $cmd = [string]$cim.CommandLine }
+      }
+    } catch {
+    }
+  } else {
+    $base = Join-Path "/proc" ([string]$ProcId)
+    $comm = Join-Path $base "comm"
+    $cmdline = Join-Path $base "cmdline"
+    if (-not $name -and (Test-Path -LiteralPath $comm)) {
+      try { $name = [System.IO.File]::ReadAllText($comm).Trim() } catch {}
+    }
+    if (Test-Path -LiteralPath $cmdline) {
+      try { $cmd = [System.IO.File]::ReadAllText($cmdline).Replace([char]0, " ") } catch {}
+    }
+  }
+  $label = $name
+  if ([string]::IsNullOrWhiteSpace($label)) { $label = "pid " + $ProcId }
+  if (-not [string]::IsNullOrWhiteSpace($exe)) { $label = $label + " (" + $exe + ")" }
+  return @{ Label = $label; Blob = ($name + " " + $exe + " " + $cmd) }
+}
+
+function Get-PortConflict([int]$Port) {
+  $labels = New-Object System.Collections.Generic.List[string]
+  $pinokio = $false
+  foreach ($procId in @(Get-ListenerProcessIds $Port)) {
+    if ($null -eq $procId) { continue }
+    $parsedId = 0
+    if (-not [int]::TryParse([string]$procId, [ref]$parsedId)) { continue }
+    if ($parsedId -le 0) { continue }
+    $info = Read-ProcessBlob $parsedId
+    if (-not [string]::IsNullOrWhiteSpace($info.Label) -and -not $labels.Contains($info.Label)) {
+      [void]$labels.Add($info.Label)
+    }
+    if ($info.Blob -match '(?i)pinokio' -or $info.Blob -match '(?i)\bcaddy(\.exe)?\b') { $pinokio = $true }
+  }
+  $busy = ($labels.Count -gt 0) -or (Test-TcpOpen $Port)
+  if (-not $busy -and (Test-BindFree $Port)) { return "" }
+  $text = "Port $Port is already in use"
+  if ($labels.Count -gt 0) { $text = $text + " by " + ($labels -join "; ") }
+  $text = $text + " on this PC."
+  if ($pinokio) { $text = $text + " That is a Pinokio copy of Drivebay." }
+  return $text
+}
+
+function Test-DrivebayHealth([int]$Port) {
+  $url = "http://127.0.0.1:" + $Port + "/api/health"
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 2
+    $body = ""
+    if ($null -ne $response.Content) { $body = [string]$response.Content }
+    return ($body -match '"name"\s*:\s*"Drivebay"')
+  } catch {
+    return $false
+  }
+}
+
+function Wait-DrivebayHealth([int]$Port, [int]$Seconds) {
+  if ($Seconds -lt 1) { $Seconds = 30 }
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-DrivebayHealth $Port) { return $true }
+    Start-Sleep -Milliseconds 400
+  }
+  return (Test-DrivebayHealth $Port)
 }
 
 function Read-SecretLine([string]$Prompt) {
@@ -96,7 +248,8 @@ function Read-ListenPort([string]$Mode) {
   $picked = $env:DRIVEBAY_SETUP_PORT
   if (-not [string]::IsNullOrWhiteSpace($picked)) {
     $port = Assert-Port $picked
-    if (-not (Test-PortFree $port)) { throw "Port $port is already in use on this PC. Enter a different port." }
+    $conflict = Get-PortConflict $port
+    if (-not [string]::IsNullOrWhiteSpace($conflict)) { throw ($conflict + " Enter a different port.") }
     return $port
   }
   if (Test-NonInteractive) { throw "Enter a port from 1024 to 65535." }
@@ -116,8 +269,10 @@ function Read-ListenPort([string]$Mode) {
       Write-Host $_.Exception.Message
       continue
     }
-    if (-not (Test-PortFree $port)) {
-      Write-Host "Port $port is already in use on this PC. Enter a different port."
+    $conflict = Get-PortConflict $port
+    if (-not [string]::IsNullOrWhiteSpace($conflict)) {
+      Write-Host $conflict
+      Write-Host "Enter a different port."
       continue
     }
     return $port
@@ -781,11 +936,15 @@ function Start-DrivebayInstall {
   $account.Password = $null
 
   Copy-UninstallScript $root
+  $startedServer = $false
   if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
     Invoke-Firewall $root
     if ($mode -eq "tailscale") { Invoke-Tailscale $root $installTailscale $launchTailscale }
     New-StartShortcuts $root
-    Start-InstalledDrivebay $root
+    if ($env:DRIVEBAY_SKIP_START -ne "1") {
+      Start-InstalledDrivebay $root
+      $startedServer = $true
+    }
   }
 
   Write-Host ""
@@ -802,6 +961,12 @@ function Start-DrivebayInstall {
   Write-Host "Start shortcut: Drivebay, in the Start menu."
   Write-Host ("Uninstall script: " + (Join-Path $root "uninstall.ps1"))
   Write-Host "A reinstall does not replace an existing password."
+  if ($startedServer) {
+    Write-Host "Checking that this Drivebay server is answering on port $port."
+    if (-not (Wait-DrivebayHealth $port 30)) {
+      throw "Drivebay did not answer on port $port. The program on that port is not this Drivebay server, so setup did not finish. Choose a free port and run the install again."
+    }
+  }
   Write-Host "Drivebay is ready at http://127.0.0.1:${port}/settings"
 }
 

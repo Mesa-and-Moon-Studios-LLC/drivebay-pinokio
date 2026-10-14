@@ -174,7 +174,7 @@ Function PortPageLeave
     MessageBox MB_OK|MB_ICONEXCLAMATION "Enter a port from 1024 to 65535."
     Abort
   ${EndIf}
-  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "try { $$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any, [int]$Port); $$l.Start(); $$l.Stop(); exit 0 } catch { exit 1 }"'
+  nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$p=[int]$Port; $$busy=$$false; try { $$c=New-Object System.Net.Sockets.TcpClient; $$a=$$c.BeginConnect([System.Net.IPAddress]::Loopback,$$p,$$null,$$null); if ($$a.AsyncWaitHandle.WaitOne(500,$$false)) { try { $$c.EndConnect($$a); if ($$c.Connected) { $$busy=$$true } } catch {} }; $$c.Close() } catch {}; if (-not $$busy) { try { $$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,$$p); $$l.Start(); $$l.Stop() } catch { $$busy=$$true } }; if ($$busy) { exit 1 } else { exit 0 }"'
   Pop $0
   Pop $1
   ${If} $0 != "0"
