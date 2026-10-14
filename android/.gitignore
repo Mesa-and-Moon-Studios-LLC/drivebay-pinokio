@@ -1,0 +1,18 @@
+# Build
+/.gradle/
+/build/
+/app/build/
+/local.properties
+*.iml
+.idea/
+
+# Signing material never belongs in git
+*.jks
+*.keystore
+keystore.properties
+*.keystore.properties
+
+# Packaged APKs (keep source; not binaries)
+/dist/
+*.apk
+*.ap_

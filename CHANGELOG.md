@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.30
+- Android app 3.30.0 (versionCode 30) lives in `android/`. A download from the phone saves into Downloads/Drivebay with a progress notification (speed and time left), then offers Open and Share. Large files download in 8 MB ranges, can pause, resume, and cancel, retry with backoff, and continue after the connection drops or the app restarts. Files of 50 MB and up can stay on Wi-Fi. The session cookie from the WebView is sent with each request.
+- If Tailscale is not installed, the app offers Download (Play Store) or Skip. The hardware back button moves to the parent folder before it leaves the app. Connecting opens the file browser home. The address hint uses port 8765, and a saved port from 42000–42999 asks before it is kept. 8766 is noted as a common port.
+- `GET` and `HEAD /api/download` send `Accept-Ranges: bytes` and an ETag from the file size and mtime. A valid `Range` returns 206 with `Content-Range`. A bad range returns 416. `If-Range` sends the slice only when the ETag or modification time still matches.
+
 ## 3.29
 - The Donate menu includes Ko-fi: `https://ko-fi.com/mesaandmoonstudios`. `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
 

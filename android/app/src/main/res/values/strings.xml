@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DriveBay</string>
+    <string name="server_url_hint">http://100.x.x.x:8765</string>
+    <string name="connect">Connect</string>
+    <string name="settings">Server</string>
+    <string name="save_connect">Save and Connect</string>
+    <string name="url_label">DriveBay URL</string>
+    <string name="url_help">Tailscale or LAN address of the Drivebay PC. Include http:// and the port. 8765 is the usual port. 8766 is also common.</string>
+    <string name="missing_url">Enter a server URL first</string>
+    <string name="tailscale_title">Tailscale</string>
+    <string name="tailscale_help">Tailscale is not installed. Download it from the Play Store and sign in to the same account as your PC, or skip and connect with a local address.</string>
+    <string name="tailscale_download">Download</string>
+    <string name="tailscale_skip">Skip</string>
+    <string name="wifi_only_large">Download large files (50 MB and up) on Wi-Fi only</string>
+    <string name="legacy_port_title">Update the port?</string>
+    <string name="legacy_port_message">This address uses port %1$d, from the old 42000–42999 range. Drivebay’s usual port is 8765. 8766 is also common on PCs that already had 8765 in use.</string>
+    <string name="legacy_port_update">Use 8765</string>
+    <string name="legacy_port_keep">Keep %1$d</string>
+    <string name="download_saved">Saved to Downloads/Drivebay</string>
+    <string name="download_open">Open</string>
+    <string name="download_share">Share</string>
+    <string name="download_done">Done</string>
+    <string name="download_need_http">Can’t save that link. Use the Download button in Drivebay.</string>
+    <string name="download_started">Saving to Downloads/Drivebay</string>
+</resources>

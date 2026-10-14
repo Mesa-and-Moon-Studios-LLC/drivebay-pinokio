@@ -279,6 +279,11 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 
 ## Changelog
 
+### 3.30
+- Android 3.30.0 (versionCode 30) is in `android/`. Downloads save to Downloads/Drivebay with progress, Open, and Share. Large files use 8 MB ranges and can pause, resume, retry, and continue after a drop or an app restart. A 50 MB file can be limited to Wi-Fi. The WebView session cookie is sent with the download.
+- The phone asks to install Tailscale from the Play Store, or to skip that step. Back moves up a folder before leaving the app. Connect opens the file browser home. The port hint is 8765. A saved port from 42000–42999 asks to update. 8766 is also common.
+- `GET` and `HEAD /api/download` support `Range`, `Accept-Ranges`, 206, 416, `ETag` (size and mtime), and `If-Range`.
+
 ### 3.29
 - The Donate menu includes Ko-fi: https://ko-fi.com/mesaandmoonstudios `.github/FUNDING.yml` lists `ko_fi: mesaandmoonstudios`. PayPal stays in the menu. GitHub Sponsors stays blank, so that choice stays out of the menu.
 

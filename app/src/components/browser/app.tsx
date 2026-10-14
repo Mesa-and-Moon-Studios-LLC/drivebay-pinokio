@@ -334,6 +334,54 @@ export function FileBrowserApp() {
   );
 
   useEffect(() => {
+    const w = window as Window & { __drivebayAndroidBack?: () => boolean };
+    w.__drivebayAndroidBack = () => {
+      if (renameOpen) {
+        setRenameOpen(false);
+        return true;
+      }
+      if (deleteOpen) {
+        setDeleteOpen(false);
+        return true;
+      }
+      if (folderOpen) {
+        setFolderOpen(false);
+        return true;
+      }
+      if (mobilePreview) {
+        setMobilePreview(false);
+        return true;
+      }
+      if (mobileNav) {
+        setMobileNav(false);
+        return true;
+      }
+      if (searchHits) {
+        clearSearch();
+        return true;
+      }
+      if (listing?.parent) {
+        void openPath(listing.parent);
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      delete w.__drivebayAndroidBack;
+    };
+  }, [
+    renameOpen,
+    deleteOpen,
+    folderOpen,
+    mobilePreview,
+    mobileNav,
+    searchHits,
+    listing,
+    clearSearch,
+    openPath,
+  ]);
+
+  useEffect(() => {
     if (isPending || !user) return;
     let alive = true;
     (async () => {
@@ -417,6 +465,19 @@ export function FileBrowserApp() {
 
   async function downloadSelected() {
     if (!selectedEntry || selectedEntry.kind === "dir") return;
+    const native = (
+      window as Window & {
+        DrivebayNative?: { download: (url: string, fileName: string, size: string) => void };
+      }
+    ).DrivebayNative;
+    if (native?.download) {
+      const absolute = new URL(
+        `/api/download?path=${encodeURIComponent(selectedEntry.path)}`,
+        window.location.href,
+      ).toString();
+      native.download(absolute, selectedEntry.name, String(selectedEntry.size ?? 0));
+      return;
+    }
     setBusy(true);
     try {
       // Stream large files via /api/download (no base64 size ceiling).
