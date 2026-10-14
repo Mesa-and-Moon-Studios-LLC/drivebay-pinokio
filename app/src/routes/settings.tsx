@@ -21,7 +21,7 @@ function SettingsPage() {
   const navigate = useNavigate();
   const { user, isPending } = useCurrentUserState();
   const [style, setStyle] = useState<"random" | "static">("static");
-  const [port, setPort] = useState("42013");
+  const [port, setPort] = useState("8765");
   const [dataDir, setDataDir] = useState("");
   const [serverLock, setServerLock] = useState<{
     allowPortChangeFromUi: boolean;
@@ -240,7 +240,7 @@ function SettingsPage() {
     setSavingPort(true);
     try {
       const next = await savePortSettings({
-        data: { style, port: Number.isFinite(n) ? n : 42013 },
+        data: { style, port: Number.isFinite(n) ? n : 8765 },
       });
       setStyle(next.style);
       setPort(String(next.port));
@@ -630,7 +630,7 @@ function SettingsPage() {
               </div>
             )}
             <p className="text-xs text-fg-muted">
-              After saving, stop Drivebay in Pinokio and click Start. Forward a static port on your router.
+              After saving, stop Drivebay in Pinokio and click Start. Forward a static port on your router. The suggested port is 8765. Pinokio's Caddy uses 42000-42999 while Pinokio is running.
             </p>
             <Button
               type="submit"

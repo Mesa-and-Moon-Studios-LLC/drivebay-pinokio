@@ -20,8 +20,8 @@ module.exports = {
           {
             key: "port",
             title: "Port number (static only)",
-            description: "Ignored if you chose Random. Example: 42013",
-            default: "42013",
+            description: "Ignored if you chose Random. Suggested: 8765. Avoid 42000-42999 while Pinokio is running.",
+            default: "8765",
           },
         ],
       },

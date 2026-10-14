@@ -176,6 +176,7 @@ function Test-OwnDrivebay([string]$Blob, [string]$Root) {
 
 function Get-PortConflict([int]$Port, [string]$IgnoreRoot) {
   $labels = New-Object System.Collections.Generic.List[string]
+  $caddy = $false
   $pinokio = $false
   $ignoredOwn = $false
   foreach ($procId in @(Get-ListenerProcessIds $Port)) {
@@ -191,7 +192,8 @@ function Get-PortConflict([int]$Port, [string]$IgnoreRoot) {
     if (-not [string]::IsNullOrWhiteSpace($info.Label) -and -not $labels.Contains($info.Label)) {
       [void]$labels.Add($info.Label)
     }
-    if ($info.Blob -match '(?i)pinokio' -or $info.Blob -match '(?i)\bcaddy(\.exe)?\b') { $pinokio = $true }
+    if ($info.Blob -match '(?i)caddy(\.exe)?') { $caddy = $true }
+    elseif ($info.Blob -match '(?i)pinokio') { $pinokio = $true }
   }
   # An update keeps its port. Our own Drivebay still holding that port is not a conflict.
   if ($ignoredOwn -and $labels.Count -eq 0) { return "" }
@@ -200,7 +202,11 @@ function Get-PortConflict([int]$Port, [string]$IgnoreRoot) {
   $text = "Port $Port is already in use"
   if ($labels.Count -gt 0) { $text = $text + " by " + ($labels -join "; ") }
   $text = $text + " on this PC."
-  if ($pinokio) { $text = $text + " That is a Pinokio copy of Drivebay." }
+  if ($caddy) {
+    $text = $text + " That is Pinokio's Caddy (z:\pinokio\bin\miniforge\Library\bin\caddy.exe). It takes ports from 42000 to 42999 while Pinokio is running. Enter a different port outside that range, such as 8765."
+  } elseif ($pinokio) {
+    $text = $text + " That is a Pinokio copy of Drivebay."
+  }
   return $text
 }
 
@@ -260,6 +266,46 @@ function Read-Mode {
   }
 }
 
+function Get-MigrateScript {
+  $script = ""
+  if (-not [string]::IsNullOrWhiteSpace($script:DrivebaySetupSource)) {
+    $script = Join-Path $script:DrivebaySetupSource "installer\windows\migrate-listen-port.ps1"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($script) -and (Test-Path -LiteralPath $script)) { return $script }
+  if (-not [string]::IsNullOrWhiteSpace($script:DrivebaySetupRoot)) {
+    $script = Join-Path $script:DrivebaySetupRoot "windows\migrate-listen-port.ps1"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($script) -and (Test-Path -LiteralPath $script)) { return $script }
+  return ""
+}
+
+function Get-DefaultListenPort {
+  $migrate = Get-MigrateScript
+  if ([string]::IsNullOrWhiteSpace($migrate)) { return 8765 }
+  $text = & $migrate -Suggest
+  $line = [string](@($text) | Select-Object -Last 1)
+  $parsed = 0
+  if ([int]::TryParse($line.Trim(), [ref]$parsed) -and $parsed -ge 1024 -and $parsed -le 65535) {
+    if ($parsed -lt 42000 -or $parsed -gt 42999) { return $parsed }
+  }
+  return 8765
+}
+
+function Invoke-SavedPortMigration([string]$Root) {
+  $migrate = Get-MigrateScript
+  if ([string]::IsNullOrWhiteSpace($migrate)) { return 0 }
+  $note = Join-Path ([System.IO.Path]::GetTempPath()) "drivebay-migrated-port.txt"
+  if (Test-Path -LiteralPath $note) { Remove-Item -LiteralPath $note -Force }
+  & $migrate -Root $Root
+  if (-not (Test-Path -LiteralPath $note)) { return 0 }
+  $raw = ""
+  try { $raw = [System.IO.File]::ReadAllText($note).Trim() } catch { $raw = "" }
+  Remove-Item -LiteralPath $note -Force -ErrorAction SilentlyContinue
+  $parsed = 0
+  if ([int]::TryParse($raw, [ref]$parsed) -and $parsed -ge 1024 -and $parsed -le 65535) { return $parsed }
+  return 0
+}
+
 function Read-ListenPort([string]$Mode) {
   $picked = $env:DRIVEBAY_SETUP_PORT
   if (-not [string]::IsNullOrWhiteSpace($picked)) {
@@ -276,9 +322,10 @@ function Read-ListenPort([string]$Mode) {
   } else {
     Write-Host "The next step tells you to forward this same port on your router."
   }
+  $suggested = Get-DefaultListenPort
   while ($true) {
-    $answer = Read-Host "Port [42013]"
-    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = "42013" }
+    $answer = Read-Host ("Port [" + $suggested + "]")
+    if ([string]::IsNullOrWhiteSpace($answer)) { $answer = [string]$suggested }
     try {
       $port = Assert-Port $answer
     } catch {
@@ -677,7 +724,7 @@ function Read-DrivebayVersion([string]$Source) {
     $line = Get-Content -LiteralPath $file -TotalCount 1
     if ($line -match "(\d+\.\d+)") { return $Matches[1] }
   }
-  return "3.25"
+  return "3.26"
 }
 
 function Save-DrivebayAccount([string]$Root, [string]$SetupScript, [int]$Port, [string]$Mode, [string]$Version, [string]$UserName, [string]$Password) {
@@ -1241,8 +1288,14 @@ function Start-DrivebayInstall {
   }
 
   $version = Read-DrivebayVersion $source
+  $script:DrivebaySetupSource = $source
+  $script:DrivebaySetupRoot = $root
   if ($null -ne $existing -and $existing.Port -ge 1024) {
     Update-DrivebayConfigVersion $root $version
+    # A saved port in 42000-42999 belongs to Pinokio's Caddy. Move it before
+    # the conflict check. Any other saved port stays.
+    $movedPort = Invoke-SavedPortMigration $root
+    if ($movedPort -ge 1024) { $existing.Port = $movedPort }
     # First-time setup is the only path that asks for a port. An update ignores
     # our own Drivebay if it still holds the saved port, and does not ask.
     $conflict = Get-PortConflict $existing.Port $root

@@ -17,9 +17,9 @@ export type AppSettings = PortSettings & {
 };
 
 function fallbackPort(): number {
-  const raw = String(process.env.DRIVEBAY_FALLBACK_PORT || process.env.PORT || "42013").trim();
+  const raw = String(process.env.DRIVEBAY_FALLBACK_PORT || process.env.PORT || "8765").trim();
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 1024 && n <= 65535 ? n : 42013;
+  return Number.isFinite(n) && n >= 1024 && n <= 65535 ? n : 8765;
 }
 
 export function resolveDataDir(): string {

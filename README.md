@@ -8,7 +8,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/lordstryfe/drivebay-pinokio
 ```
 
-Current version: **3.25** — see [Changelog](#changelog) below.
+Current version: **3.26** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -31,9 +31,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.25.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.26.exe** from [GitHub Releases](https://github.com/lordstryfe/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.25` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.26` to publish that file on the release. Pull requests also upload the installer as a build artifact.
 
 The setup screens are:
 
@@ -41,7 +41,7 @@ The setup screens are:
 2. **Folder.** Where to put the program. This is a per-user install.
 3. **Mode.** **Tailscale (Recommended)** is the default. Nothing is opened to the internet, and only your own signed-in devices can reach Drivebay. **Tailscale + Local (Both)** keeps Tailscale and adds a public path that starts off. **No Tailscale (Regular mode)** exposes the port publicly and needs a router port forward.
 4. **Tailscale** (Tailscale or Both). The page asks **Do you already have Tailscale?** and selects Yes when Tailscale is already installed. Yes goes on to the port, username, and password. No offers two choices: download and install Tailscale for Windows from the official installer (quiet MSI from `pkgs.tailscale.com`), then sign in or create a free Tailscale account, or **Skip**. Skip says you can install Tailscale and set it up later, then continues.
-5. **Port.** Required in every mode. A free port from 1024 to 65535. The suggested port is 42013. This page runs on a first-time install.
+5. **Port.** Required in every mode. A free port from 1024 to 65535. The suggested port is 8765. Ports from 42000 to 42999 are left for Pinokio's Caddy. This page runs on a first-time install.
 6. **Router** (Regular and Both). After the port is chosen, setup prints this PC's local IP, asks you to log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP **that port** to the local IP, and reserve that IP in DHCP. It prints the public IP when it can, and tells you to open `http://<public-ip>:<port>/` from outside the network. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. You must check the box to continue. Tailscale-only skips this page. Allow the same port in Windows Firewall if Windows asks. The same steps stay on this PC's settings page while Regular or Both mode is on. In Both, **Public access** starts **Off**. This PC and a signed-in Tailscale device can turn it On, with an optional timer of 1 hour, 4 hours, or 24 hours. A public or LAN address cannot change it. While it is Off, those addresses get a refusal page and no sign-in form. The Android app can show this state in a later build.
 7. **Password.** The only username and password (at least 8 characters). The first launch asks you to sign in with that account. It does not ask you to create it again. If that account cannot be saved, setup shows the reason and writes the same text to the install log, and the login page then lets you set the lock.
 8. **Shortcuts.** Start menu entries (Drivebay, Stop Drivebay, and Uninstall) are always created. They open a notification-area icon, not a console window. Optional desktop shortcut. Optional **Start Drivebay when I sign in to Windows**, which starts that same icon in the background.
@@ -51,7 +51,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.25`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.26`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -75,11 +75,11 @@ A first-time install asks for the same choices as the .exe installer:
 
 1. **Mode.** Tailscale (Recommended) is the default. Press Enter to keep it. Nothing is opened to the internet, and only your own signed-in devices can reach Drivebay. Tailscale + Local (Both) keeps Tailscale and adds a public path that starts off. No Tailscale (Regular mode) exposes the port publicly. For a script, set `DRIVEBAY_SETUP_MODE` to `tailscale`, `both`, or `regular`.
 2. **Tailscale** (Tailscale or Both). It asks **Do you already have Tailscale?** and preselects Yes when `Tailscale.exe` is already installed. Yes goes straight to the port, username, and password. No offers: download and install Tailscale (the official quiet installer), then sign in or create a free account, or Skip. Skip prints that you can install Tailscale and set it up later, then continues. For a script, set `DRIVEBAY_TAILSCALE` to `have`, `install`, or `skip`.
-3. **Port.** Required. A free port from 1024 to 65535. The suggested port is 42013. If that port is already in use, setup names the program and asks for another port.
+3. **Port.** Required. A free port from 1024 to 65535. The suggested port is 8765. If that port is already in use, setup names the program and asks for another port. Pinokio's Caddy takes ports from 42000 to 42999, so the suggested port stays outside that range.
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, port, mode, and settings. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.25`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.26`.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -191,13 +191,13 @@ Save server lock. Most changes take effect immediately. If the page asks you to 
 
 ### Change the port and restart
 
-Pick Static to keep the same port every start, or Random to get a new port each start. A static port must be a free number from 1024 to 65535. The suggested port is 42013.
+Pick Static to keep the same port every start, or Random to get a new port each start. A static port must be a free number from 1024 to 65535. The suggested port is 8765. Ports from 42000 to 42999 are left for Pinokio's Caddy.
 
 Save the port, then stop Drivebay and start it again. In Pinokio, stop it there and click Start. From the tray icon, restart the server. If you use Regular or Both, update the router forward to the new port.
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, port, mode, and settings stay. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.25.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.26.
 
 Paste this in PowerShell:
 
@@ -205,7 +205,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/lordstryfe/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.25. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.26. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -217,7 +217,7 @@ Uninstall stops Drivebay, removes shortcuts and the startup entry, and deletes t
 
 ### Common problems
 
-Port already in use. Setup names the program that holds the port, including Pinokio's Caddy, and asks for another port. The message can say That is a Pinokio copy of Drivebay. An update ignores this Drivebay when it still holds its own port. If a different program holds the saved port, the update stops and keeps that port.
+Port already in use. Setup names the program that holds the port. Pinokio's Caddy (z:\pinokio\bin\miniforge\Library\bin\caddy.exe) takes ports from 42000 to 42999 while Pinokio is running, even when Drivebay is not installed in Pinokio. Setup asks for a different port outside that range. The suggested port is 8765. The message can say That is a Pinokio copy of Drivebay. An update ignores this Drivebay when it still holds its own port. A saved port from 42000 to 42999 moves automatically. Any other saved port stays.
 
 Cannot reach this PC. On Tailscale, both devices must be signed in to the same account, and the phone must use http://<this-PC-tailscale-name>:<port>/. On Regular, the same Wi-Fi uses this PC's local IP, and outside the network uses the public IP after the router forward. Allow the port in Windows Firewall if Windows asks. In Both mode, a public or LAN address stays on the refusal page until public access is on.
 
