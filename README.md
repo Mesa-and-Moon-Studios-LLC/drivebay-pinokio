@@ -247,9 +247,36 @@ Cannot reach this PC. On Tailscale, both devices must be signed in to the same a
 
 Some ISPs use CGNAT and block a router forward, so http://<public-ip>:<port>/ never opens. Tailscale is the easy fallback, because nothing is opened to the internet.
 
+## API tokens
+
+Settings on this PC can create a token for a script. The token is shown once as `db_` plus 64 hex characters, which is 32 random bytes. Drivebay stores only a SHA-256 hash. The page lists the name, the prefix, the expiry, the last used time, and an audit log. Revoke stays on this PC. A signed-in Tailscale device can see the token name and open a write window. It cannot create or revoke a token.
+
+A token can call roots, list, stat, search, download (including `Range`), and thumbnails. An optional folder list narrows that further. Drivebay resolves each path with realpath and keeps it inside the allowed roots, so a symlink cannot point the token outside. Calls are rate limited.
+
+Clients send `Authorization: Bearer` to these paths:
+
+- `GET /api/v1/roots`
+- `GET /api/v1/list?path=`
+- `GET /api/v1/stat?path=`
+- `GET /api/v1/search?path=&q=`
+- `GET /api/v1/download?path=`
+- `GET /api/v1/thumb?path=`
+- `PUT /api/v1/upload?path=`
+- `POST /api/v1/mkdir`
+- `POST /api/v1/rename`
+- `POST /api/v1/delete`
+- `GET /api/v1/approvals/<id>`
+
+Writes stay off until you choose **Allow write for** 15 min, 1 h, or 4 h. That control is on this PC and on a signed-in Tailscale device. When the time ends, the token is read-only again. Server lock still blocks delete, rename, new folder, and upload when those switches are off. An approval cannot turn a locked action back on.
+
+If a token tries a write outside that window, Drivebay does not change the file. The response is HTTP 403 and includes `approval_request_id`. Settings on this PC shows a yes or no card and a live waiting count. Yes allows that one action. The card can also open a 15 minute, 1 hour, or 4 hour window. The client polls `GET /api/v1/approvals/<id>` or retries the write with `X-Drivebay-Approval`. A pending request expires after about 10 minutes. A later Android build can show the same card.
+
+The OpenClaw skill is `skills/drivebay`. It is a Node.js script with no packages, and its only network call is to `DRIVEBAY_URL`. It needs `DRIVEBAY_URL` and `DRIVEBAY_TOKEN`. It does not overwrite a file unless you agree, and it asks before a download larger than the size cap (`DRIVEBAY_GET_CONFIRM_BYTES`, default 20 MB). Do not publish the skill or the token to ClawHub.
+
 ## Changelog
 
 ### 3.21
+- Settings on this PC can create an API token for a script. The secret is shown once. Writes need a short window or a yes on this PC. The OpenClaw skill in `skills/drivebay` is not published to ClawHub. See [API tokens](#api-tokens).
 - Settings on this PC has a How-to guide with the same sections as the [How-to guide](#how-to-guide) above. Each part is collapsed until you open it.
 - The install mode choice recommends Tailscale and selects it by default. Tailscale keeps the port off the public internet. Regular mode exposes it. Tailscale + Local (Both) keeps Tailscale and adds a public path that starts off. `DRIVEBAY_SETUP_MODE` can be `tailscale`, `both`, or `regular`.
 - In Both mode, settings shows **Public access: On** or **Off**. This PC and a signed-in Tailscale device can change it. A public or LAN address cannot. Off shows a refusal page with no sign-in form. On shows the normal sign-in. An optional timer turns it off after 1 hour, 4 hours, or 24 hours. A later Android build can show the same state.
