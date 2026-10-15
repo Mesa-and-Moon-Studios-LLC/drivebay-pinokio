@@ -391,7 +391,7 @@ test("install.ps1 updates an existing install and keeps the account", async () =
     assert.equal(result.status, 0, out);
     assert.match(result.stdout || "", /saved account and settings stay/);
     assert.match(result.stdout || "", /Drivebay is uninstalled\./);
-    assert.match(result.stdout || "", /Drivebay updated to 3\.33/);
+    assert.match(result.stdout || "", /Drivebay updated to 3\.34/);
     assert.equal((result.stdout || "").includes("Drivebay is ready"), false);
     assert.equal(out.includes("Enter a different port"), false);
     assert.equal(out.includes("Saving the Drivebay account"), false);
