@@ -1,4 +1,4 @@
-Drivebay for Pinokio - 3.33
+Drivebay for Pinokio - 3.34
 
 Standalone Windows installer (no Pinokio, Node, or git).
 Full notes: README Changelog on GitHub.

@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.34
+- Fix: opening a folder or file in the file browser no longer jumps back to the start folder a few seconds later. The start-folder load re-ran on every render (it depended on a user object that was rebuilt each render), which also sent a steady stream of listing requests to the server. It now runs only when the signed-in account or the hidden-files toggle changes.
+- The Windows installer and the server report 3.34. `/api/health` returns `version` 3.34. The release files are `Drivebay-Setup-3.34.exe` and `drivebay-server-win-x64.zip`.
+- The Android app is unchanged at 3.33.0.
+
 ## 3.33
 - The Windows installer and the server report 3.33. `/api/health` returns `version` 3.33. The release files are `Drivebay-Setup-3.33.exe` and `drivebay-server-win-x64.zip`.
 - Server settings stay on the PC that runs Drivebay. The web UI hides drives, port, mode, API tokens, donate, password, updates, and Tailscale or server setup when the request is not loopback or when the page is inside the Android app. Those admin calls return 403 from any other device.

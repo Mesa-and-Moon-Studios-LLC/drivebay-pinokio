@@ -404,7 +404,7 @@ export function FileBrowserApp() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPending, user, showHidden]);
+  }, [isPending, user?.id, showHidden]);
 
   useEffect(() => {
     return () => {
