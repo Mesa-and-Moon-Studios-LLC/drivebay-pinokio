@@ -7,10 +7,10 @@
 !include "WinMessages.nsh"
 
 !ifndef VERSION
-  !define VERSION "3.33"
+  !define VERSION "3.34"
 !endif
 !ifndef VERSION4
-  !define VERSION4 "3.33.0.0"
+  !define VERSION4 "3.34.0.0"
 !endif
 
 Name "Drivebay ${VERSION}"

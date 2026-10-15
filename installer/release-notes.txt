@@ -1,11 +1,9 @@
-Drivebay 3.33 publishes the Windows installer and server at version 3.33.
+Drivebay 3.34 fixes the file browser jumping back to the start folder.
 
-This release includes Drivebay-Setup-3.33.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.34.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-`/api/health` reports version 3.33. Server settings stay on this PC. Phones and the Android app keep browse, download, upload, and sign out. Admin setting calls from another device return 403.
+`/api/health` reports version 3.34. Opening a folder or a file now stays put. Before, the browser re-ran its start-folder load on every render, so it snapped back to the start folder and kept sending listing requests to the server.
 
-This PC can turn off delete, or upload and rename, for other devices. Both switches start on, so current behavior stays until you change them. This PC can always delete, upload, and rename.
-
-The Android app in the repo is 3.33.0. This release does not attach an APK.
+The Android app in the repo is still 3.33.0. This release does not attach an APK.
