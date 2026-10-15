@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.35
+- The web UI makes no third-party requests. Instrument Sans and IBM Plex Mono are self-hosted under `app/public/fonts/` (SIL OFL), replacing the Google Fonts stylesheet. The `og.grok.me` card meta and the injected `grok.com/grok-app-builder/extensions.js` script are removed.
+- The Windows installer and the server report 3.35. `/api/health` returns `version` 3.35. The release files are `Drivebay-Setup-3.35.exe` and `drivebay-server-win-x64.zip`.
+- The Android app is unchanged at 3.33.0.
+
 ## 3.34
 - Fix: opening a folder or file in the file browser no longer jumps back to the start folder a few seconds later. The start-folder load re-ran on every render (it depended on a user object that was rebuilt each render), which also sent a steady stream of listing requests to the server. It now runs only when the signed-in account or the hidden-files toggle changes.
 - The Windows installer and the server report 3.34. `/api/health` returns `version` 3.34. The release files are `Drivebay-Setup-3.34.exe` and `drivebay-server-win-x64.zip`.
