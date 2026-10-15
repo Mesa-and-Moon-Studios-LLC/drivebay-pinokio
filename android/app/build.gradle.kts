@@ -1,18 +1,49 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+// Release signing: shared Mesa and Moon upload key (same props file as X:\projects\CipherVault).
+val keystoreProperties: Properties? = run {
+    val src = listOf(
+        File(System.getProperty("user.home"), "Android/ciphervault-keystore.properties"),
+        rootProject.file("keystore.properties"),
+    ).firstOrNull { it.isFile } ?: return@run null
+    Properties().apply { src.inputStream().buffered().use { load(it) } }
+}
+fun Properties.nonBlank(key: String): String? = getProperty(key)?.trim()?.takeIf { it.isNotEmpty() }
+val releaseStoreFile: File? = keystoreProperties?.nonBlank("storeFile")?.let { path ->
+    val f = File(path)
+    listOf(f, File("X:/projects/CipherVault", path), File(System.getProperty("user.home"), "Android/ciphervault-upload.jks"))
+        .firstOrNull { it.isAbsolute && it.isFile } ?: f
+}
+val canSignRelease = releaseStoreFile?.isFile == true &&
+    keystoreProperties?.nonBlank("storePassword") != null &&
+    keystoreProperties?.nonBlank("keyAlias") != null &&
+    keystoreProperties?.nonBlank("keyPassword") != null
 android {
     namespace = "com.lordstryfe.drivebay"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.lordstryfe.drivebay"
+        applicationId = "com.mesaandmoon.drivebay"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 33
+        targetSdk = 36
+        versionCode = 33300
         versionName = "3.33.0"
+    }
+
+    signingConfigs {
+        if (canSignRelease) {
+            create("release") {
+                storeFile = releaseStoreFile
+                storePassword = keystoreProperties!!.nonBlank("storePassword")
+                keyAlias = keystoreProperties.nonBlank("keyAlias")
+                keyPassword = keystoreProperties.nonBlank("keyPassword")
+            }
+        }
     }
 
     buildFeatures {
@@ -20,7 +51,10 @@ android {
     }
 
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (canSignRelease) signingConfig = signingConfigs.getByName("release")
+        }
         debug { isMinifyEnabled = false }
     }
 
