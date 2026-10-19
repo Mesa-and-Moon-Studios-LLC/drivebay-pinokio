@@ -1,12 +1,7 @@
-Drivebay 3.36.1 can mount your phone as a drive on your PC.
+Drivebay 3.36.1: Connect my phone
 
-New: Connect my phone. Right-click the Drivebay tray icon, choose "Connect my phone", and type the 6-digit code from the Drivebay Android app (Settings > Phone as a drive > New token). Drivebay finds your phone over Tailscale and shows it in File Explorer as "Drivebay Phone" (P:, or the next free letter). It reconnects on its own when your phone comes back.
+- New: right-click the Drivebay tray icon, choose "Connect my phone", and type the 6-digit code from the Drivebay Android app. Your phone shows up in File Explorer as a drive (P:, "Drivebay Phone") and reconnects on its own.
+- The code is saved only in Windows Credential Manager. If it stops working, Drivebay stops trying and asks for a new one.
+- Fix: the installer now closes every running Drivebay, including older copies, and keeps your saved port.
 
-- The code is kept only in Windows Credential Manager.
-- If the code stops working, Drivebay stops trying (so the phone doesn't lock the code) and asks for a new one.
-- "Unmount and forget phone" removes the drive and the saved code.
-- Needs Android app 3.34.2 or newer with phone-as-drive turned on.
-
-Fix: the installer now stops every running Drivebay, including older copies, before it starts, and keeps your saved port. Before, an old copy left running could push Drivebay to a different port. Setup closes Drivebay while it runs.
-
-This release includes Drivebay-Setup-3.36.1.exe and drivebay-server-win-x64.zip. `/api/health` reports version 3.36.1.
+Needs the Drivebay Android app 3.34.2 or newer with phone-as-drive turned on.
