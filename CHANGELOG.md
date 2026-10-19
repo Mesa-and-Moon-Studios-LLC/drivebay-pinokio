@@ -4,7 +4,7 @@ All user-facing Drivebay versions. Newest first.
 
 ## 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
-- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `unix/uninstall.sh` also stops a leftover server.
+- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `drivebay --stop` and `unix/uninstall.sh` now also end a server that closed its port on SIGTERM but kept running.
 - Desktop update checks read `version-manifest.json` from the latest GitHub release. A version below `minimum` must update. A missing file or a failed request leaves Drivebay running. The Windows tray adds Check for updates.
 - The Windows installer and the server report 3.36.2. `/api/health` returns `version` 3.36.2. Windows behavior is the same as 3.36.1.
 

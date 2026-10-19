@@ -219,7 +219,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -318,7 +318,7 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 
 ### 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
-- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `unix/uninstall.sh` also stops a leftover server.
+- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `drivebay --stop` and `unix/uninstall.sh` now also end a server that closed its port on SIGTERM but kept running.
 - Desktop update checks read `version-manifest.json` from the latest GitHub release. A version below `minimum` must update. A missing file or a failed request leaves Drivebay running. The Windows tray adds Check for updates.
 - The Windows installer and the server report 3.36.2. `/api/health` returns `version` 3.36.2. Windows behavior is the same as 3.36.1.
 

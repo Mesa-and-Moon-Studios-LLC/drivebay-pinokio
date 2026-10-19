@@ -19,6 +19,8 @@ fi
 
 # Catch a server child the launcher left behind.
 pkill -f "$HOME_DIR/program/app/server/index.mjs" >/dev/null 2>&1 || true
+sleep 1
+pkill -9 -f "$HOME_DIR/program/app/server/index.mjs" >/dev/null 2>&1 || true
 rm -f "$BIN_DIR/drivebay"
 rm -rf "$HOME_DIR/program"
 

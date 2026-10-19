@@ -977,6 +977,46 @@ function Get-LatestRelease {
   }
 }
 
+function Compare-DrivebayVersion([string]$Left, [string]$Right) {
+  $leftMatch = [regex]::Match($Left, '(\d+(?:\.\d+)*)')
+  $rightMatch = [regex]::Match($Right, '(\d+(?:\.\d+)*)')
+  if (-not $leftMatch.Success -or -not $rightMatch.Success) { return 0 }
+  $a = @($leftMatch.Groups[1].Value.Split('.') | ForEach-Object { [int]$_ })
+  $b = @($rightMatch.Groups[1].Value.Split('.') | ForEach-Object { [int]$_ })
+  $n = [Math]::Max($a.Count, $b.Count)
+  for ($i = 0; $i -lt $n; $i++) {
+    $av = 0
+    $bv = 0
+    if ($i -lt $a.Count) { $av = $a[$i] }
+    if ($i -lt $b.Count) { $bv = $b[$i] }
+    if ($av -lt $bv) { return -1 }
+    if ($av -gt $bv) { return 1 }
+  }
+  return 0
+}
+
+# Reads version-manifest.json from the latest GitHub release. A failure leaves the install running.
+function Write-PublishedUpdateRequirement([string]$Installed) {
+  try {
+    $release = Get-LatestRelease
+    if ($null -eq $release -or $null -eq $release.assets) { return }
+    $asset = @($release.assets) | Where-Object { $_.name -eq "version-manifest.json" } | Select-Object -First 1
+    if ($null -eq $asset -or [string]::IsNullOrWhiteSpace($asset.browser_download_url)) { return }
+    $manifest = Invoke-RestMethod -Headers (Get-WebHeaders) -Uri $asset.browser_download_url
+    if ([string]::IsNullOrWhiteSpace($manifest.minimum)) { return }
+    if ((Compare-DrivebayVersion $Installed $manifest.minimum) -lt 0) {
+      Write-Host "This update is required."
+      if (-not [string]::IsNullOrWhiteSpace($manifest.message)) { Write-Host $manifest.message }
+      return
+    }
+    if (-not [string]::IsNullOrWhiteSpace($manifest.latest) -and (Compare-DrivebayVersion $Installed $manifest.latest) -lt 0) {
+      Write-Host "An update is available."
+    }
+  } catch {
+    Write-Host "Update check could not reach GitHub. Drivebay will keep running."
+  }
+}
+
 function Get-ScriptCheckout {
   $self = $PSScriptRoot
   if ([string]::IsNullOrWhiteSpace($self)) { return $null }
@@ -1295,6 +1335,17 @@ function Start-DrivebayInstall {
   $script:DrivebaySetupSource = $source
   $script:DrivebaySetupRoot = $root
   if ($null -ne $existing -and $existing.Port -ge 1024) {
+    if ($env:DRIVEBAY_SETUP_ONLY -ne "1") {
+      $installedVersion = ""
+      $configPath = Join-Path $root "config.json"
+      if (Test-Path -LiteralPath $configPath) {
+        $rawConfig = ""
+        try { $rawConfig = [System.IO.File]::ReadAllText($configPath) } catch { $rawConfig = "" }
+        $verMatch = [regex]::Match($rawConfig, '"version"\s*:\s*"([^"]+)"')
+        if ($verMatch.Success) { $installedVersion = $verMatch.Groups[1].Value }
+      }
+      Write-PublishedUpdateRequirement $installedVersion
+    }
     Update-DrivebayConfigVersion $root $version
     # A saved port in 42000-42999 belongs to Pinokio's Caddy. Move it before
     # the conflict check. Any other saved port stays.

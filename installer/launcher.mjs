@@ -88,9 +88,25 @@ function stopProcess(pid) {
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    /* already stopped */
+    return Promise.resolve();
   }
-  return Promise.resolve();
+  // The launcher stops its server child on SIGTERM. Force it if it is still here after 10 seconds.
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (!pidAlive(pid)) return resolve();
+      if (Date.now() - started > 10_000) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* already stopped */
+        }
+        return resolve();
+      }
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
 }
 
 async function fetchText(url) {
@@ -390,16 +406,28 @@ async function main() {
 
   const shutdown = (code) => {
     try {
-      child.kill("SIGTERM");
-    } catch {
-      /* already stopped */
-    }
-    try {
       fs.rmSync(path.join(home, "drivebay.pid"), { force: true });
     } catch {
       /* ignore */
     }
-    process.exit(code);
+    if (child.exitCode !== null || child.signalCode !== null) process.exit(code);
+    // The server closes its port on SIGTERM but can keep running. Kill it after 5 seconds.
+    const force = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already stopped */
+      }
+    }, 5_000);
+    child.once("exit", () => {
+      clearTimeout(force);
+      process.exit(code);
+    });
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already stopped */
+    }
   };
   process.on("SIGTERM", () => shutdown(0));
   process.on("SIGINT", () => shutdown(0));

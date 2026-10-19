@@ -19,7 +19,7 @@ test("unix install writes the account, updates in place, and uninstalls", { skip
   const source = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-src-"));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-home-"));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-bin-"));
-  fs.writeFileSync(path.join(source, "VERSION.txt"), "Drivebay for Pinokio - 3.36\n");
+  fs.writeFileSync(path.join(source, "VERSION.txt"), "Drivebay for Pinokio - 3.36.2\n");
   fs.writeFileSync(path.join(source, "node-version.txt"), "22.23.3\n");
   fs.writeFileSync(path.join(source, "launcher.mjs"), "console.log('drivebay')\n");
   fs.mkdirSync(path.join(source, "app"));
@@ -46,7 +46,7 @@ test("unix install writes the account, updates in place, and uninstalls", { skip
     const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
     assert.equal(config.mode, "tailscale");
     assert.equal(config.port, 28765);
-    assert.equal(config.version, "3.36");
+    assert.equal(config.version, "3.36.2");
     const pending = JSON.parse(fs.readFileSync(path.join(home, "pending-account.json"), "utf8"));
     assert.equal(pending.username, "alice");
     assert.equal(pending.password, password);
@@ -58,6 +58,12 @@ test("unix install writes the account, updates in place, and uninstalls", { skip
     fs.writeFileSync(path.join(source, "app/marker.txt"), "replaced\n");
     const second = spawnSync("bash", [script], { encoding: "utf8", env, timeout: 20000 });
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
+    assert.match(second.stdout, /Drivebay updated to 3\.36\.2\n/);
+    fs.writeFileSync(path.join(source, "VERSION.txt"), "Drivebay for Pinokio - 3.36.3\n");
+    const third = spawnSync("bash", [script], { encoding: "utf8", env, timeout: 20000 });
+    assert.equal(third.status, 0, `${third.stdout}\n${third.stderr}`);
+    assert.match(third.stdout, /Drivebay updated to 3\.36\.3\n/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8")).version, "3.36.3");
     assert.match(second.stdout, /Drivebay updated to 3\.36/);
     const kept = JSON.parse(fs.readFileSync(path.join(home, "pending-account.json"), "utf8"));
     assert.equal(kept.password, password);

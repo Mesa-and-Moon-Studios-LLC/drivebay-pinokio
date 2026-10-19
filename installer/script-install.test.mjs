@@ -19,7 +19,15 @@ function powershell() {
   return null;
 }
 
-function freePort() {
+async function freePort() {
+  // Ports in Pinokio's Caddy range (42000-42999) move on update, so tests never use them.
+  for (;;) {
+    const port = await anyFreePort();
+    if (port < 42000 || port > 42999) return port;
+  }
+}
+
+function anyFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", reject);

@@ -17,7 +17,15 @@ function powershell() {
   return null;
 }
 
-function freePort() {
+async function freePort() {
+  // Ports in Pinokio's Caddy range (42000-42999) move on update, so tests never use them.
+  for (;;) {
+    const port = await anyFreePort();
+    if (port < 42000 || port > 42999) return port;
+  }
+}
+
+function anyFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", reject);
@@ -391,7 +399,7 @@ test("install.ps1 updates an existing install and keeps the account", async () =
     assert.equal(result.status, 0, out);
     assert.match(result.stdout || "", /saved account and settings stay/);
     assert.match(result.stdout || "", /Drivebay is uninstalled\./);
-    assert.match(result.stdout || "", /Drivebay updated to 3\.36\.1/);
+    assert.match(result.stdout || "", /Drivebay updated to 3\.36\.2/);
     assert.equal((result.stdout || "").includes("Drivebay is ready"), false);
     assert.equal(out.includes("Enter a different port"), false);
     assert.equal(out.includes("Saving the Drivebay account"), false);
