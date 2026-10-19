@@ -1,9 +1,9 @@
-Drivebay 3.34 fixes the file browser jumping back to the start folder.
+Drivebay 3.35 stops the web UI from contacting other sites.
 
-This release includes Drivebay-Setup-3.34.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.35.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
 
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-`/api/health` reports version 3.34. Opening a folder or a file now stays put. Before, the browser re-ran its start-folder load on every render, so it snapped back to the start folder and kept sending listing requests to the server.
+`/api/health` reports version 3.35. The fonts now ship with Drivebay instead of loading from Google Fonts, and the web UI no longer loads the og.grok.me preview image or the grok.com banner script. Opening Drivebay makes no third-party requests.
 
 The Android app in the repo is still 3.33.0. This release does not attach an APK.
