@@ -79,6 +79,16 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState {
         prefs.edit().putString(KEY_HASH, hash).apply()
     }
 
+    /** Opt-in whole-phone mode (All files access). Off by default; picked folders stay the default. */
+    fun wholePhone(): Boolean = prefs.getBoolean(KEY_WHOLE_PHONE, false)
+
+    fun setWholePhone(value: Boolean) {
+        prefs.edit().putBoolean(KEY_WHOLE_PHONE, value).commit()
+    }
+
+    /** Something to share: whole phone mode or at least one picked folder. */
+    fun hasShareSource(): Boolean = wholePhone() || folders().isNotEmpty()
+
     fun folders(): List<SharedFolder> {
         val raw = prefs.getString(KEY_FOLDERS, null) ?: return emptyList()
         return try {
@@ -109,6 +119,7 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState {
         private const val KEY_FOLDERS = "folders"
         private const val KEY_CODE = "code_hash"
         private const val KEY_CODE_FAILURES = "code_failures"
+        private const val KEY_WHOLE_PHONE = "whole_phone"
     }
 }
 

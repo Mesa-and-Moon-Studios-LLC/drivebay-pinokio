@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.provider.DocumentsContract
+import android.provider.Settings
 import android.provider.OpenableColumns
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -85,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var phoneShareBox: LinearLayout
     private val phoneShare by lazy { PhoneShareStore(this) }
     private var updatingShare = false
+    /** Set while the All files access screen is open, so onResume can finish turning whole-phone mode on. */
+    private var awaitingAllFiles = false
 
     private val uploadLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -378,6 +381,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         webView.onResume()
+        runCatching { syncWholePhoneAccess() }
         if (tailscalePanel.visibility == View.VISIBLE && isTailscaleInstalled()) {
             continueAfterTailscale()
         }
@@ -768,7 +772,7 @@ class MainActivity : AppCompatActivity() {
             isChecked = phoneShare.enabled()
             setOnCheckedChangeListener { _, checked ->
                 if (updatingShare) return@setOnCheckedChangeListener
-                if (checked && phoneShare.folders().isEmpty()) {
+                if (checked && !phoneShare.hasShareSource()) {
                     updatingShare = true
                     isChecked = false
                     updatingShare = false
@@ -803,6 +807,30 @@ class MainActivity : AppCompatActivity() {
             }
         }
         phoneShareBox.addView(pick)
+        if (Build.VERSION.SDK_INT >= 30) {
+            phoneShareBox.addView(CheckBox(this).apply {
+                text = getString(R.string.phone_share_whole)
+                setTextColor(0xFFE8EEF7.toInt())
+                buttonTintList = android.content.res.ColorStateList.valueOf(0xFF7DD3FC.toInt())
+                isChecked = phoneShare.wholePhone() && PhoneShareService.allFilesAccess()
+                setOnCheckedChangeListener { _, checked ->
+                    if (updatingShare) return@setOnCheckedChangeListener
+                    if (checked && !PhoneShareService.allFilesAccess()) {
+                        updatingShare = true
+                        isChecked = false
+                        updatingShare = false
+                        AlertDialog.Builder(this@MainActivity)
+                            .setTitle(R.string.phone_share_whole)
+                            .setMessage(R.string.phone_share_whole_explain)
+                            .setPositiveButton(R.string.phone_share_whole_open) { _, _ -> openAllFilesSettings() }
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .show()
+                        return@setOnCheckedChangeListener
+                    }
+                    setWholePhone(checked)
+                }
+            })
+        }
         val token = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = getString(R.string.phone_share_token)
             isAllCaps = false
@@ -817,7 +845,14 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { showErrorLog() }
         }
         phoneShareBox.addView(errorLog)
-        phoneShare.folders().forEach { folder ->
+        if (phoneShare.wholePhone() && PhoneShareService.allFilesAccess()) {
+            phoneShareBox.addView(TextView(this).apply {
+                text = getString(R.string.phone_share_whole_on)
+                setTextColor(0xFFCBD5E1.toInt())
+                textSize = 14f
+                setPadding(0, 8, 0, 0)
+            })
+        } else phoneShare.folders().forEach { folder ->
             phoneShareBox.addView(TextView(this).apply {
                 text = folder.name
                 setTextColor(0xFFCBD5E1.toInt())
@@ -853,6 +888,51 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun openAllFilesSettings() {
+        awaitingAllFiles = true
+        val specific = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+        try {
+            startActivity(specific)
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            } catch (e: Exception) {
+                awaitingAllFiles = false
+                CrashLog.record(this, "Opening All files access settings", e)
+                showPhoneShareError(getString(R.string.phone_share_err_all_files))
+            }
+        }
+    }
+
+    private fun setWholePhone(on: Boolean) {
+        phoneShare.setWholePhone(on)
+        renderPhoneShare()
+        if (phoneShare.enabled()) {
+            if (phoneShare.hasShareSource()) {
+                // Restart so the server switches between whole phone and picked folders.
+                PhoneShareService.stop(this)
+                startPhoneShare()
+            } else {
+                phoneShare.setEnabled(false)
+                PhoneShareService.stop(this)
+                renderPhoneShare()
+            }
+        }
+    }
+
+    /** Back from Settings: finish turning it on, or turn whole-phone mode off if access was revoked. */
+    private fun syncWholePhoneAccess() {
+        if (Build.VERSION.SDK_INT < 30) return
+        val granted = PhoneShareService.allFilesAccess()
+        if (awaitingAllFiles) {
+            awaitingAllFiles = false
+            if (granted) setWholePhone(true) else renderPhoneShare()
+        } else if (phoneShare.wholePhone() && !granted) {
+            setWholePhone(false)
+            showPhoneShareError(getString(R.string.phone_share_err_all_files))
+        }
+    }
+
     private fun revealNewToken() {
         val token = PhoneShareAuth.generateToken()
         val code = PhoneShareCode.generate()
@@ -864,7 +944,7 @@ class MainActivity : AppCompatActivity() {
             .setTitle(R.string.phone_share_token)
             .setMessage(getString(R.string.phone_share_token_once, code, token))
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                if (phoneShare.folders().isNotEmpty()) {
+                if (phoneShare.hasShareSource()) {
                     phoneShare.setEnabled(true)
                     startPhoneShare()
                 }

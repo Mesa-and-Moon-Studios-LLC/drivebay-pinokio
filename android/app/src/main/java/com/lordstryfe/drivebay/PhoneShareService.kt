@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -58,7 +59,8 @@ class PhoneShareService : Service() {
         }
         val hash = store.tokenHash()
         val folders = store.folders()
-        if (!store.enabled() || hash == null || folders.isEmpty()) {
+        val wholePhone = store.wholePhone()
+        if (!store.enabled() || hash == null || (!wholePhone && folders.isEmpty())) {
             shutdown(null)
             return START_NOT_STICKY
         }
@@ -69,16 +71,22 @@ class PhoneShareService : Service() {
         }
         val ticket = generation.incrementAndGet()
         // Opening the folders and binding port 8780 happens off the main thread.
-        worker.execute { openServer(ticket, folders, hash, hosts) }
+        worker.execute { openServer(ticket, folders, wholePhone, hash, hosts) }
         return START_STICKY
     }
 
-    private fun openServer(ticket: Int, folders: List<SharedFolder>, hash: String, hosts: List<String>) {
+    private fun openServer(ticket: Int, folders: List<SharedFolder>, wholePhone: Boolean, hash: String, hosts: List<String>) {
         if (ticket != generation.get()) return
         var dav: PhoneDavServer? = null
         try {
-            val docs = DocumentPhoneStore(this, folders)
-            if (docs.rootCount() == 0) throw FolderAccessException()
+            val docs: DavStore = if (wholePhone) {
+                if (!hasAllFilesAccess()) throw AllFilesAccessException()
+                val files = FilePhoneStore(Environment.getExternalStorageDirectory()) { hasAllFilesAccess() }
+                if (!files.usable()) throw AllFilesAccessException()
+                files
+            } else {
+                DocumentPhoneStore(this, folders).also { if (it.rootCount() == 0) throw FolderAccessException() }
+            }
             stopServer()
             val codeState = PhoneShareStore(this)
             dav = PhoneDavServer(docs, hash, PORT, hosts, codeState) {
@@ -128,12 +136,24 @@ class PhoneShareService : Service() {
 
     private fun friendlyError(e: Throwable): String = when (e) {
         is FolderAccessException -> getString(R.string.phone_share_err_folder)
+        is AllFilesAccessException -> getString(R.string.phone_share_err_all_files)
         is java.net.BindException -> getString(R.string.phone_share_err_port, PORT)
         is SecurityException -> getString(R.string.phone_share_err_permission)
         else -> getString(R.string.phone_share_err_generic, e.javaClass.simpleName)
     }
 
     private class FolderAccessException : Exception("None of the chosen folders can be opened")
+
+    private class AllFilesAccessException : Exception("All files access is not granted")
+
+    /** Re-checked on every request; if it's revoked mid-share, stop the service cleanly. */
+    private fun hasAllFilesAccess(): Boolean {
+        val ok = PhoneShareService.allFilesAccess()
+        if (!ok && server != null) {
+            Handler(Looper.getMainLooper()).post { if (server != null) shutdown(getString(R.string.phone_share_err_all_files)) }
+        }
+        return ok
+    }
 
     private fun notification(hosts: List<String>): Notification {
         val manager = getSystemService(NotificationManager::class.java)
@@ -195,6 +215,13 @@ class PhoneShareService : Service() {
         const val EXTRA_ERROR = "error"
         private const val CHANNEL = "phone_share"
         private const val NOTIFICATION_ID = 44
+
+        /** True when Android granted All files access (Android 11+), or storage is open on older versions. */
+        fun allFilesAccess(): Boolean = try {
+            if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager() else false
+        } catch (_: Exception) {
+            false
+        }
 
         fun shareHosts(): List<String> {
             val out = linkedSetOf<String>()

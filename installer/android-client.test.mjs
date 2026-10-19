@@ -11,11 +11,11 @@ function read(rel) {
   return fs.readFileSync(path.join(android, rel), "utf8");
 }
 
-test("android wrapper is version 3.34.2 and ignores secrets", () => {
+test("android wrapper is version 3.34.3 and ignores secrets", () => {
   const gradle = read("app/build.gradle.kts");
   assert.match(gradle, /applicationId = "com\.mesaandmoon\.drivebay"/);
-  assert.match(gradle, /versionCode = 33402/);
-  assert.match(gradle, /versionName = "3\.34\.2"/);
+  assert.match(gradle, /versionCode = 33403/);
+  assert.match(gradle, /versionName = "3\.34\.3"/);
   assert.equal(gradle.includes("signingConfigs"), false);
   assert.equal(gradle.includes("storePassword"), false);
   assert.equal(fs.existsSync(path.join(android, "gradlew")), true);
