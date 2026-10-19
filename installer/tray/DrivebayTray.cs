@@ -45,6 +45,8 @@ internal static class Program
     static ToolStripMenuItem stopItem;
     static ToolStripMenuItem restartItem;
     static ToolStripMenuItem startupItem;
+    static ToolStripMenuItem phoneItem;
+    static PhoneForm phoneForm;
 
     [STAThread]
     static void Main(string[] args)
@@ -110,6 +112,25 @@ internal static class Program
         {
             if (e.Button == MouseButtons.Left) OpenDrivebay();
         };
+        PhoneMount.Log = Log;
+        PhoneMount.UiThread = sink;
+        PhoneMount.Notify = delegate(string title, string text)
+        {
+            try
+            {
+                sink.BeginInvoke((MethodInvoker)delegate
+                {
+                    notifyIcon.BalloonTipTitle = title;
+                    notifyIcon.BalloonTipText = text;
+                    notifyIcon.ShowBalloonTip(8000);
+                });
+            }
+            catch
+            {
+            }
+        };
+        PhoneMount.Init();
+        PhoneMount.StatusChanged += delegate { RefreshPhoneItem(); };
         notifyIcon.ContextMenuStrip = BuildMenu();
 
         Thread waiter = new Thread(delegate()
@@ -146,7 +167,7 @@ internal static class Program
 
         System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         timer.Interval = 2000;
-        timer.Tick += delegate { Tick(); };
+        timer.Tick += delegate { Tick(); PhoneMount.Tick(); };
         timer.Start();
 
         openWhenReady = !background;
@@ -209,6 +230,8 @@ internal static class Program
         stopItem.Click += delegate { StopServer(); };
         restartItem = new ToolStripMenuItem("Restart server");
         restartItem.Click += delegate { RestartServer(); };
+        phoneItem = new ToolStripMenuItem("Connect my phone...");
+        phoneItem.Click += delegate { OpenPhoneForm(); };
         ToolStripMenuItem logsItem = new ToolStripMenuItem("Open logs folder");
         logsItem.Click += delegate { OpenLogs(); };
         startupItem = new ToolStripMenuItem("Start with Windows");
@@ -230,6 +253,8 @@ internal static class Program
         menu.Items.Add(stopItem);
         menu.Items.Add(restartItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(phoneItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(logsItem);
         menu.Items.Add(startupItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -239,9 +264,30 @@ internal static class Program
         {
             startupItem.Checked = ReadStartWithWindows();
             RefreshMenu();
+            RefreshPhoneItem();
         };
         RefreshMenu();
+        RefreshPhoneItem();
         return menu;
+    }
+
+    static void RefreshPhoneItem()
+    {
+        if (phoneItem == null) return;
+        if (PhoneMount.Status == PhoneStatus.Off) phoneItem.Text = "Connect my phone...";
+        else phoneItem.Text = "My phone: " + PhoneMountLogic.StatusText(PhoneMount.Status);
+    }
+
+    static void OpenPhoneForm()
+    {
+        if (phoneForm != null && !phoneForm.IsDisposed)
+        {
+            phoneForm.Activate();
+            return;
+        }
+        phoneForm = new PhoneForm(appIcon);
+        phoneForm.Show();
+        phoneForm.Activate();
     }
 
     static string ExePath()
