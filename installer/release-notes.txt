@@ -1,9 +1,7 @@
-Drivebay 3.35 stops the web UI from contacting other sites.
+Drivebay 3.36.1: Connect my phone
 
-This release includes Drivebay-Setup-3.35.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+- New: right-click the Drivebay tray icon, choose "Connect my phone", and type the 6-digit code from the Drivebay Android app. Your phone shows up in File Explorer as a drive (P:, "Drivebay Phone") and reconnects on its own.
+- The code is saved only in Windows Credential Manager. If it stops working, Drivebay stops trying and asks for a new one.
+- Fix: the installer now closes every running Drivebay, including older copies, and keeps your saved port.
 
-irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
-
-`/api/health` reports version 3.35. The fonts now ship with Drivebay instead of loading from Google Fonts, and the web UI no longer loads the og.grok.me preview image or the grok.com banner script. Opening Drivebay makes no third-party requests.
-
-The Android app in the repo is still 3.33.0. This release does not attach an APK.
+Needs the Drivebay Android app 3.34.2 or newer with phone-as-drive turned on.

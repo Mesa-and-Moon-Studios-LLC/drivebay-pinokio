@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.36.1
+- New in the Windows tray: Connect my phone. Type the 6-digit code from the Android app once; Drivebay finds the phone over Tailscale (online Android peers answering WebDAV on port 8780), checks the code with one request, keeps it only in Windows Credential Manager, and maps the phone with WNetAddConnection2 as "Drivebay Phone" on P: or the next free letter. It rechecks every 30 seconds (backing off to 5 minutes while the phone is away) and reconnects. A refused code stops all retries, removes the mapping and saved code, and asks for a new code. "Unmount and forget phone" removes the drive, label, and saved code. Advanced lets you set the address and drive letter. Logs go to `%LOCALAPPDATA%\Drivebay\phone-mount.log` with secrets masked.
+- The installer stops every running Drivebay tray, launcher, and server for the user, including older copies in `%LOCALAPPDATA%\Drivebay`, before it chooses a port, and keeps a saved port. An old copy left running could make setup move to another port.
+- The Windows installer and the server report 3.36.1. `/api/health` returns `version` 3.36.1. The release files are `Drivebay-Setup-3.36.1.exe` and `drivebay-server-win-x64.zip`.
+
 ## 3.35
 - The web UI makes no third-party requests. Instrument Sans and IBM Plex Mono are self-hosted under `app/public/fonts/` (SIL OFL), replacing the Google Fonts stylesheet. The `og.grok.me` card meta and the injected `grok.com/grok-app-builder/extensions.js` script are removed.
 - The Windows installer and the server report 3.35. `/api/health` returns `version` 3.35. The release files are `Drivebay-Setup-3.35.exe` and `drivebay-server-win-x64.zip`.

@@ -28,7 +28,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Port and account helper tests
-        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs installer/script-install.test.mjs installer/pending-account.test.mjs installer/server-lock.test.mjs installer/document-routes.test.mjs installer/public-access.test.mjs installer/uninstall.test.mjs installer/android-app.test.mjs installer/android-client.test.mjs installer/byte-range.test.mjs installer/api-tokens.test.mjs installer/drivebay-skill.test.mjs installer/donate.test.mjs installer/reset-password.test.mjs installer/remote-actions.test.mjs
+        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs installer/script-install.test.mjs installer/pending-account.test.mjs installer/server-lock.test.mjs installer/document-routes.test.mjs installer/public-access.test.mjs installer/uninstall.test.mjs installer/android-app.test.mjs installer/android-client.test.mjs installer/byte-range.test.mjs installer/api-tokens.test.mjs installer/drivebay-skill.test.mjs installer/donate.test.mjs installer/reset-password.test.mjs installer/remote-actions.test.mjs installer/stop-all.test.mjs
 
       - name: Build production server
         working-directory: app
@@ -47,7 +47,7 @@ jobs:
         run: |
           $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (-not (Test-Path $csc)) { throw "csc.exe not found at $csc" }
-          & $csc /nologo /target:winexe /optimize+ /platform:anycpu /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /win32icon:installer\assets\drivebay.ico /out:installer\DrivebayTray.exe installer\tray\DrivebayTray.cs
+          & $csc /nologo /target:winexe /optimize+ /platform:anycpu /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /win32icon:installer\assets\drivebay.ico /out:installer\DrivebayTray.exe installer\tray\DrivebayTray.cs installer\tray\PhoneMount.cs installer\tray\PhoneMountLogic.cs
           if ($LASTEXITCODE -ne 0) { throw "csc failed ($LASTEXITCODE)" }
 
       - name: Stage installer payload
@@ -75,8 +75,10 @@ jobs:
         shell: pwsh
         run: |
           $line = Get-Content -TotalCount 1 VERSION.txt
-          if ($line -notmatch '(\d+\.\d+)') { throw "VERSION.txt has no version" }
+          if ($line -notmatch '(\d+\.\d+(\.\d+)?)') { throw "VERSION.txt has no version" }
           $version = $Matches[1]
+          $parts = @($version.Split('.')) + @('0','0','0')
+          $version4 = ($parts[0..3] -join '.')
           $tag = "${{ github.ref_name }}"
           if ($tag.StartsWith("v") -and $tag -ne "v$version") {
             throw "Tag $tag does not match v$version from VERSION.txt"
@@ -86,7 +88,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path installer\dist | Out-Null
           Push-Location installer
           try {
-            & $makensis "/DVERSION=$version" "/DVERSION4=$version.0.0" "drivebay.nsi"
+            & $makensis "/DVERSION=$version" "/DVERSION4=$version4" "drivebay.nsi"
             if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
           } finally {
             Pop-Location
