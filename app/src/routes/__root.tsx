@@ -4,6 +4,7 @@ import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
+import { UpdateNotice } from "@/components/update-notice";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "Drivebay";
@@ -36,6 +37,7 @@ export const Route = createRootRoute({
         <HeadContent />
       </head>
       <body className="bg-bg text-fg">
+        <UpdateNotice />
         <PreviewHostBridge />
         <AuthProvider>
           <TooltipProvider delayDuration={250}>

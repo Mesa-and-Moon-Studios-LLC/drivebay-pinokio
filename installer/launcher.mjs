@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPortFree, readConfig, readJson, resolveListenPort, usernameToEmail } from "./lib.mjs";
+import { decideUpdate, fetchLatestManifest, readInstalledVersion } from "./update-policy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -87,9 +88,25 @@ function stopProcess(pid) {
   try {
     process.kill(pid, "SIGTERM");
   } catch {
-    /* already stopped */
+    return Promise.resolve();
   }
-  return Promise.resolve();
+  // The launcher stops its server child on SIGTERM. Force it if it is still here after 10 seconds.
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (!pidAlive(pid)) return resolve();
+      if (Date.now() - started > 10_000) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          /* already stopped */
+        }
+        return resolve();
+      }
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
 }
 
 async function fetchText(url) {
@@ -108,6 +125,7 @@ function openBrowser(url) {
     spawn("cmd", ["/c", "start", "", url], { detached: true, windowsHide: true, stdio: "ignore" }).unref();
     return;
   }
+  if (process.platform !== "darwin" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) return;
   const cmd = process.platform === "darwin" ? "open" : "xdg-open";
   spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref();
 }
@@ -253,8 +271,35 @@ async function stop(home) {
   }
 }
 
+function installedVersionText() {
+  const candidates = [path.join(here, "VERSION.txt"), path.join(here, "..", "VERSION.txt")];
+  for (const file of candidates) {
+    try {
+      return readInstalledVersion(fs.readFileSync(file, "utf8"));
+    } catch {
+      /* try the next place */
+    }
+  }
+  return "";
+}
+
+async function noteDesktopUpdate(home) {
+  try {
+    const manifest = await fetchLatestManifest();
+    const decision = decideUpdate(installedVersionText(), manifest);
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, "update-status.json"), JSON.stringify({ ...decision, checkedAt: Date.now() }));
+    if (decision.action === "required") {
+      log(home, `Update required. ${decision.message || "Install the latest Drivebay release."} ${decision.url || ""}`);
+    }
+  } catch {
+    /* GitHub could not be reached. Keep running. */
+  }
+}
+
 async function main() {
   const home = defaultHome();
+  void noteDesktopUpdate(home);
 
   if (process.argv[2] === "reset-password") {
     const { runResetCommand } = await import("./reset-password.mjs");
@@ -361,16 +406,28 @@ async function main() {
 
   const shutdown = (code) => {
     try {
-      child.kill("SIGTERM");
-    } catch {
-      /* already stopped */
-    }
-    try {
       fs.rmSync(path.join(home, "drivebay.pid"), { force: true });
     } catch {
       /* ignore */
     }
-    process.exit(code);
+    if (child.exitCode !== null || child.signalCode !== null) process.exit(code);
+    // The server closes its port on SIGTERM but can keep running. Kill it after 5 seconds.
+    const force = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already stopped */
+      }
+    }, 5_000);
+    child.once("exit", () => {
+      clearTimeout(force);
+      process.exit(code);
+    });
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already stopped */
+    }
   };
   process.on("SIGTERM", () => shutdown(0));
   process.on("SIGINT", () => shutdown(0));

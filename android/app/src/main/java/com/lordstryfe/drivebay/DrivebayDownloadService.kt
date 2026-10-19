@@ -84,12 +84,14 @@ class DrivebayDownloadService : Service() {
             createdAt = System.currentTimeMillis(),
         )
         repository.upsert(job)
+        broadcastJobs()
     }
 
     private fun resume(id: String) {
         control.remove(id)
         val job = repository.load().firstOrNull { it.id == id } ?: return
         repository.upsert(job.copy(state = DownloadJob.STATE_QUEUED, error = null))
+        broadcastJobs()
     }
 
     private fun kick() {
@@ -139,12 +141,14 @@ class DrivebayDownloadService : Service() {
                         control.remove(job.id)
                         repository.remove(job.id)
                         notifier.cancelProgress()
+                        broadcastJobs()
                         return
                     }
                     "pause" -> {
                         control.remove(job.id)
                         repository.upsert(job.copy(state = DownloadJob.STATE_PAUSED))
                         startInForeground(notifier.progress(job, job.downloadedBytes, 0.0, paused = true, waitingWifi = false))
+                        broadcastJobs()
                         return
                     }
                 }
@@ -210,6 +214,7 @@ class DrivebayDownloadService : Service() {
             repository.upsert(job.copy(state = DownloadJob.STATE_FAILED, error = message))
             notifier.failed(job, message)
             notifier.cancelProgress()
+            broadcastJobs()
         }
     }
 
@@ -220,6 +225,7 @@ class DrivebayDownloadService : Service() {
         repository.remove(job.id)
         val mime = job.mime ?: "application/octet-stream"
         notifier.complete(job, uri, mime)
+        broadcastJobs()
         sendBroadcast(
             Intent(ACTION_FINISHED).apply {
                 setPackage(packageName)
@@ -228,6 +234,10 @@ class DrivebayDownloadService : Service() {
                 putExtra(EXTRA_MIME, mime)
             },
         )
+    }
+
+    private fun broadcastJobs() {
+        sendBroadcast(Intent(ACTION_JOBS_CHANGED).apply { setPackage(packageName) })
     }
 
     private fun startInForeground(notification: android.app.Notification) {
@@ -266,6 +276,7 @@ class DrivebayDownloadService : Service() {
         const val ACTION_CANCEL = "com.lordstryfe.drivebay.DOWNLOAD_CANCEL"
         const val ACTION_RESUME_INCOMPLETE = "com.lordstryfe.drivebay.DOWNLOAD_RESUME_INCOMPLETE"
         const val ACTION_FINISHED = "com.lordstryfe.drivebay.DOWNLOAD_FINISHED"
+        const val ACTION_JOBS_CHANGED = "com.lordstryfe.drivebay.DOWNLOAD_JOBS_CHANGED"
         const val EXTRA_ID = "id"
         const val EXTRA_URL = "url"
         const val EXTRA_NAME = "name"

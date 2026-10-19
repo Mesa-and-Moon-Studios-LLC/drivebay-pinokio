@@ -19,7 +19,15 @@ function powershell() {
   return null;
 }
 
-function freePort() {
+async function freePort() {
+  // Ports in Pinokio's Caddy range (42000-42999) move on update, so tests never use them.
+  for (;;) {
+    const port = await anyFreePort();
+    if (port < 42000 || port > 42999) return port;
+  }
+}
+
+function anyFreePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", reject);
@@ -517,7 +525,7 @@ test("ready is printed only after /api/health names Drivebay", async () => {
     child.unref();
     return { pid: child.pid, port: chosen };
   }
-  const good = serve('{"ok":true,"name":"Drivebay","version":"3.36.1"}', 200);
+  const good = serve('{"ok":true,"name":"Drivebay","version":"3.36.2"}', 200);
   const foreign = serve('{"error":"Unauthorized"}', 401);
   await new Promise((resolve, reject) => {
     const started = Date.now();
@@ -615,7 +623,7 @@ test("a saved port in Pinokio's Caddy range moves on update", async () => {
     const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
     assert.equal(config.mode, "tailscale");
     assert.equal(config.note, "keep-me");
-    assert.equal(config.version, "3.36.1");
+    assert.equal(config.version, "3.36.2");
     assert.ok(config.port < 42000 || config.port > 42999, String(config.port));
     if (held) assert.notEqual(config.port, 8765);
     else assert.equal(config.port, 8765);

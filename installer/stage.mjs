@@ -57,9 +57,12 @@ for (const name of ["pglite.wasm", "initdb.wasm", "pglite.data"]) {
 fs.rmSync(staging, { recursive: true, force: true });
 fs.mkdirSync(staging, { recursive: true });
 fs.cpSync(output, path.join(staging, "app"), { recursive: true });
-for (const name of ["launcher.mjs", "lib.mjs", "reset-password.mjs", "drivebay.cmd", "start-drivebay.vbs", "stop-drivebay.vbs"]) {
+for (const name of ["launcher.mjs", "lib.mjs", "reset-password.mjs", "phone-drive.mjs", "drivebay.cmd", "start-drivebay.vbs", "stop-drivebay.vbs"]) {
   fs.copyFileSync(path.join(here, name), path.join(staging, name));
 }
+fs.copyFileSync(path.join(root, "app/src/lib/files/update-policy.mjs"), path.join(staging, "update-policy.mjs"));
+fs.copyFileSync(path.join(root, "app/src/lib/files/phone-drive.mjs"), path.join(staging, "phone-drive-lib.mjs"));
+fs.copyFileSync(path.join(root, "version-manifest.json"), path.join(staging, "version-manifest.json"));
 fs.copyFileSync(path.join(root, "reset-password.ps1"), path.join(staging, "reset-password.ps1"));
 const trayExe = path.join(here, "DrivebayTray.exe");
 if (!fs.existsSync(trayExe)) {

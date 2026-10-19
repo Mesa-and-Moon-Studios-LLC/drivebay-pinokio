@@ -1,7 +1,7 @@
-Drivebay 3.36.1: Connect my phone
+Drivebay 3.36.2: Mac and Linux
 
-- New: right-click the Drivebay tray icon, choose "Connect my phone", and type the 6-digit code from the Drivebay Android app. Your phone shows up in File Explorer as a drive (P:, "Drivebay Phone") and reconnects on its own.
-- The code is saved only in Windows Credential Manager. If it stops working, Drivebay stops trying and asks for a new one.
-- Fix: the installer now closes every running Drivebay, including older copies, and keeps your saved port.
-
-Needs the Drivebay Android app 3.34.2 or newer with phone-as-drive turned on.
+- New: Drivebay for macOS and Linux. Download the tarball for your computer (darwin-arm64 for Apple silicon Macs, darwin-x64 for Intel Macs, linux-x64 or linux-arm64), unpack it, and run: bash unix/install.sh
+  Setup asks for the mode, port, username, and password, then starts Drivebay at login (LaunchAgent on macOS, systemd user service on Linux). Remove it with: bash ~/.local/share/drivebay/program/uninstall.sh
+- macOS: the build is not signed yet. If macOS says it cannot be opened, run this once on the unpacked folder: xattr -dr com.apple.quarantine <folder>
+- New: Drivebay checks the latest release for updates and tells you when one is available. The Windows tray adds "Check for updates".
+- Windows works the same as 3.36.1, including "Connect my phone".

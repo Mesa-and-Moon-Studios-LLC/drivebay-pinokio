@@ -11,6 +11,7 @@ import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
+import { PhoneDriveMount } from "@/components/settings/phone-drive";
 import { DonateMenu } from "@/components/settings/donate-menu";
 import { HowToGuide } from "@/components/settings/how-to";
 import { Button } from "@/components/ui/button";
@@ -834,6 +835,8 @@ function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <PhoneDriveMount />
 
         <ApiTokens />
 
