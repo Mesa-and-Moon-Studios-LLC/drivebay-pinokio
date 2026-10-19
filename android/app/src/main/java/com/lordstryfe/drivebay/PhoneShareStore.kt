@@ -36,13 +36,41 @@ object PhoneShareNames {
     }
 }
 
-class PhoneShareStore(context: Context) {
+class PhoneShareStore(context: Context) : PhoneShareCodeState {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun enabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
 
+    /** Turning sharing off also clears the 6-digit code. */
     fun setEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+        val edit = prefs.edit().putBoolean(KEY_ENABLED, value)
+        if (!value) edit.remove(KEY_CODE).remove(KEY_CODE_FAILURES)
+        edit.commit()
+    }
+
+    override fun codeRecord(): String? = prefs.getString(KEY_CODE, null)
+
+    override fun codeFailures(): Int = prefs.getInt(KEY_CODE_FAILURES, 0)
+
+    override fun saveCodeFailures(count: Int) {
+        prefs.edit().putInt(KEY_CODE_FAILURES, count).commit()
+    }
+
+    override fun saveCode(record: String?, failures: Int) {
+        val edit = prefs.edit().putInt(KEY_CODE_FAILURES, failures)
+        if (record == null) edit.remove(KEY_CODE) else edit.putString(KEY_CODE, record)
+        edit.commit()
+    }
+
+    fun codeLocked(): Boolean = codeRecord() != null && codeFailures() >= PhoneShareCode.MAX_FAILURES
+
+    /** New token: new code hash and a fresh strike count. The plain token and code are never stored. */
+    fun setCredentials(tokenHash: String, codeRecord: String) {
+        prefs.edit()
+            .putString(KEY_HASH, tokenHash)
+            .putString(KEY_CODE, codeRecord)
+            .putInt(KEY_CODE_FAILURES, 0)
+            .commit()
     }
 
     fun tokenHash(): String? = prefs.getString(KEY_HASH, null)?.takeIf { it.length == 64 }
@@ -79,6 +107,8 @@ class PhoneShareStore(context: Context) {
         const val KEY_ENABLED = "enabled"
         private const val KEY_HASH = "token_hash"
         private const val KEY_FOLDERS = "folders"
+        private const val KEY_CODE = "code_hash"
+        private const val KEY_CODE_FAILURES = "code_failures"
     }
 }
 

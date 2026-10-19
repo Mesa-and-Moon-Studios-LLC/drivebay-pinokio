@@ -16,7 +16,11 @@ class PhoneDavServer(
     private val tokenHash: String,
     private val port: Int,
     private val bindHosts: List<String>,
+    codeState: PhoneShareCodeState? = null,
+    onCodeLocked: () -> Unit = {},
 ) {
+    private val gate = PhoneShareGate(tokenHash, codeState, onCodeLocked)
+
     private val running = AtomicBoolean(false)
     private val sockets = mutableListOf<ServerSocket>()
 
@@ -104,9 +108,15 @@ class PhoneDavServer(
                 if (off == length) buf else buf.copyOf(off)
             }
             val response = DavProtocol.handle(
-                DavRequest(requestLine[0].uppercase(Locale.US), requestLine[1], headers, body),
+                DavRequest(
+                    requestLine[0].uppercase(Locale.US),
+                    requestLine[1],
+                    headers,
+                    body,
+                    client.inetAddress?.hostAddress,
+                ),
                 store,
-                tokenHash,
+                gate,
             )
             val status = "HTTP/1.1 ${response.status} ${response.reason}\r\n"
             val headerText = buildString {

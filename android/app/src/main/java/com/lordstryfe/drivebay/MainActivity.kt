@@ -831,6 +831,14 @@ class MainActivity : AppCompatActivity() {
             hosts.isEmpty() -> getString(R.string.phone_share_waiting)
             else -> getString(R.string.phone_share_address, hosts.joinToString("  ") { "http://$it:${PhoneShareService.PORT}/" })
         }
+        if (phoneShare.enabled() && phoneShare.codeLocked()) {
+            phoneShareBox.addView(TextView(this).apply {
+                text = getString(R.string.phone_share_code_locked)
+                setTextColor(0xFFFCA5A5.toInt())
+                textSize = 13f
+                setPadding(0, 12, 0, 0)
+            })
+        }
         phoneShareBox.addView(TextView(this).apply {
             text = status
             setTextColor(if (phoneShare.enabled()) 0xFFBBF7D0.toInt() else 0xFF94A3B8.toInt())
@@ -847,10 +855,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun revealNewToken() {
         val token = PhoneShareAuth.generateToken()
-        phoneShare.setTokenHash(PhoneShareAuth.hash(token))
+        val code = PhoneShareCode.generate()
+        // Only hashes are kept: SHA-256 of the token, salted PBKDF2 of the code. A new token
+        // replaces the old code and clears its lockout.
+        phoneShare.setCredentials(PhoneShareAuth.hash(token), PhoneShareCode.hash(code))
+        if (phoneShare.enabled()) startPhoneShare()
         AlertDialog.Builder(this)
             .setTitle(R.string.phone_share_token)
-            .setMessage(getString(R.string.phone_share_token_once) + "\n\n" + token)
+            .setMessage(getString(R.string.phone_share_token_once, code, token))
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 if (phoneShare.folders().isNotEmpty()) {
                     phoneShare.setEnabled(true)

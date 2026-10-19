@@ -53,7 +53,8 @@
     <string name="phone_share_need_folder">Choose at least one folder first.</string>
     <string name="phone_share_waiting">Waiting for Tailscale or Wi-Fi. Nothing is shared on a public network.</string>
     <string name="phone_share_address">Open on the PC: %1$s</string>
-    <string name="phone_share_token_once">Copy this token now. It is shown once. Username: drivebay</string>
+    <string name="phone_share_token_once">On the PC, sign in with username drivebay and either the 6-digit code or the full token as the password. Both are shown once.\n\nCode: %1$s\n\nToken:\n%2$s\n\nThe code works only on Tailscale or your home network and turns off after 5 wrong tries. The token works anywhere the drive is shared.</string>
+    <string name="phone_share_code_locked">Code locked, tap New token</string>
     <string name="upload_started">Uploading to the PC</string>
     <string name="upload_done">Uploaded to the PC</string>
     <string name="upload_failed">The upload did not finish</string>

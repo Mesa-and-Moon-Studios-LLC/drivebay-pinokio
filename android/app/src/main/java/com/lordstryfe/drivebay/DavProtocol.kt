@@ -29,6 +29,8 @@ data class DavRequest(
     val path: String,
     val headers: Map<String, String>,
     val body: ByteArray = ByteArray(0),
+    /** Peer IP of the connection, used to allow the 6-digit code only from Tailscale or LAN. */
+    val remoteAddress: String? = null,
 )
 
 data class DavResponse(
@@ -46,9 +48,12 @@ object DavProtocol {
     private val httpDate: DateTimeFormatter =
         DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.US).withZone(ZoneOffset.UTC)
 
-    fun handle(request: DavRequest, store: DavStore, tokenHash: String): DavResponse {
+    fun handle(request: DavRequest, store: DavStore, tokenHash: String): DavResponse =
+        handle(request, store, PhoneShareGate(tokenHash))
+
+    fun handle(request: DavRequest, store: DavStore, gate: PhoneShareGate): DavResponse {
         val method = request.method.uppercase(Locale.US)
-        if (method != "OPTIONS" && !PhoneShareAuth.authorized(header(request, "authorization"), tokenHash)) {
+        if (method != "OPTIONS" && !gate.authorized(header(request, "authorization"), request.remoteAddress)) {
             return text(401, "Unauthorized", mapOf("WWW-Authenticate" to "Basic realm=\"Drivebay\""), "Sign in required")
         }
         val path = normalize(request.path) ?: return text(400, "Bad Request", emptyMap(), "Bad path")

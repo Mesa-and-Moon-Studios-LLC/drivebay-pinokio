@@ -80,7 +80,11 @@ class PhoneShareService : Service() {
             val docs = DocumentPhoneStore(this, folders)
             if (docs.rootCount() == 0) throw FolderAccessException()
             stopServer()
-            dav = PhoneDavServer(docs, hash, PORT, hosts)
+            val codeState = PhoneShareStore(this)
+            dav = PhoneDavServer(docs, hash, PORT, hosts, codeState) {
+                // Five wrong codes: tell the screen so it can show "Code locked".
+                broadcast(hosts)
+            }
             dav.start()
             if (ticket != generation.get()) {
                 dav.stop()
