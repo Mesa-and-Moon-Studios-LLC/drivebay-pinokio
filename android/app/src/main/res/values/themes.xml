@@ -4,9 +4,12 @@
         <item name="colorPrimary">#7DD3FC</item>
         <item name="colorPrimaryVariant">#0F1218</item>
         <item name="colorOnPrimary">#0F1218</item>
-        <item name="android:statusBarColor">#0F1218</item>
-        <item name="android:navigationBarColor">#0F1218</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">#0F1218</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
         <item name="android:textColorPrimary">#E8EEF7</item>
     </style>
 </resources>

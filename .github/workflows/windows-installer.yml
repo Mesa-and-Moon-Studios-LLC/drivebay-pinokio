@@ -28,7 +28,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Port and account helper tests
-        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs installer/script-install.test.mjs installer/pending-account.test.mjs installer/server-lock.test.mjs installer/document-routes.test.mjs installer/public-access.test.mjs installer/uninstall.test.mjs installer/android-app.test.mjs installer/android-client.test.mjs installer/byte-range.test.mjs installer/api-tokens.test.mjs installer/drivebay-skill.test.mjs installer/donate.test.mjs installer/reset-password.test.mjs installer/remote-actions.test.mjs
+        run: node --test installer/port.test.mjs installer/account-leave.test.mjs installer/setup-save.test.mjs installer/script-install.test.mjs installer/pending-account.test.mjs installer/server-lock.test.mjs installer/document-routes.test.mjs installer/public-access.test.mjs installer/uninstall.test.mjs installer/android-app.test.mjs installer/android-client.test.mjs installer/byte-range.test.mjs installer/api-tokens.test.mjs installer/drivebay-skill.test.mjs installer/donate.test.mjs installer/reset-password.test.mjs installer/remote-actions.test.mjs installer/update-policy.test.mjs installer/phone-drive.test.mjs installer/upload-fix.test.mjs
 
       - name: Build production server
         working-directory: app
@@ -108,6 +108,7 @@ jobs:
           path: |
             installer/dist/*.exe
             installer/dist/*.zip
+            version-manifest.json
           if-no-files-found: error
 
       - name: Attach installer to the GitHub Release
@@ -119,4 +120,5 @@ jobs:
           files: |
             installer/dist/*.exe
             installer/dist/*.zip
+            version-manifest.json
           fail_on_unmatched_files: true

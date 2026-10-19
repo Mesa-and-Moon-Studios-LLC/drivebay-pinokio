@@ -151,6 +151,19 @@ internal static class Program
 
         openWhenReady = !background;
         StartServer(true);
+        Thread updateThread = new Thread(delegate()
+        {
+            Thread.Sleep(4000);
+            try
+            {
+                sink.BeginInvoke((MethodInvoker)delegate { CheckForUpdates(false); });
+            }
+            catch
+            {
+            }
+        });
+        updateThread.IsBackground = true;
+        updateThread.Start();
         Application.Run();
     }
 
@@ -230,8 +243,14 @@ internal static class Program
         menu.Items.Add(stopItem);
         menu.Items.Add(restartItem);
         menu.Items.Add(new ToolStripSeparator());
+        ToolStripMenuItem phoneItem = new ToolStripMenuItem("Mount phone as drive");
+        phoneItem.Click += delegate { MountPhone(); };
+        ToolStripMenuItem updateItem = new ToolStripMenuItem("Check for updates");
+        updateItem.Click += delegate { CheckForUpdates(true); };
         menu.Items.Add(logsItem);
         menu.Items.Add(startupItem);
+        menu.Items.Add(phoneItem);
+        menu.Items.Add(updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(resetItem);
         menu.Items.Add(quitItem);
@@ -463,6 +482,136 @@ internal static class Program
         if (a == 192 && b == 168) return true;
         if (a == 172 && b >= 16 && b <= 31) return true;
         return false;
+    }
+
+    static void MountPhone()
+    {
+        Form form = new Form();
+        form.Text = "Mount phone as drive";
+        form.Width = 480;
+        form.Height = 260;
+        form.FormBorderStyle = FormBorderStyle.FixedDialog;
+        form.MaximizeBox = false;
+        form.MinimizeBox = false;
+        form.StartPosition = FormStartPosition.CenterScreen;
+        Label help = new Label();
+        help.Text = "Address and token from the Drivebay app. Sharing stays on Tailscale or your LAN.";
+        help.SetBounds(12, 12, 440, 32);
+        TextBox urlBox = new TextBox();
+        urlBox.SetBounds(12, 52, 440, 24);
+        TextBox secretBox = new TextBox();
+        secretBox.UseSystemPasswordChar = true;
+        secretBox.SetBounds(12, 84, 440, 24);
+        TextBox letterBox = new TextBox();
+        letterBox.Text = "Z";
+        letterBox.SetBounds(12, 116, 40, 24);
+        Button ok = new Button();
+        ok.Text = "Mount";
+        ok.SetBounds(270, 170, 80, 28);
+        ok.DialogResult = DialogResult.OK;
+        Button cancel = new Button();
+        cancel.Text = "Cancel";
+        cancel.DialogResult = DialogResult.Cancel;
+        cancel.SetBounds(360, 170, 80, 28);
+        form.Controls.Add(help);
+        form.Controls.Add(urlBox);
+        form.Controls.Add(secretBox);
+        form.Controls.Add(letterBox);
+        form.Controls.Add(ok);
+        form.Controls.Add(cancel);
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        if (form.ShowDialog(sink) != DialogResult.OK) return;
+        string node = Path.Combine(InstallDir(), "runtime", "node.exe");
+        string script = Path.Combine(InstallDir(), "phone-drive.mjs");
+        if (!File.Exists(node) || !File.Exists(script))
+        {
+            MessageBox.Show("The phone mount helper is not in this Drivebay install.", "Drivebay");
+            return;
+        }
+        ProcessStartInfo info = new ProcessStartInfo();
+        info.FileName = node;
+        info.Arguments = "\"" + script + "\"";
+        info.UseShellExecute = false;
+        info.CreateNoWindow = true;
+        info.RedirectStandardOutput = true;
+        info.RedirectStandardError = true;
+        info.EnvironmentVariables["DRIVEBAY_PHONE_URL"] = urlBox.Text.Trim();
+        info.EnvironmentVariables["DRIVEBAY_PHONE_SECRET"] = secretBox.Text;
+        info.EnvironmentVariables["DRIVEBAY_PHONE_LETTER"] = letterBox.Text.Trim();
+        info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
+        try
+        {
+            Process process = Process.Start(info);
+            string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+            process.WaitForExit();
+            if (process.ExitCode == 0) MessageBox.Show("The phone is mounted.", "Drivebay");
+            else MessageBox.Show(output.Length == 0 ? "The phone was not mounted." : output, "Drivebay");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Drivebay");
+        }
+    }
+
+    static void CheckForUpdates(bool interactive)
+    {
+        string node = Path.Combine(InstallDir(), "runtime", "node.exe");
+        string script = Path.Combine(InstallDir(), "update-policy.mjs");
+        if (File.Exists(node) && File.Exists(script))
+        {
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = node;
+                info.Arguments = "\"" + script + "\"";
+                info.UseShellExecute = false;
+                info.CreateNoWindow = true;
+                info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
+                info.EnvironmentVariables["DRIVEBAY_VERSION_FILE"] = Path.Combine(InstallDir(), "VERSION.txt");
+                Process process = Process.Start(info);
+                if (!process.WaitForExit(20000)) process.Kill();
+            }
+            catch
+            {
+                if (interactive) MessageBox.Show("Drivebay could not reach GitHub. It will keep running.", "Drivebay");
+                return;
+            }
+        }
+        string action = "";
+        string message = "";
+        string url = "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest";
+        try
+        {
+            string raw = File.ReadAllText(Path.Combine(HomeDir(), "update-status.json"));
+            Match actionMatch = Regex.Match(raw, "\"action\"\\s*:\\s*\"(required|optional|none)\"");
+            if (actionMatch.Success) action = actionMatch.Groups[1].Value;
+            Match messageMatch = Regex.Match(raw, "\"message\"\\s*:\\s*\"([^\"]*)\"");
+            if (messageMatch.Success) message = messageMatch.Groups[1].Value;
+            Match urlMatch = Regex.Match(raw, "\"url\"\\s*:\\s*\"([^\"]*)\"");
+            if (urlMatch.Success && urlMatch.Groups[1].Value.Length > 0) url = urlMatch.Groups[1].Value.Replace("\\/", "/");
+        }
+        catch
+        {
+            if (interactive) MessageBox.Show("Drivebay could not reach GitHub. It will keep running.", "Drivebay");
+            return;
+        }
+        if (action == "required")
+        {
+            MessageBox.Show(message.Length == 0 ? "This version of Drivebay is out of date. Install the latest release to keep using it." : message, "Drivebay update required");
+            try { Process.Start(url); } catch { }
+            return;
+        }
+        if (action == "optional" && interactive)
+        {
+            MessageBox.Show("A newer Drivebay release is available.", "Drivebay");
+            try { Process.Start(url); } catch { }
+            return;
+        }
+        if (interactive && action != "required")
+        {
+            MessageBox.Show("Drivebay is up to date.", "Drivebay");
+        }
     }
 
     static void CopyAddress()

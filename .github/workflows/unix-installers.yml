@@ -1,0 +1,67 @@
+name: Mac and Linux installers
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm install --no-audit --no-fund
+
+      - name: Unix installer tests
+        run: node --test installer/update-policy.test.mjs installer/phone-drive.test.mjs installer/unix-install.test.mjs installer/upload-fix.test.mjs
+
+      - name: Build production server
+        working-directory: app
+        env:
+          DRIVEBAY_STANDALONE: "1"
+        run: npm run build
+
+      - name: Copy PGLite runtime files
+        run: node installer/copy-pglite-assets.mjs
+
+      - name: Pack macOS and Linux archives
+        run: node installer/stage-unix.mjs all
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drivebay-Unix
+          path: |
+            installer/dist/drivebay-server-linux-x64.tar.gz
+            installer/dist/drivebay-server-linux-arm64.tar.gz
+            installer/dist/drivebay-server-darwin-arm64.tar.gz
+            installer/dist/drivebay-server-darwin-x64.tar.gz
+            version-manifest.json
+          if-no-files-found: error
+
+      - name: Attach installers to the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/dist/drivebay-server-linux-x64.tar.gz
+            installer/dist/drivebay-server-linux-arm64.tar.gz
+            installer/dist/drivebay-server-darwin-arm64.tar.gz
+            installer/dist/drivebay-server-darwin-x64.tar.gz
+            version-manifest.json
+          fail_on_unmatched_files: true

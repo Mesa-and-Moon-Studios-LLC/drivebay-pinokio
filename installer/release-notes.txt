@@ -1,9 +1,13 @@
-Drivebay 3.35 stops the web UI from contacting other sites.
+Drivebay 3.36 adds Mac and Linux installers, a required-update check, and Android 3.34.0.
 
-This release includes Drivebay-Setup-3.35.exe and drivebay-server-win-x64.zip. The command-line install downloads that zip:
+This release includes Drivebay-Setup-3.36.exe, drivebay-server-win-x64.zip, drivebay-server-linux-x64.tar.gz, drivebay-server-linux-arm64.tar.gz, drivebay-server-darwin-arm64.tar.gz, drivebay-server-darwin-x64.tar.gz, and version-manifest.json.
+
+`/api/health` reports version 3.36. The Windows command-line install still downloads the Windows zip:
 
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 
-`/api/health` reports version 3.35. The fonts now ship with Drivebay instead of loading from Google Fonts, and the web UI no longer loads the og.grok.me preview image or the grok.com banner script. Opening Drivebay makes no third-party requests.
+On macOS or Linux, unpack the matching tarball and run bash unix/install.sh. The Mac build is unsigned. See docs/phone-as-drive.md to mount a phone, and unix/sign-mac.sh before a later signed build.
 
-The Android app in the repo is still 3.33.0. This release does not attach an APK.
+version-manifest.json on this release is what older desktop installs read. If GitHub cannot be reached, those installs keep running.
+
+The Android app in the repo is 3.34.0 (versionCode 33400). This release does not attach an APK. Google Play updates stay on Aaron's PC.

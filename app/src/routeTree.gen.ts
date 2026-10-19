@@ -14,6 +14,8 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ApiDownloadRouteImport } from './routes/api/download'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiUpdateStatusRouteImport } from './routes/api/update-status'
+import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiV1SplatRouteImport } from './routes/api/v1/$'
 
@@ -42,6 +44,16 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUpdateStatusRoute = ApiUpdateStatusRouteImport.update({
+  id: '/api/update-status',
+  path: '/api/update-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUploadRoute = ApiUploadRouteImport.update({
+  id: '/api/upload',
+  path: '/api/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -59,6 +71,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-status': typeof ApiUpdateStatusRoute
+  '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -68,6 +82,8 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-status': typeof ApiUpdateStatusRoute
+  '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -78,6 +94,8 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-status': typeof ApiUpdateStatusRoute
+  '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/v1/$': typeof ApiV1SplatRoute
 }
@@ -89,6 +107,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-status'
+    | '/api/upload'
     | '/api/auth/$'
     | '/api/v1/$'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +118,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-status'
+    | '/api/upload'
     | '/api/auth/$'
     | '/api/v1/$'
   id:
@@ -107,6 +129,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-status'
+    | '/api/upload'
     | '/api/auth/$'
     | '/api/v1/$'
   fileRoutesById: FileRoutesById
@@ -117,6 +141,8 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   ApiDownloadRoute: typeof ApiDownloadRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
+  ApiUploadRoute: typeof ApiUploadRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiV1SplatRoute: typeof ApiV1SplatRoute
 }
@@ -158,6 +184,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/update-status': {
+      id: '/api/update-status'
+      path: '/api/update-status'
+      fullPath: '/api/update-status'
+      preLoaderRoute: typeof ApiUpdateStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/upload': {
+      id: '/api/upload'
+      path: '/api/upload'
+      fullPath: '/api/upload'
+      preLoaderRoute: typeof ApiUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -181,6 +221,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   ApiDownloadRoute: ApiDownloadRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiUpdateStatusRoute: ApiUpdateStatusRoute,
+  ApiUploadRoute: ApiUploadRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiV1SplatRoute: ApiV1SplatRoute,
 }

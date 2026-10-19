@@ -45,6 +45,7 @@ import {
   uploadFile,
 } from "@/lib/files/api.functions";
 import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
+import { snapshotUploadFiles } from "@/lib/files/upload-files.mjs";
 import { defaultStartPath, formatBytes, formatWhen, splitPath } from "@/lib/files/format";
 import type { DirListing, Drive, FileCategory, FsEntry, PreviewPayload, SearchHit } from "@/lib/files/types";
 import { FileGlyph } from "@/components/file-icon";
@@ -353,8 +354,14 @@ export function FileBrowserApp() {
       }
       return false;
     };
+    const uploadWindow = window as Window & { __drivebayUploadFinished?: () => void };
+    uploadWindow.__drivebayUploadFinished = () => {
+      const current = listing?.path;
+      if (current) void openPath(current);
+    };
     return () => {
       delete w.__drivebayAndroidBack;
+      delete uploadWindow.__drivebayUploadFinished;
     };
   }, [
     renameOpen,
@@ -842,7 +849,21 @@ export function FileBrowserApp() {
               New folder
             </Button>
             {serverLock?.allowUpload ? (
-              <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  const native = (
+                    window as Window & { DrivebayNative?: { pickUpload?: (parent: string) => void } }
+                  ).DrivebayNative;
+                  const parent = listing?.path;
+                  if (native?.pickUpload && parent) {
+                    native.pickUpload(parent);
+                    return;
+                  }
+                  fileInputRef.current?.click();
+                }}
+              >
                 <Upload className="size-3.5" />
                 Upload
               </Button>
@@ -853,8 +874,24 @@ export function FileBrowserApp() {
               multiple
               className="hidden"
               onChange={(e) => {
-                if (e.target.files && serverLock?.allowUpload) void handleUpload(e.target.files);
-                e.target.value = "";
+                const input = e.currentTarget;
+                const picked = input.files;
+                if (!picked || picked.length === 0 || serverLock?.allowUpload === false) {
+                  input.value = "";
+                  return;
+                }
+                void snapshotUploadFiles(picked, (file) => (file as File).arrayBuffer())
+                  .then((snaps) => {
+                    input.value = "";
+                    const files = snaps.map(
+                      (snap) => new File([snap.bytes], snap.name, { type: snap.type, lastModified: snap.lastModified }),
+                    );
+                    return handleUpload(files);
+                  })
+                  .catch((err) => {
+                    input.value = "";
+                    toast.error(errMessage(err));
+                  });
               }}
             />
             {serverLock?.allowRename || serverLock?.allowMove ? (

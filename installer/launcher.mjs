@@ -13,6 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPortFree, readConfig, readJson, resolveListenPort, usernameToEmail } from "./lib.mjs";
+import { decideUpdate, fetchLatestManifest, readInstalledVersion } from "./update-policy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -253,8 +254,35 @@ async function stop(home) {
   }
 }
 
+function installedVersionText() {
+  const candidates = [path.join(here, "VERSION.txt"), path.join(here, "..", "VERSION.txt")];
+  for (const file of candidates) {
+    try {
+      return readInstalledVersion(fs.readFileSync(file, "utf8"));
+    } catch {
+      /* try the next place */
+    }
+  }
+  return "";
+}
+
+async function noteDesktopUpdate(home) {
+  try {
+    const manifest = await fetchLatestManifest();
+    const decision = decideUpdate(installedVersionText(), manifest);
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, "update-status.json"), JSON.stringify({ ...decision, checkedAt: Date.now() }));
+    if (decision.action === "required") {
+      log(home, `Update required. ${decision.message || "Install the latest Drivebay release."} ${decision.url || ""}`);
+    }
+  } catch {
+    /* GitHub could not be reached. Keep running. */
+  }
+}
+
 async function main() {
   const home = defaultHome();
+  void noteDesktopUpdate(home);
 
   if (process.argv[2] === "reset-password") {
     const { runResetCommand } = await import("./reset-password.mjs");
