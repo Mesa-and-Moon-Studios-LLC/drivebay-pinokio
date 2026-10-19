@@ -86,6 +86,19 @@ internal static class PhoneMountTests
         }
         Eq(1, tries, "flapping after 401");
 
+        Eq(AuthResult.Ok, PhoneMountLogic.ClassifyMapError(0), "map ok");
+        Eq(AuthResult.BadCode, PhoneMountLogic.ClassifyMapError(1326), "map logon failure");
+        Eq(AuthResult.BadCode, PhoneMountLogic.ClassifyMapError(86), "map bad password");
+        Eq(AuthResult.Unreachable, PhoneMountLogic.ClassifyMapError(67), "map bad net name");
+        Eq(AuthResult.Unreachable, PhoneMountLogic.ClassifyMapError(53), "map path not found");
+        Eq(true, PhoneMountLogic.IsLetterBusy(85), "letter busy 85");
+        Eq(true, PhoneMountLogic.IsLetterBusy(1202), "letter busy 1202");
+        Eq(false, PhoneMountLogic.IsLetterBusy(0), "letter not busy");
+
+        Eq("verify 100.70.170.22:8780 -> Ok", PhoneMountLogic.Scrub("verify 100.70.170.22:8780 -> Ok"), "scrub keeps ip/port");
+        Eq("code ****** token db_***", PhoneMountLogic.Scrub("code 123456 token db_AbC123xyz"), "scrub secrets");
+        Eq("a b", PhoneMountLogic.Scrub("a\nb"), "scrub newline");
+
         Eq("Connected", PhoneMountLogic.StatusText(PhoneStatus.Connected), "text connected");
         Eq("Phone not found", PhoneMountLogic.StatusText(PhoneStatus.PhoneNotFound), "text missing");
         Eq("Code expired, get a new code", PhoneMountLogic.StatusText(PhoneStatus.CodeExpired), "text expired");

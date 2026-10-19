@@ -75,9 +75,7 @@ internal static class PhoneCredentials
     // redirector uses for the phone's host.
     public static bool Save(string host, string secret)
     {
-        bool a = Write(CRED_TYPE_GENERIC, GenericTarget, PhoneMountLogic.User, secret);
-        bool b = Write(CRED_TYPE_DOMAIN_PASSWORD, host, PhoneMountLogic.User, secret);
-        return a && b;
+        return Write(CRED_TYPE_GENERIC, GenericTarget, PhoneMountLogic.User, secret);
     }
 
     public static bool SaveOwnCopy(string secret)
@@ -85,11 +83,23 @@ internal static class PhoneCredentials
         return Write(CRED_TYPE_GENERIC, GenericTarget, PhoneMountLogic.User, secret);
     }
 
-    public static bool EnsureWindowsCredential(string host)
+    // 3.36.0-test also wrote a Domain credential for the host. Remove it only
+    // when it is ours (user "drivebay"); never touch other credentials.
+    static void DeleteOldDomainCredential(string host)
     {
-        string s = Read();
-        if (s == null) return false;
-        return Write(CRED_TYPE_DOMAIN_PASSWORD, host, PhoneMountLogic.User, s);
+        IntPtr p;
+        if (!CredRead(host, CRED_TYPE_DOMAIN_PASSWORD, 0, out p)) return;
+        string user;
+        try
+        {
+            CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(p, typeof(CREDENTIAL));
+            user = c.UserName;
+        }
+        finally
+        {
+            CredFree(p);
+        }
+        if (string.Equals(user, PhoneMountLogic.User, StringComparison.OrdinalIgnoreCase)) CredDelete(host, CRED_TYPE_DOMAIN_PASSWORD, 0);
     }
 
     public static string Read()
@@ -111,7 +121,7 @@ internal static class PhoneCredentials
     public static void Delete(string host)
     {
         CredDelete(GenericTarget, CRED_TYPE_GENERIC, 0);
-        if (!string.IsNullOrEmpty(host)) CredDelete(host, CRED_TYPE_DOMAIN_PASSWORD, 0);
+        if (!string.IsNullOrEmpty(host)) DeleteOldDomainCredential(host);
     }
 }
 
@@ -185,7 +195,28 @@ internal static class PhoneMount
     public static PhoneSettings Settings;
     public static PhoneStatus Status = PhoneStatus.Off;
     public static event Action StatusChanged;
-    public static Action<string> Log = delegate { };
+    public static Action<string> TrayLog = delegate { };
+
+    // Own log file (shared open so the server holding drivebay.log can't block
+    // it) plus the tray log. Lines are scrubbed; secrets are never passed in.
+    public static void Log(string message)
+    {
+        string line = DateTime.Now.ToString("s") + " [phone] " + PhoneMountLogic.Scrub(message) + Environment.NewLine;
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Drivebay");
+            Directory.CreateDirectory(dir);
+            using (FileStream fs = new FileStream(Path.Combine(dir, "phone-mount.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+            {
+                byte[] b = Encoding.UTF8.GetBytes(line);
+                fs.Write(b, 0, b.Length);
+            }
+        }
+        catch
+        {
+        }
+        try { TrayLog("[phone] " + PhoneMountLogic.Scrub(message)); } catch { }
+    }
     public static Action<string, string> Notify = delegate { };
     public static Control UiThread;
 
@@ -249,6 +280,8 @@ internal static class PhoneMount
         }
         bool mapped = Settings.Letter != '\0' && IsMapped(Settings.Letter, Settings.Host, Settings.Port);
         PhoneStep step = PhoneMountLogic.Decide(Status, found, verified, mapped);
+        if (step != PhoneStep.Nothing || Status != PhoneStatus.Connected)
+            Log("check: found=" + found + " host=" + Settings.Host + ":" + Settings.Port + " mapped=" + mapped + " verified=" + verified + " step=" + step);
         if (step == PhoneStep.MarkNotFound)
         {
             misses++;
@@ -263,15 +296,18 @@ internal static class PhoneMount
             if (secret == null) { MarkExpired(); return; }
             AuthResult r = VerifyOnce(Settings.Host, Settings.Port, secret);
             secret = null;
+            Log("check: verify -> " + r);
             PhoneStatus after = PhoneMountLogic.AfterVerify(r);
             if (after == PhoneStatus.CodeExpired) { MarkExpired(); return; }
             if (after != PhoneStatus.Connected) { misses++; SetStatus(after); return; }
             verified = true;
-            step = mapped ? PhoneStep.Nothing : PhoneStep.Map;
+            step = PhoneStep.Map; // (re)connect the session with the verified code
         }
         if (step == PhoneStep.Map)
         {
-            if (!MapNow()) { SetStatus(PhoneStatus.PhoneNotFound); return; }
+            AuthResult m = MapNow();
+            if (m == AuthResult.BadCode) { MarkExpired(); return; }
+            if (m != AuthResult.Ok) { misses++; verified = false; SetStatus(PhoneStatus.PhoneNotFound); return; }
         }
         SetStatus(PhoneStatus.Connected);
     }
@@ -291,19 +327,75 @@ internal static class PhoneMount
         Notify("Drivebay Phone", "Code expired, get a new code. Open Drivebay on your phone, tap New token, then use Connect my phone.");
     }
 
-    static bool MapNow()
+    // Maps with WNetAddConnection2W: user + code passed in memory only.
+    static AuthResult MapNow()
     {
-        PhoneCredentials.EnsureWindowsCredential(Settings.Host);
-        char letter = PhoneMountLogic.PickLetter(UsedLetters(), Settings.PreferredLetter, Settings.Letter);
-        if (letter == '\0') { Log("no free drive letter"); return false; }
+        string secret = PhoneCredentials.Read();
+        if (secret == null) { Log("map: no saved code in Credential Manager"); return AuthResult.BadCode; }
         string unc = PhoneMountLogic.UncPath(Settings.Host, Settings.Port);
-        int code = RunNet("use " + letter + ": \"" + unc + "\" /persistent:yes");
-        if (code != 0) { Log("net use failed exit " + code); return false; }
+        char current = Settings.Letter;
+        if (current != '\0' && IsMapped(current, Settings.Host, Settings.Port))
+        {
+            int c = WNetCancelConnection2W(current + ":", 0, true);
+            Log("map: dropped old session on " + current + ": result " + c);
+        }
+        char letter = PhoneMountLogic.PickLetter(UsedLetters(current), Settings.PreferredLetter, current);
+        if (letter == '\0') { Log("map: no free drive letter"); return AuthResult.Unreachable; }
+        SetLabel(Settings.Host, Settings.Port);
+        NETRESOURCE nr = new NETRESOURCE();
+        nr.dwType = RESOURCETYPE_DISK;
+        nr.lpLocalName = letter + ":";
+        nr.lpRemoteName = unc;
+        int rc = WNetAddConnection2W(ref nr, secret, PhoneMountLogic.User, CONNECT_UPDATE_PROFILE);
+        if (PhoneMountLogic.IsLetterBusy(rc) && current == letter)
+        {
+            WNetCancelConnection2W(letter + ":", CONNECT_UPDATE_PROFILE, true);
+            rc = WNetAddConnection2W(ref nr, secret, PhoneMountLogic.User, CONNECT_UPDATE_PROFILE);
+        }
+        secret = null;
+        Log("map: WNetAddConnection2 " + letter + ": -> " + unc + " result " + rc + (rc == 0 ? "" : " (" + new Win32Exception(rc).Message + ")"));
+        AuthResult r = PhoneMountLogic.ClassifyMapError(rc);
+        if (r != AuthResult.Ok) return r;
         Settings.Letter = letter;
         Settings.Save();
-        SetLabel(Settings.Host, Settings.Port);
-        Log("phone mapped at " + letter + ":");
-        return true;
+        RefreshExplorer(letter);
+        return AuthResult.Ok;
+    }
+
+    const int RESOURCETYPE_DISK = 1;
+    const int CONNECT_UPDATE_PROFILE = 1;
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct NETRESOURCE
+    {
+        public int dwScope;
+        public int dwType;
+        public int dwDisplayType;
+        public int dwUsage;
+        public string lpLocalName;
+        public string lpRemoteName;
+        public string lpComment;
+        public string lpProvider;
+    }
+
+    [DllImport("mpr.dll", CharSet = CharSet.Unicode)]
+    static extern int WNetAddConnection2W(ref NETRESOURCE netResource, string password, string username, int flags);
+    [DllImport("mpr.dll", CharSet = CharSet.Unicode)]
+    static extern int WNetCancelConnection2W(string name, int flags, bool force);
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern void SHChangeNotify(int eventId, int flags, string item1, IntPtr item2);
+
+    static void RefreshExplorer(char letter)
+    {
+        try
+        {
+            const int SHCNE_DRIVEADD = 0x100, SHCNE_UPDATEITEM = 0x2000, SHCNF_PATHW = 0x5, SHCNF_FLUSH = 0x1000;
+            SHChangeNotify(SHCNE_DRIVEADD, SHCNF_PATHW | SHCNF_FLUSH, letter + ":\\", IntPtr.Zero);
+            SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSH, letter + ":\\", IntPtr.Zero);
+        }
+        catch
+        {
+        }
     }
 
     // ----- user actions (call off the UI thread) -----
@@ -312,11 +404,13 @@ internal static class PhoneMount
     public static PhoneStatus Connect(string secret, string manualAddress, char preferred)
     {
         secret = secret.Trim();
+        Log("connect: started (manual address " + ((manualAddress ?? "").Trim().Length > 0 ? "set" : "auto") + ", preferred " + preferred + ")");
         Settings.ManualAddress = (manualAddress ?? "").Trim();
         Settings.PreferredLetter = preferred == '\0' ? 'P' : preferred;
         string host; int port;
         if (!FindPhone(out host, out port))
         {
+            Log("connect: phone not found; code saved for later");
             // Save the code so it connects as soon as the phone shows up.
             Settings.Host = host ?? Settings.Host;
             PhoneCredentials.SaveOwnCopy(secret);
@@ -326,6 +420,7 @@ internal static class PhoneMount
             return PhoneStatus.PhoneNotFound;
         }
         AuthResult r = VerifyOnce(host, port, secret);
+        Log("connect: verify " + host + ":" + port + " -> " + r);
         if (r == AuthResult.BadCode)
         {
             SetStatus(PhoneStatus.CodeExpired);
@@ -337,10 +432,11 @@ internal static class PhoneMount
         PhoneCredentials.Save(host, secret);
         Settings.Enabled = true; Settings.Expired = false;
         verified = true; misses = 0;
-        bool mapped = Settings.Letter != '\0' && IsMapped(Settings.Letter, host, port);
-        if (!mapped) Settings.Letter = '\0';
+        if (Settings.Letter != '\0' && !IsMapped(Settings.Letter, host, port)) Settings.Letter = '\0';
         Settings.Save();
-        if (!mapped && !MapNow()) { SetStatus(PhoneStatus.PhoneNotFound); return PhoneStatus.PhoneNotFound; }
+        AuthResult m = MapNow();
+        if (m == AuthResult.BadCode) { MarkExpired(); return PhoneStatus.CodeExpired; }
+        if (m != AuthResult.Ok) { verified = false; misses = 1; SetStatus(PhoneStatus.PhoneNotFound); return PhoneStatus.PhoneNotFound; }
         SetStatus(PhoneStatus.Connected);
         return PhoneStatus.Connected;
     }
@@ -370,7 +466,10 @@ internal static class PhoneMount
         else
         {
             if (!string.IsNullOrEmpty(Settings.Host)) candidates.Add(new string[] { Settings.Host, Settings.Port.ToString() });
-            foreach (string ip in PhoneMountLogic.ParseAndroidPeers(TailscaleStatusJson()))
+            string ts = TailscaleStatusJson();
+            List<string> peers = PhoneMountLogic.ParseAndroidPeers(ts);
+            Log("discover: tailscale " + (ts == null ? "not available" : "ok") + ", online Android peers " + peers.Count);
+            foreach (string ip in peers)
             {
                 if (ip != Settings.Host) candidates.Add(new string[] { ip, PhoneMountLogic.DefaultPort.ToString() });
             }
@@ -378,8 +477,11 @@ internal static class PhoneMount
         foreach (string[] c in candidates)
         {
             int p = int.Parse(c[1]);
-            if (OptionsOk(c[0], p)) { host = c[0]; port = p; return true; }
+            int st = OptionsStatus(c[0], p);
+            Log("discover: OPTIONS " + c[0] + ":" + p + " -> " + (st < 0 ? "no answer" : st.ToString()));
+            if (st == 200) { host = c[0]; port = p; return true; }
         }
+        Log("discover: " + candidates.Count + " candidate(s), none answered");
         if (candidates.Count > 0) { host = candidates[0][0]; port = int.Parse(candidates[0][1]); }
         return false;
     }
@@ -413,7 +515,7 @@ internal static class PhoneMount
     }
 
     // Unauthenticated OPTIONS: no code is sent, so it can't count as a try.
-    static bool OptionsOk(string host, int port)
+    static int OptionsStatus(string host, int port)
     {
         try
         {
@@ -421,12 +523,22 @@ internal static class PhoneMount
             req.Method = "OPTIONS"; req.Timeout = 3000; req.Proxy = null; req.AllowAutoRedirect = false;
             using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
             {
-                return (int)res.StatusCode == 200 && res.Headers["DAV"] != null;
+                int code = (int)res.StatusCode;
+                if (code == 200 && res.Headers["DAV"] == null) return 299; // answered, but not WebDAV
+                return code;
             }
+        }
+        catch (WebException ex)
+        {
+            HttpWebResponse r = ex.Response as HttpWebResponse;
+            if (r == null) return -1;
+            int code = (int)r.StatusCode;
+            r.Close();
+            return code;
         }
         catch
         {
-            return false;
+            return -1;
         }
     }
 
@@ -461,7 +573,7 @@ internal static class PhoneMount
 
     // ----- drive mapping -----
 
-    static ICollection<char> UsedLetters()
+    static ICollection<char> UsedLetters(char ours)
     {
         HashSet<char> used = new HashSet<char>();
         foreach (string d in Environment.GetLogicalDrives()) if (d.Length > 0) used.Add(char.ToUpperInvariant(d[0]));
@@ -476,6 +588,7 @@ internal static class PhoneMount
         {
         }
         used.Add('A'); used.Add('B'); used.Add('C');
+        if (ours != '\0') used.Remove(char.ToUpperInvariant(ours));
         return used;
     }
 
@@ -498,7 +611,11 @@ internal static class PhoneMount
 
     static void Unmap(char letter, string host, int port)
     {
-        if (IsMapped(letter, host, port)) RunNet("use " + letter + ": /delete /y");
+        if (IsMapped(letter, host, port))
+        {
+            int rc = WNetCancelConnection2W(letter + ":", CONNECT_UPDATE_PROFILE, true);
+            Log("unmap " + letter + ": result " + rc);
+        }
         try
         {
             Registry.CurrentUser.DeleteSubKeyTree("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MountPoints2\\" + PhoneMountLogic.MountPointsKey(host, port), false);
@@ -519,26 +636,6 @@ internal static class PhoneMount
         }
         catch
         {
-        }
-    }
-
-    static int RunNet(string args)
-    {
-        try
-        {
-            ProcessStartInfo psi = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "net.exe"), args);
-            psi.UseShellExecute = false; psi.CreateNoWindow = true;
-            psi.RedirectStandardOutput = true; psi.RedirectStandardError = true;
-            using (Process p = Process.Start(psi))
-            {
-                p.StandardOutput.ReadToEnd(); p.StandardError.ReadToEnd();
-                if (!p.WaitForExit(60000)) { try { p.Kill(); } catch { } return -1; }
-                return p.ExitCode;
-            }
-        }
-        catch
-        {
-            return -1;
         }
     }
 }

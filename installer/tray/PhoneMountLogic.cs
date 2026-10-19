@@ -176,6 +176,29 @@ internal static class PhoneMountLogic
         return PhoneStep.Nothing;
     }
 
+    // WNetAddConnection2 result codes.
+    public static AuthResult ClassifyMapError(int win32)
+    {
+        if (win32 == 0) return AuthResult.Ok;
+        if (win32 == 1326 || win32 == 86 || win32 == 5 || win32 == 1244) return AuthResult.BadCode; // logon failure, bad password, denied, not authenticated
+        return AuthResult.Unreachable;
+    }
+
+    // 85 = ERROR_ALREADY_ASSIGNED, 1202 = ERROR_DEVICE_ALREADY_REMEMBERED
+    public static bool IsLetterBusy(int win32)
+    {
+        return win32 == 85 || win32 == 1202;
+    }
+
+    // Log-safe one-liner: never includes a secret, strips anything code-like.
+    public static string Scrub(string line)
+    {
+        if (line == null) return "";
+        string s = Regex.Replace(line, @"db_[A-Za-z0-9_\-]+", "db_***");
+        s = Regex.Replace(s, @"(?<![\d.])\d{6}(?![\d.])", "******");
+        return s.Replace("\r", " ").Replace("\n", " ");
+    }
+
     // Status after a verify attempt. A bad code stops everything.
     public static PhoneStatus AfterVerify(AuthResult r)
     {

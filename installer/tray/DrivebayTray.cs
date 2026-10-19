@@ -112,7 +112,7 @@ internal static class Program
         {
             if (e.Button == MouseButtons.Left) OpenDrivebay();
         };
-        PhoneMount.Log = Log;
+        PhoneMount.TrayLog = Log;
         PhoneMount.UiThread = sink;
         PhoneMount.Notify = delegate(string title, string text)
         {
