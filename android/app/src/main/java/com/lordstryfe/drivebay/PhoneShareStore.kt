@@ -9,6 +9,33 @@ import java.io.ByteArrayOutputStream
 
 data class SharedFolder(val uri: String, val name: String)
 
+/** Folder names for the tree URIs the system folder picker returns. Pure, so JVM tests cover it. */
+object PhoneShareNames {
+    /**
+     * Name from a tree document id such as "primary:DCIM/Camera" or "1234-ABCD:Download".
+     * The storage root itself ("primary:") becomes "Phone storage".
+     */
+    fun fromTreeDocumentId(documentId: String?): String {
+        if (documentId.isNullOrBlank()) return "Folder"
+        val path = documentId.substringAfter(':', documentId).trimEnd('/')
+        if (path.isBlank()) return if (documentId.startsWith("primary")) "Phone storage" else "SD card"
+        return clean(path.substringAfterLast('/'))
+    }
+
+    /** WebDAV top-level names must be unique and must not contain a slash. */
+    fun clean(raw: String): String {
+        val name = raw.replace('/', '_').replace('\\', '_').trim()
+        return if (name.isEmpty() || name == "." || name == "..") "Folder" else name
+    }
+
+    fun unique(name: String, taken: Collection<String>): String {
+        if (name !in taken) return name
+        var n = 2
+        while ("$name ($n)" in taken) n++
+        return "$name ($n)"
+    }
+}
+
 class PhoneShareStore(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -61,10 +88,17 @@ class DocumentPhoneStore(
     folders: List<SharedFolder>,
 ) : DavStore {
     private val roots: List<Pair<String, DocumentFile>> = folders.mapNotNull { folder ->
-        val doc = DocumentFile.fromTreeUri(context, Uri.parse(folder.uri)) ?: return@mapNotNull null
-        if (!doc.isDirectory) return@mapNotNull null
-        folder.name to doc
+        // A folder whose access was revoked (or that was deleted) is skipped, not fatal.
+        try {
+            val doc = DocumentFile.fromTreeUri(context, Uri.parse(folder.uri)) ?: return@mapNotNull null
+            if (!doc.isDirectory) return@mapNotNull null
+            folder.name to doc
+        } catch (_: Exception) {
+            null
+        }
     }
+
+    fun rootCount(): Int = roots.size
 
     override fun list(path: String): List<DavNode>? {
         if (path == "/") return roots.map { (name, _) -> DavNode("/$name", name, true, 0, 0) }

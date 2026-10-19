@@ -27,10 +27,18 @@ class PhoneDavServer(
             running.set(false)
             return
         }
+        var firstError: Exception? = null
         for (host in hosts) {
             val server = ServerSocket()
-            server.reuseAddress = true
-            server.bind(InetSocketAddress(host, port))
+            try {
+                server.reuseAddress = true
+                server.bind(InetSocketAddress(host, port))
+            } catch (e: Exception) {
+                runCatching { server.close() }
+                // One address can vanish (Wi-Fi drop, Tailscale reconnect). Keep the others.
+                if (firstError == null) firstError = e
+                continue
+            }
             sockets += server
             Thread({
                 while (running.get()) {
@@ -39,9 +47,13 @@ class PhoneDavServer(
                     } catch (_: Exception) {
                         break
                     }
-                    Thread({ handle(client) }, "drivebay-phone-dav").apply { isDaemon = true }.start()
+                    Thread({ runCatching { handle(client) } }, "drivebay-phone-dav").apply { isDaemon = true }.start()
                 }
             }, "drivebay-phone-dav-accept").apply { isDaemon = true }.start()
+        }
+        if (sockets.isEmpty()) {
+            running.set(false)
+            throw firstError ?: java.net.BindException("No address to share on")
         }
     }
 

@@ -9,58 +9,127 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.net.NetworkInterface
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Optional WebDAV server. Off until the user turns it on.
  * It binds only to Tailscale and private LAN addresses.
  */
 class PhoneShareService : Service() {
-    private var server: PhoneDavServer? = null
+    @Volatile private var server: PhoneDavServer? = null
+    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "drivebay-phone-share").apply { isDaemon = true } }
+    private val generation = AtomicInteger(0)
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopSharing()
-            stopSelf()
+            shutdown(null)
             return START_NOT_STICKY
         }
+        return try {
+            startSharing()
+        } catch (e: Exception) {
+            // Never take the whole app down from here. Record it and tell the screen.
+            CrashLog.record(this, "Phone-as-drive service start", e)
+            shutdown(friendlyError(e))
+            START_NOT_STICKY
+        }
+    }
+
+    private fun startSharing(): Int {
         val store = PhoneShareStore(this)
+        val hosts = runCatching { shareHosts() }.getOrDefault(emptyList())
+        // Started with startForegroundService(): call startForeground() before any early return,
+        // or Android kills the app with ForegroundServiceDidNotStartInTimeException.
+        val foregroundError = enterForeground(notification(hosts))
+        if (foregroundError != null) {
+            CrashLog.record(this, "Phone-as-drive startForeground", foregroundError)
+            // Usually Android refusing a start from the background. Keep the setting; the app retries when opened.
+            shutdown(friendlyError(foregroundError), keepEnabled = true)
+            return START_NOT_STICKY
+        }
         val hash = store.tokenHash()
         val folders = store.folders()
         if (!store.enabled() || hash == null || folders.isEmpty()) {
-            stopSharing()
-            stopSelf()
+            shutdown(null)
             return START_NOT_STICKY
         }
-        val hosts = shareHosts()
-        enterForeground(notification(hosts))
         if (hosts.isEmpty()) {
+            stopServer()
             broadcast(emptyList())
             return START_STICKY
         }
-        stopSharing()
-        val dav = PhoneDavServer(DocumentPhoneStore(this, folders), hash, PORT, hosts)
-        dav.start()
-        server = dav
-        broadcast(hosts)
+        val ticket = generation.incrementAndGet()
+        // Opening the folders and binding port 8780 happens off the main thread.
+        worker.execute { openServer(ticket, folders, hash, hosts) }
         return START_STICKY
     }
 
+    private fun openServer(ticket: Int, folders: List<SharedFolder>, hash: String, hosts: List<String>) {
+        if (ticket != generation.get()) return
+        var dav: PhoneDavServer? = null
+        try {
+            val docs = DocumentPhoneStore(this, folders)
+            if (docs.rootCount() == 0) throw FolderAccessException()
+            stopServer()
+            dav = PhoneDavServer(docs, hash, PORT, hosts)
+            dav.start()
+            if (ticket != generation.get()) {
+                dav.stop()
+                return
+            }
+            server = dav
+            broadcast(hosts)
+        } catch (e: Exception) {
+            dav?.stop()
+            CrashLog.record(this, "Phone-as-drive server start", e)
+            val message = friendlyError(e)
+            Handler(Looper.getMainLooper()).post { shutdown(message) }
+        }
+    }
+
     override fun onDestroy() {
-        stopSharing()
+        generation.incrementAndGet()
+        stopServer()
+        broadcast(emptyList())
+        worker.shutdownNow()
         super.onDestroy()
     }
 
-    private fun stopSharing() {
-        server?.stop()
+    private fun stopServer() {
+        val running = server
         server = null
-        broadcast(emptyList())
+        running?.stop()
     }
+
+    /** Stops sharing. With an error, sharing is switched off so it does not retry on every launch. */
+    private fun shutdown(error: String?, keepEnabled: Boolean = false) {
+        generation.incrementAndGet()
+        stopServer()
+        if (error != null && !keepEnabled) runCatching { PhoneShareStore(this).setEnabled(false) }
+        broadcast(emptyList(), error)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
+        }
+        stopSelf()
+    }
+
+    private fun friendlyError(e: Throwable): String = when (e) {
+        is FolderAccessException -> getString(R.string.phone_share_err_folder)
+        is java.net.BindException -> getString(R.string.phone_share_err_port, PORT)
+        is SecurityException -> getString(R.string.phone_share_err_permission)
+        else -> getString(R.string.phone_share_err_generic, e.javaClass.simpleName)
+    }
+
+    private class FolderAccessException : Exception("None of the chosen folders can be opened")
 
     private fun notification(hosts: List<String>): Notification {
         val manager = getSystemService(NotificationManager::class.java)
@@ -87,7 +156,8 @@ class PhoneShareService : Service() {
             .build()
     }
 
-    private fun enterForeground(notification: Notification) {
+    /** Returns the failure instead of throwing, so the caller can stop cleanly. */
+    private fun enterForeground(notification: Notification): Exception? = try {
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -95,15 +165,21 @@ class PhoneShareService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+        null
+    } catch (e: Exception) {
+        e
     }
 
-    private fun broadcast(hosts: List<String>) {
-        sendBroadcast(
-            Intent(ACTION_STATE).apply {
-                setPackage(packageName)
-                putExtra(EXTRA_HOSTS, hosts.joinToString(","))
-            },
-        )
+    private fun broadcast(hosts: List<String>, error: String? = null) {
+        runCatching {
+            sendBroadcast(
+                Intent(ACTION_STATE).apply {
+                    setPackage(packageName)
+                    putExtra(EXTRA_HOSTS, hosts.joinToString(","))
+                    if (error != null) putExtra(EXTRA_ERROR, error)
+                },
+            )
+        }
     }
 
     companion object {
@@ -112,6 +188,7 @@ class PhoneShareService : Service() {
         const val ACTION_STOP = "com.lordstryfe.drivebay.PHONE_SHARE_STOP"
         const val ACTION_STATE = "com.lordstryfe.drivebay.PHONE_SHARE_STATE"
         const val EXTRA_HOSTS = "hosts"
+        const val EXTRA_ERROR = "error"
         private const val CHANNEL = "phone_share"
         private const val NOTIFICATION_ID = 44
 
@@ -130,18 +207,22 @@ class PhoneShareService : Service() {
             return out.toList()
         }
 
-        fun start(context: Context) {
+        /** Returns null on success, or the reason it could not start. Never throws. */
+        fun start(context: Context): Exception? {
             val intent = Intent(context, PhoneShareService::class.java).apply { action = ACTION_START }
-            ContextCompat.startForegroundService(context, intent)
+            return try {
+                ContextCompat.startForegroundService(context, intent)
+                null
+            } catch (e: Exception) {
+                CrashLog.record(context, "Phone-as-drive startForegroundService", e)
+                e
+            }
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, PhoneShareService::class.java).apply { action = ACTION_STOP }
-            try {
-                ContextCompat.startForegroundService(context, intent)
-            } catch (_: Exception) {
-                context.stopService(Intent(context, PhoneShareService::class.java))
-            }
+            // stopService, not startForegroundService: a foreground start that never calls
+            // startForeground() is itself a crash on Android 8+.
+            runCatching { context.stopService(Intent(context, PhoneShareService::class.java)) }
         }
     }
 }

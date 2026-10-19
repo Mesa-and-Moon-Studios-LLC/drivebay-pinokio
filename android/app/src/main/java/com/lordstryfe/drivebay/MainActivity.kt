@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -147,6 +148,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             if (intent?.action == PhoneShareService.ACTION_STATE) {
+                intent.getStringExtra(PhoneShareService.EXTRA_ERROR)?.let { showPhoneShareError(it) }
                 renderPhoneShare(intent.getStringExtra(PhoneShareService.EXTRA_HOSTS))
                 return
             }
@@ -190,6 +192,9 @@ class MainActivity : AppCompatActivity() {
         shareBanner = findViewById(R.id.shareBanner)
         phoneShareBox = findViewById(R.id.phoneShareBox)
         renderPhoneShare()
+        if (CrashLog.hasUnseen(this)) {
+            Toast.makeText(this, R.string.error_log_new, Toast.LENGTH_LONG).show()
+        }
         migrateSingleServer()
         wifiOnlyLarge.isChecked = prefs.getBoolean(KEY_WIFI_ONLY, false)
         wifiOnlyLarge.setOnCheckedChangeListener { _, checked ->
@@ -367,7 +372,7 @@ class MainActivity : AppCompatActivity() {
         )
         DrivebayDownloadService.resumeIncomplete(this)
         refreshDownloadsUi()
-        if (phoneShare.enabled()) PhoneShareService.start(this)
+        if (phoneShare.enabled()) startPhoneShare()
     }
 
     override fun onResume() {
@@ -722,18 +727,37 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val uri = result.data?.data
             if (result.resultCode != RESULT_OK || uri == null) return@registerForActivityResult
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             try {
-                contentResolver.takePersistableUriPermission(uri, flags)
-            } catch (_: Exception) {
-                /* The picker still grants access for this session. */
+                addSharedFolder(uri)
+            } catch (e: Exception) {
+                CrashLog.record(this, "Adding a phone-as-drive folder", e)
+                showPhoneShareError(getString(R.string.phone_share_err_generic, e.javaClass.simpleName))
+                runCatching { renderPhoneShare() }
             }
-            val name = DocumentName(uri)
-            val next = phoneShare.folders().filterNot { it.uri == uri.toString() } + SharedFolder(uri.toString(), name)
-            phoneShare.setFolders(next)
-            renderPhoneShare()
-            if (phoneShare.enabled()) PhoneShareService.start(this)
         }
+
+    private fun addSharedFolder(uri: Uri) {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            contentResolver.takePersistableUriPermission(uri, flags)
+        } catch (_: Exception) {
+            /* The picker still grants access for this session. */
+        }
+        val others = phoneShare.folders().filterNot { it.uri == uri.toString() }
+        val name = PhoneShareNames.unique(folderName(uri), others.map { it.name })
+        phoneShare.setFolders(others + SharedFolder(uri.toString(), name))
+        renderPhoneShare()
+        if (phoneShare.enabled()) startPhoneShare()
+    }
+
+    private fun startPhoneShare() {
+        val error = PhoneShareService.start(this) ?: return
+        showPhoneShareError(getString(R.string.phone_share_err_generic, error.javaClass.simpleName))
+    }
+
+    private fun showPhoneShareError(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
 
     private fun renderPhoneShare(hostsCsv: String? = null) {
         phoneShareBox.removeAllViews()
@@ -759,7 +783,7 @@ class MainActivity : AppCompatActivity() {
                     return@setOnCheckedChangeListener
                 }
                 phoneShare.setEnabled(checked)
-                if (checked) PhoneShareService.start(this@MainActivity) else PhoneShareService.stop(this@MainActivity)
+                if (checked) startPhoneShare() else PhoneShareService.stop(this@MainActivity)
                 renderPhoneShare()
             }
         }
@@ -786,6 +810,13 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { revealNewToken() }
         }
         phoneShareBox.addView(token)
+        val errorLog = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.error_log_title)
+            isAllCaps = false
+            setTextColor(0xFFE8EEF7.toInt())
+            setOnClickListener { showErrorLog() }
+        }
+        phoneShareBox.addView(errorLog)
         phoneShare.folders().forEach { folder ->
             phoneShareBox.addView(TextView(this).apply {
                 text = folder.name
@@ -823,18 +854,52 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 if (phoneShare.folders().isNotEmpty()) {
                     phoneShare.setEnabled(true)
-                    PhoneShareService.start(this)
+                    startPhoneShare()
                 }
                 renderPhoneShare()
             }
             .show()
     }
 
-    private fun DocumentName(uri: Uri): String {
-        val queried = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
+    /**
+     * The folder picker returns a tree URI (content://.../tree/primary%3ADCIM). Querying a tree URI
+     * directly throws UnsupportedOperationException ("Unsupported Uri"), which crashed 3.34.0 right
+     * after a folder was picked. Ask about the tree's root document instead, and never throw.
+     */
+    private fun folderName(treeUri: Uri): String {
+        val docId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+        val queried = runCatching {
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId ?: return@runCatching null)
+            contentResolver.query(docUri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+        }.getOrNull()
+        if (!queried.isNullOrBlank()) return PhoneShareNames.clean(queried)
+        return PhoneShareNames.fromTreeDocumentId(docId ?: treeUri.lastPathSegment)
+    }
+
+    private fun showErrorLog() {
+        val log = CrashLog.read(this)
+        val builder = AlertDialog.Builder(this)
+            .setTitle(R.string.error_log_title)
+            .setMessage(log ?: getString(R.string.error_log_empty))
+            .setNegativeButton(android.R.string.cancel, null)
+        if (log != null) {
+            builder.setPositiveButton(R.string.error_log_share) { _, _ ->
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "Drivebay error log")
+                    putExtra(Intent.EXTRA_TEXT, log)
+                }
+                try {
+                    startActivity(Intent.createChooser(send, getString(R.string.error_log_share)))
+                } catch (_: ActivityNotFoundException) {
+                    Toast.makeText(this, R.string.error_log_empty, Toast.LENGTH_SHORT).show()
+                }
+            }
+            builder.setNeutralButton(R.string.error_log_clear) { _, _ -> CrashLog.clear(this) }
         }
-        return queried?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment?.substringAfter(':')?.substringAfterLast('/') ?: "Folder"
+        builder.show()
     }
 
     private fun chosenUris(resultCode: Int, data: Intent?): List<Uri>? {
