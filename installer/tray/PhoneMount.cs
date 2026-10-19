@@ -83,7 +83,7 @@ internal static class PhoneCredentials
         return Write(CRED_TYPE_GENERIC, GenericTarget, PhoneMountLogic.User, secret);
     }
 
-    // 3.36.0-test also wrote a Domain credential for the host. Remove it only
+    // Early test builds also wrote a Domain credential for the host. Remove it only
     // when it is ours (user "drivebay"); never touch other credentials.
     static void DeleteOldDomainCredential(string host)
     {

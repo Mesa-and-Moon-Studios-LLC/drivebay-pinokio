@@ -7,7 +7,7 @@
 !include "WinMessages.nsh"
 
 !ifndef VERSION
-  !define VERSION "3.36.1-test"
+  !define VERSION "3.36.1"
 !endif
 !ifndef VERSION4
   !define VERSION4 "3.36.1.0"
@@ -105,10 +105,20 @@ Function .onInit
   StrCpy $DesktopShortcut "1"
   StrCpy $StartWithWindows "0"
   SetShellVarContext current
+  Call StopAllDrivebay
   Call DetectUpdate
   ${If} $Update != "1"
     Call SuggestFreePort
   ${EndIf}
+FunctionEnd
+
+; Stops every Drivebay tray/launcher/server (any copy) so the saved port is
+; free before a port is chosen. Runs before port detection and again at install.
+Function StopAllDrivebay
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\stop-drivebay-all.ps1" "windows\stop-drivebay-all.ps1"
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\stop-drivebay-all.ps1"'
+  Pop $0
 FunctionEnd
 
 Function DigitsOnly
@@ -127,6 +137,21 @@ Function DigitsOnly
 FunctionEnd
 
 Function SuggestFreePort
+  ; Keep a saved port (left by any earlier copy) instead of picking a new one.
+  IfFileExists "$LOCALAPPDATA\Drivebay\drivebay.port" 0 suggest_scan
+    FileOpen $R9 "$LOCALAPPDATA\Drivebay\drivebay.port" r
+    FileRead $R9 $Port
+    FileClose $R9
+    Call DigitsOnly
+    ${If} $Port != ""
+    ${AndIf} $Port >= 1024
+    ${AndIf} $Port <= 65535
+      ${If} $Port < 42000
+      ${OrIf} $Port > 42999
+        Return
+      ${EndIf}
+    ${EndIf}
+  suggest_scan:
   nsExec::ExecToStack 'powershell.exe -NoProfile -NonInteractive -Command "$$found=0; for ($$n=0; $$n -le 128; $$n++) { $$cand=8765+$$n; if ($$cand -ge 42000 -and $$cand -le 42999) { continue }; if ($$cand -gt 65535) { break }; $$busy=$$false; try { $$c=New-Object System.Net.Sockets.TcpClient; $$a=$$c.BeginConnect([System.Net.IPAddress]::Loopback,$$cand,$$null,$$null); if ($$a.AsyncWaitHandle.WaitOne(200,$$false)) { try { $$c.EndConnect($$a); if ($$c.Connected) { $$busy=$$true } } catch {} }; $$c.Close() } catch {}; if (-not $$busy) { try { $$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,$$cand); $$l.Start(); $$l.Stop() } catch { $$busy=$$true } }; if (-not $$busy) { $$found=$$cand; break } }; if ($$found -lt 1024) { for ($$n=0; $$n -le 128; $$n++) { $$cand=18080+$$n; $$busy=$$false; try { $$c=New-Object System.Net.Sockets.TcpClient; $$a=$$c.BeginConnect([System.Net.IPAddress]::Loopback,$$cand,$$null,$$null); if ($$a.AsyncWaitHandle.WaitOne(200,$$false)) { try { $$c.EndConnect($$a); if ($$c.Connected) { $$busy=$$true } } catch {} }; $$c.Close() } catch {}; if (-not $$busy) { try { $$l=New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Any,$$cand); $$l.Start(); $$l.Stop() } catch { $$busy=$$true } }; if (-not $$busy) { $$found=$$cand; break } } }; if ($$found -lt 1024) { $$found=8765 }; $$utf8=New-Object System.Text.UTF8Encoding $$false; [System.IO.File]::WriteAllText((Join-Path $$env:TEMP drivebay-suggested-port.txt), ([string]$$found), $$utf8); exit 0"'
   Pop $0
   Pop $1
@@ -606,10 +631,10 @@ Section "Install"
     Pop $0
     nsExec::ExecToLog '"$INSTDIR\runtime\node.exe" "$INSTDIR\launcher.mjs" --stop'
     Pop $0
-    nsExec::ExecToLog 'taskkill.exe /IM DrivebayTray.exe /F'
-    Pop $0
-    Sleep 400
   ${EndIf}
+  DetailPrint "Stopping any running Drivebay (including older copies)."
+  Call StopAllDrivebay
+  Sleep 400
 
   SetOutPath "$INSTDIR"
   File /r "staging\*.*"
