@@ -722,7 +722,7 @@ function Read-DrivebayVersion([string]$Source) {
   $file = Join-Path $Source "VERSION.txt"
   if (Test-Path -LiteralPath $file) {
     $line = Get-Content -LiteralPath $file -TotalCount 1
-    if ($line -match "(\d+\.\d+)") { return $Matches[1] }
+    if ($line -match "(\d+\.\d+(\.\d+)?)") { return $Matches[1] }
   }
   return "3.36.1"
 }
