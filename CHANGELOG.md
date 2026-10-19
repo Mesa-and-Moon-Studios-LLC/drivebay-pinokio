@@ -2,10 +2,22 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.36.2
+- macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
+- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `unix/uninstall.sh` also stops a leftover server.
+- Desktop update checks read `version-manifest.json` from the latest GitHub release. A version below `minimum` must update. A missing file or a failed request leaves Drivebay running. The Windows tray adds Check for updates.
+- The Windows installer and the server report 3.36.2. `/api/health` returns `version` 3.36.2. Windows behavior is the same as 3.36.1.
+
 ## 3.36.1
 - New in the Windows tray: Connect my phone. Type the 6-digit code from the Android app once; Drivebay finds the phone over Tailscale (online Android peers answering WebDAV on port 8780), checks the code with one request, keeps it only in Windows Credential Manager, and maps the phone with WNetAddConnection2 as "Drivebay Phone" on P: or the next free letter. It rechecks every 30 seconds (backing off to 5 minutes while the phone is away) and reconnects. A refused code stops all retries, removes the mapping and saved code, and asks for a new code. "Unmount and forget phone" removes the drive, label, and saved code. Advanced lets you set the address and drive letter. Logs go to `%LOCALAPPDATA%\Drivebay\phone-mount.log` with secrets masked.
 - The installer stops every running Drivebay tray, launcher, and server for the user, including older copies in `%LOCALAPPDATA%\Drivebay`, before it chooses a port, and keeps a saved port. An old copy left running could make setup move to another port.
 - The Windows installer and the server report 3.36.1. `/api/health` returns `version` 3.36.1. The release files are `Drivebay-Setup-3.36.1.exe` and `drivebay-server-win-x64.zip`.
+
+## 3.36 (not released; folded into 3.36.2)
+- The Windows installer and the server report 3.36. `/api/health` returns `version` 3.36. The release files are `Drivebay-Setup-3.36.exe`, `drivebay-server-win-x64.zip`, and the macOS and Linux tarballs `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, `drivebay-server-linux-x64.tar.gz`, and `drivebay-server-linux-arm64.tar.gz`.
+- macOS and Linux use `installer/unix/install.sh` for the first-run mode, port, and password, a login item (LaunchAgent or systemd user service), and `uninstall.sh`. The Mac archive is unsigned. `sign-mac.sh` signs only when `DRIVEBAY_CODESIGN_IDENTITY` is set.
+- Desktop update checks read `version-manifest.json` from the latest GitHub release. A running version below `minimum` is required to update. A missing file or a failed request leaves Drivebay running.
+- Android app 3.34.0 (versionCode 33400). The repo was 3.33.0. Google Play 3.33.4 (versionCode 33304) added the in-app update gate outside this repo; that gate is now in the tree, with the upload fix, the paused-downloads list, edge-to-edge insets, and phone-as-drive. Release signing stays on Aaron's PC. No APK is attached.
 
 ## 3.35
 - The web UI makes no third-party requests. Instrument Sans and IBM Plex Mono are self-hosted under `app/public/fonts/` (SIL OFL), replacing the Google Fonts stylesheet. The `og.grok.me` card meta and the injected `grok.com/grok-app-builder/extensions.js` script are removed.

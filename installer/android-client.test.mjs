@@ -11,10 +11,13 @@ function read(rel) {
   return fs.readFileSync(path.join(android, rel), "utf8");
 }
 
-test("android wrapper is version 3.33.0 and ignores secrets", () => {
+test("android wrapper is version 3.34.0 and ignores secrets", () => {
   const gradle = read("app/build.gradle.kts");
-  assert.match(gradle, /versionCode = 33/);
-  assert.match(gradle, /versionName = "3\.33\.0"/);
+  assert.match(gradle, /applicationId = "com\.mesaandmoon\.drivebay"/);
+  assert.match(gradle, /versionCode = 33400/);
+  assert.match(gradle, /versionName = "3\.34\.0"/);
+  assert.equal(gradle.includes("signingConfigs"), false);
+  assert.equal(gradle.includes("storePassword"), false);
   assert.equal(fs.existsSync(path.join(android, "gradlew")), true);
   const ignore = read(".gitignore");
   assert.match(ignore, /local\.properties/);
@@ -73,4 +76,16 @@ test("android download, tailscale, back, and port behavior is present", () => {
   const browser = fs.readFileSync(path.join(root, "app/src/components/browser/app.tsx"), "utf8");
   assert.match(browser, /DrivebayNative/);
   assert.match(browser, /__drivebayAndroidBack/);
+  assert.match(browser, /pickUpload/);
+  assert.match(main, /fun pickUpload/);
+  assert.match(main, /enableEdgeToEdge/);
+  assert.match(main, /WindowInsetsCompat/);
+  assert.match(main, /AppUpdateGate\.attach/);
+  assert.match(main, /DownloadsList/);
+  assert.match(service, /ACTION_JOBS_CHANGED/);
+  assert.match(manifest, /PhoneShareService/);
+  assert.match(manifest, /FOREGROUND_SERVICE_SPECIAL_USE/);
+  const policy = fs.readFileSync(path.join(root, "server/drivebay/version.json"), "utf8");
+  assert.match(policy, /"minVersionCode": 33400/);
+  assert.match(policy, /"latestVersionCode": 33400/);
 });

@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.1.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.2.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.36.1** — see [Changelog](#changelog) below.
+Current version: **3.36.2** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.36.1.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.36.2.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.1` to publish that file on the release. Pull requests also upload the installer as a build artifact.
+Push a version tag such as `v3.36.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -53,7 +53,7 @@ The password lock is unchanged: drives stay behind that login. Uninstall stops t
 
 Tailscale and public addresses use the same plain-HTTP sign-in rules Pinokio already uses, so the login form works from a tailnet address. That does not turn the lock off.
 
-If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.35`.
+If Drivebay is already installed, the .exe runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for the port, username, password, or Tailscale. It starts Drivebay again, checks `/api/health`, and the finish page says `Drivebay updated to 3.36`.
 
 Your username and password are stored in a `data` folder next to the app. **Update does not delete them.**
 
@@ -81,7 +81,7 @@ A first-time install asks for the same choices as the .exe installer:
 4. **Router** (Regular and Both). After the port, setup prints this PC's local IP and, when it can, the public IP. Log in to the router (usually `http://192.168.0.1` or `http://192.168.1.1`), forward TCP that port to the local IP, and give this PC a reserved or static DHCP address. From outside the network, open `http://<public-ip>:<port>/`. Some ISPs use CGNAT and block this. Tailscale is the easy fallback. Use a strong password. Type YES to continue. Tailscale-only skips this page. The same steps are on this PC's settings page while Regular or Both mode is on. In Both, public access starts off.
 5. **Password.** The only username and password (at least 8 characters). The password is saved as UTF-8 in `%LOCALAPPDATA%\Drivebay\pending-account.json`, the same file the .exe installer writes. The first launch signs in with that account. It does not ask you to create it again.
 
-If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.35`.
+If Drivebay is already installed (`config.json`, or a saved port plus the account or `data` folder), the script runs an update. It stops Drivebay, replaces the program files, and keeps the account, password, mode, and settings. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. A port check during the update ignores this Drivebay if it still holds its own port. After restart it checks `/api/health`. The last line is `Drivebay updated to 3.36`. Once a release is published, an older Drivebay must update. The check reads `version-manifest.json` on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
 
 To wipe the saved account and run a first-time install, set `DRIVEBAY_UNINSTALL_FORCE=1` before the install command.
 
@@ -113,6 +113,26 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1 -Force
 `-KeepData` leaves the account and settings. `-Force` deletes them without asking. With `irm | iex`, set `DRIVEBAY_UNINSTALL_KEEP_DATA=1` or `DRIVEBAY_UNINSTALL_FORCE=1` before the command. The last line is `Drivebay is uninstalled.`
 
 Search: type in the search box and press Enter (or Ctrl/Cmd+K). It looks through the current folder and its subfolders. Hidden folders follow the eye toggle.
+
+## Install on macOS or Linux
+
+Each release has an unsigned tarball per platform: `drivebay-server-darwin-arm64.tar.gz` (Apple silicon Mac), `drivebay-server-darwin-x64.tar.gz` (Intel Mac), `drivebay-server-linux-x64.tar.gz`, and `drivebay-server-linux-arm64.tar.gz`. Node is included.
+
+1. Download the tarball for this computer from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest).
+2. Unpack it: `mkdir drivebay && tar -xzf drivebay-server-*.tar.gz -C drivebay && cd drivebay`
+3. macOS only: the build is unsigned, so clear the download quarantine once: `xattr -dr com.apple.quarantine .`
+4. Run `bash unix/install.sh`. It asks for Tailscale, Tailscale + Local, or Regular mode, a port (8765), a username, and a password of at least 8 characters. Linux starts a systemd user service. macOS starts a LaunchAgent. Both start Drivebay at login. Without a login item it starts Drivebay in the background.
+5. Open `http://127.0.0.1:<port>/settings` on this computer.
+
+To update, run `bash unix/install.sh` from a newer tarball. It keeps the account, port, and settings and ends with `Drivebay updated to <version>`. Stop with `~/.local/bin/drivebay --stop`.
+
+`bash ~/.local/share/drivebay/program/uninstall.sh` removes the program, the command, and the login item. It asks before deleting the account. `DRIVEBAY_UNINSTALL_KEEP_DATA=1` keeps the account. `DRIVEBAY_UNINSTALL_FORCE=1` deletes it without asking.
+
+Signing and notarization stay off until `DRIVEBAY_CODESIGN_IDENTITY` and `DRIVEBAY_NOTARY_PROFILE` are set. `unix/sign-mac.sh` prints those steps and does not embed a key.
+
+## Mount a phone as a drive
+
+The Android app can share folders you pick as a WebDAV drive on Tailscale or the local network. It is off until you turn it on. On Windows, the tray menu has **Connect my phone…**. Settings on this PC has the same form. See [docs/phone-as-drive.md](docs/phone-as-drive.md) for Windows, macOS, and Linux.
 
 ## After it is running
 
@@ -199,7 +219,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.1.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2.
 
 Paste this in PowerShell:
 
@@ -207,7 +227,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.1. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.2. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -296,10 +316,22 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 
 ## Changelog
 
+### 3.36.2
+- macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
+- `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `unix/uninstall.sh` also stops a leftover server.
+- Desktop update checks read `version-manifest.json` from the latest GitHub release. A version below `minimum` must update. A missing file or a failed request leaves Drivebay running. The Windows tray adds Check for updates.
+- The Windows installer and the server report 3.36.2. `/api/health` returns `version` 3.36.2. Windows behavior is the same as 3.36.1.
+
 ### 3.36.1
 - New in the Windows tray: Connect my phone. Type the 6-digit code from the Android app once; Drivebay finds the phone over Tailscale (online Android peers answering WebDAV on port 8780), checks the code with one request, keeps it only in Windows Credential Manager, and maps the phone with WNetAddConnection2 as "Drivebay Phone" on P: or the next free letter. It rechecks every 30 seconds (backing off to 5 minutes while the phone is away) and reconnects. A refused code stops all retries, removes the mapping and saved code, and asks for a new code. "Unmount and forget phone" removes the drive, label, and saved code. Advanced lets you set the address and drive letter. Logs go to `%LOCALAPPDATA%\Drivebay\phone-mount.log` with secrets masked.
 - The installer stops every running Drivebay tray, launcher, and server for the user, including older copies in `%LOCALAPPDATA%\Drivebay`, before it chooses a port, and keeps a saved port. An old copy left running could make setup move to another port.
 - The Windows installer and the server report 3.36.1. `/api/health` returns `version` 3.36.1. The release files are `Drivebay-Setup-3.36.1.exe` and `drivebay-server-win-x64.zip`.
+
+### 3.36 (not released; folded into 3.36.2)
+- The Windows installer and the server report 3.36. `/api/health` returns version 3.36. Download [Drivebay-Setup-3.36.exe](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.exe) after that release is published.
+- macOS (arm64 and x64) and Linux (x64 and arm64) tarballs are built in GitHub Actions. `unix/install.sh` asks for the mode, port, and password, starts Drivebay at login, and `unix/uninstall.sh` removes it. The Mac build is unsigned. `unix/sign-mac.sh` is the later signing hook.
+- A published release can require an update. Drivebay reads `version-manifest.json` on the latest GitHub release. A version below `minimum` must update. If GitHub cannot be read, Drivebay keeps running.
+- Android app 3.34.0 (versionCode 33400, `com.mesaandmoon.drivebay`) includes the 3.33.4 Play update gate, a phone-to-PC upload fix, a paused-downloads list, edge-to-edge insets, and an optional phone-as-drive WebDAV share. This release does not attach an APK.
 
 ### 3.35
 - The web UI no longer loads anything from other sites. Fonts (Instrument Sans and IBM Plex Mono) ship with Drivebay, and the Google Fonts stylesheet, the og.grok.me preview image, and the injected grok.com banner script are gone.

@@ -172,6 +172,19 @@ internal static class Program
 
         openWhenReady = !background;
         StartServer(true);
+        Thread updateThread = new Thread(delegate()
+        {
+            Thread.Sleep(4000);
+            try
+            {
+                sink.BeginInvoke((MethodInvoker)delegate { CheckForUpdates(false); });
+            }
+            catch
+            {
+            }
+        });
+        updateThread.IsBackground = true;
+        updateThread.Start();
         Application.Run();
     }
 
@@ -255,8 +268,11 @@ internal static class Program
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(phoneItem);
         menu.Items.Add(new ToolStripSeparator());
+        ToolStripMenuItem updateItem = new ToolStripMenuItem("Check for updates");
+        updateItem.Click += delegate { CheckForUpdates(true); };
         menu.Items.Add(logsItem);
         menu.Items.Add(startupItem);
+        menu.Items.Add(updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(resetItem);
         menu.Items.Add(quitItem);
@@ -509,6 +525,66 @@ internal static class Program
         if (a == 192 && b == 168) return true;
         if (a == 172 && b >= 16 && b <= 31) return true;
         return false;
+    }
+
+    static void CheckForUpdates(bool interactive)
+    {
+        string node = Path.Combine(InstallDir(), "runtime", "node.exe");
+        string script = Path.Combine(InstallDir(), "update-policy.mjs");
+        if (File.Exists(node) && File.Exists(script))
+        {
+            try
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = node;
+                info.Arguments = "\"" + script + "\"";
+                info.UseShellExecute = false;
+                info.CreateNoWindow = true;
+                info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
+                info.EnvironmentVariables["DRIVEBAY_VERSION_FILE"] = Path.Combine(InstallDir(), "VERSION.txt");
+                Process process = Process.Start(info);
+                if (!process.WaitForExit(20000)) process.Kill();
+            }
+            catch
+            {
+                if (interactive) MessageBox.Show("Drivebay could not reach GitHub. It will keep running.", "Drivebay");
+                return;
+            }
+        }
+        string action = "";
+        string message = "";
+        string url = "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest";
+        try
+        {
+            string raw = File.ReadAllText(Path.Combine(HomeDir(), "update-status.json"));
+            Match actionMatch = Regex.Match(raw, "\"action\"\\s*:\\s*\"(required|optional|none)\"");
+            if (actionMatch.Success) action = actionMatch.Groups[1].Value;
+            Match messageMatch = Regex.Match(raw, "\"message\"\\s*:\\s*\"([^\"]*)\"");
+            if (messageMatch.Success) message = messageMatch.Groups[1].Value;
+            Match urlMatch = Regex.Match(raw, "\"url\"\\s*:\\s*\"([^\"]*)\"");
+            if (urlMatch.Success && urlMatch.Groups[1].Value.Length > 0) url = urlMatch.Groups[1].Value.Replace("\\/", "/");
+        }
+        catch
+        {
+            if (interactive) MessageBox.Show("Drivebay could not reach GitHub. It will keep running.", "Drivebay");
+            return;
+        }
+        if (action == "required")
+        {
+            MessageBox.Show(message.Length == 0 ? "This version of Drivebay is out of date. Install the latest release to keep using it." : message, "Drivebay update required");
+            try { Process.Start(url); } catch { }
+            return;
+        }
+        if (action == "optional" && interactive)
+        {
+            MessageBox.Show("A newer Drivebay release is available.", "Drivebay");
+            try { Process.Start(url); } catch { }
+            return;
+        }
+        if (interactive && action != "required")
+        {
+            MessageBox.Show("Drivebay is up to date.", "Drivebay");
+        }
     }
 
     static void CopyAddress()
