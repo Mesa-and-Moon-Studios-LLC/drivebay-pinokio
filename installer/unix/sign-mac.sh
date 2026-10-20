@@ -8,9 +8,11 @@ set -euo pipefail
 TARGET="${1:-}"
 if [[ -z "${DRIVEBAY_CODESIGN_IDENTITY:-}" ]]; then
   echo "Drivebay for Mac is unsigned."
-  echo "If Gatekeeper blocks the folder, right-click it and choose Open, or run:"
-  echo "  xattr -dr com.apple.quarantine /path/to/drivebay"
-  echo "To sign a later build: DRIVEBAY_CODESIGN_IDENTITY='Developer ID Application: Mesa and Moon Studios LLC' bash installer/unix/sign-mac.sh <folder>"
+  echo "If macOS says it cannot be opened, right-click Drivebay and choose Open, then click Open."
+  echo "Or run: xattr -dr com.apple.quarantine /Applications/Drivebay.app"
+  echo "The same command works on an unpacked tarball folder."
+  echo "Release signing uses APPLE_CERTIFICATE and APPLE_CERTIFICATE_PASSWORD (see installer/macos/sign-dmg.sh)."
+  echo "To sign a folder locally: DRIVEBAY_CODESIGN_IDENTITY='Developer ID Application: Mesa and Moon Studios LLC' bash installer/unix/sign-mac.sh <folder>"
   exit 0
 fi
 

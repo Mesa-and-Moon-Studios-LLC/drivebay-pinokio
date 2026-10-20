@@ -1,7 +1,10 @@
 Drivebay 3.36.2: Mac and Linux
 
-- New: Drivebay for macOS and Linux. Download the tarball for your computer (darwin-arm64 for Apple silicon Macs, darwin-x64 for Intel Macs, linux-x64 or linux-arm64), unpack it, and run: bash unix/install.sh
+- New: macOS disk images. Download Drivebay-3.36.2-arm64.dmg (Apple silicon) or Drivebay-3.36.2-x64.dmg (Intel). Open the image, drag Drivebay to Applications, and double-click it. Setup asks for the mode, port, username, and password, then installs a login item (LaunchAgent).
+- The disk image is not signed or notarized yet. If macOS says it cannot be opened, right-click Drivebay and choose Open, then click Open. Or run: xattr -dr com.apple.quarantine /Applications/Drivebay.app
+- The tarballs are still on this release: drivebay-server-darwin-arm64.tar.gz, drivebay-server-darwin-x64.tar.gz, drivebay-server-linux-x64.tar.gz, and drivebay-server-linux-arm64.tar.gz. Unpack one and run: bash unix/install.sh
   Setup asks for the mode, port, username, and password, then starts Drivebay at login (LaunchAgent on macOS, systemd user service on Linux). Remove it with: bash ~/.local/share/drivebay/program/uninstall.sh
-- macOS: the build is not signed yet. If macOS says it cannot be opened, run this once on the unpacked folder: xattr -dr com.apple.quarantine <folder>
+- version-manifest.json is still attached. Update checks keep reading that file. A missing file or a failed request leaves Drivebay running.
+- macOS tarball: the build is not signed yet. If macOS says it cannot be opened, right-click the folder and choose Open, or run this once on the unpacked folder: xattr -dr com.apple.quarantine <folder>
 - New: Drivebay checks the latest release for updates and tells you when one is available. The Windows tray adds "Check for updates".
 - Windows works the same as 3.36.1, including "Connect my phone".

@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## Unreleased
+- macOS disk images join the release next to the existing tarballs: `Drivebay-<version>-arm64.dmg` and `Drivebay-<version>-x64.dmg`. Each image contains Drivebay.app, an Applications shortcut, and a short readme. Double-click asks for the mode, port, username, and password, then installs the same LaunchAgent as `unix/install.sh`.
+- The disk image is unsigned until `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, and the `APPLE_NOTARY_*` secrets are set on the release workflow. If macOS says it cannot be opened, right-click Drivebay and choose Open, then click Open, or run `xattr -dr com.apple.quarantine /Applications/Drivebay.app`.
+- `version-manifest.json` and the darwin/linux tarballs stay on the release. Update checks still read `version-manifest.json`.
+
 ## 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
 - `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `drivebay --stop` and `unix/uninstall.sh` now also end a server that closed its port on SIGTERM but kept running.
