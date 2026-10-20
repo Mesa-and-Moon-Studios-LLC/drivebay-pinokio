@@ -47,13 +47,15 @@ bash unix/mount-phone.sh http://100.x.x.x:8780/
 
 The script asks for the token and runs `mount_webdav`. The folder is `~/DrivebayPhone`.
 
-The Mac server build is unsigned. If Gatekeeper blocks it, right-click the folder and choose Open, or run:
+The Mac server build is unsigned. If macOS says it cannot be opened, right-click Drivebay and choose Open, then click Open. The same step works on an unpacked tarball folder. Or run:
 
 ```
-xattr -dr com.apple.quarantine /path/to/the/unpacked/folder
+xattr -dr com.apple.quarantine /Applications/Drivebay.app
 ```
 
-`unix/sign-mac.sh` prints that and can `codesign` later when `DRIVEBAY_CODESIGN_IDENTITY` is set. Notarization is documented there and stays off until `DRIVEBAY_NOTARY_PROFILE` is set. No signing key is in this repository.
+On an unpacked tarball, run `xattr -dr com.apple.quarantine` on that folder instead.
+
+The disk image (`Drivebay-<version>-arm64.dmg` or `-x64.dmg`) installs that same server. `installer/macos/sign-dmg.sh` signs and notarizes when `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, and `APPLE_NOTARY_ISSUER_ID` are set. `unix/sign-mac.sh` can `codesign` a folder locally when `DRIVEBAY_CODESIGN_IDENTITY` is set. No signing key is in this repository.
 
 ## On Linux
 

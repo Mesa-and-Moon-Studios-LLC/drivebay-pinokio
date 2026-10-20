@@ -70,7 +70,7 @@ function stageCommon(dir) {
   const versionLine = fs.readFileSync(path.join(root, "VERSION.txt"), "utf8").split(/\r?\n/)[0];
   fs.writeFileSync(
     path.join(dir, "VERSION.txt"),
-    `${versionLine}\n\nmacOS and Linux server. Install with: bash unix/install.sh\nFull notes: README Changelog on GitHub.\n`,
+    `${versionLine}\n\nmacOS and Linux server. Install with: bash unix/install.sh\nmacOS disk images: Drivebay-<version>-arm64.dmg and Drivebay-<version>-x64.dmg.\nFull notes: README Changelog on GitHub.\n`,
   );
   fs.copyFileSync(path.join(root, "version-manifest.json"), path.join(dir, "version-manifest.json"));
   fs.copyFileSync(path.join(here, "node-version.txt"), path.join(dir, "node-version.txt"));

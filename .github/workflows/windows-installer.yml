@@ -5,12 +5,24 @@ on:
   push:
     tags:
       - "v*"
+  # scope macos-dmg builds the disk images and uploads them as artifacts.
+  # It does not publish a release. scope all also builds the Windows installer.
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "macos-dmg uploads disk images and does not publish a release. all also builds the Windows installer."
+        type: choice
+        options:
+          - macos-dmg
+          - all
+        default: macos-dmg
 
 permissions:
   contents: write
 
 jobs:
   installer:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.scope == 'all'
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -137,7 +149,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Unix installer tests
-        run: node --test installer/update-policy.test.mjs installer/phone-drive.test.mjs installer/unix-install.test.mjs installer/upload-fix.test.mjs
+        run: node --test installer/update-policy.test.mjs installer/phone-drive.test.mjs installer/unix-install.test.mjs installer/upload-fix.test.mjs installer/macos-dmg.test.mjs
 
       - name: Build production server
         working-directory: app
@@ -163,10 +175,49 @@ jobs:
             version-manifest.json
           if-no-files-found: error
 
-  # One job creates the release after both builds pass, so the two builds never race to create it.
+  # Wraps the darwin tarballs. Runs on pull requests and on workflow_dispatch so a
+  # disk image can be downloaded from the Actions artifact without publishing a release.
+  macos-dmg:
+    name: macOS disk image
+    needs: [unix]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Unix archives
+        uses: actions/download-artifact@v4
+        with:
+          name: Drivebay-Unix
+          path: unix-artifact
+
+      - name: Show Unix archives
+        run: find unix-artifact -type f -exec ls -lh {} +
+
+      - name: Package disk images
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          DRIVEBAY_DMG_REQUIRE_BOTH: "1"
+        run: bash installer/macos/package-dmg.sh unix-artifact
+
+      - name: Upload disk images
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drivebay-macOS-dmg
+          path: installer/dist/Drivebay-*.dmg
+          if-no-files-found: error
+
+  # One job creates the release after the builds pass, so the builds never race to create it.
+  # workflow_dispatch does not match this if, so a dry run cannot publish.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [installer, unix]
+    needs: [installer, unix, macos-dmg]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -194,5 +245,6 @@ jobs:
             release-files/**/drivebay-server-linux-arm64.tar.gz
             release-files/**/drivebay-server-darwin-arm64.tar.gz
             release-files/**/drivebay-server-darwin-x64.tar.gz
+            release-files/**/Drivebay-*.dmg
             release-files/**/version-manifest.json
           fail_on_unmatched_files: true

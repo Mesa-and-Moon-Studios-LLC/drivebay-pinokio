@@ -35,7 +35,7 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 Download **Drivebay-Setup-3.36.2.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.36.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way, and a macOS runner wraps the Mac archives into disk images. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -116,11 +116,27 @@ Search: type in the search box and press Enter (or Ctrl/Cmd+K). It looks through
 
 ## Install on macOS or Linux
 
-Each release has an unsigned tarball per platform: `drivebay-server-darwin-arm64.tar.gz` (Apple silicon Mac), `drivebay-server-darwin-x64.tar.gz` (Intel Mac), `drivebay-server-linux-x64.tar.gz`, and `drivebay-server-linux-arm64.tar.gz`. Node is included.
+### macOS disk image
+
+Each release has an unsigned disk image per Mac: `Drivebay-3.36.2-arm64.dmg` (Apple silicon) and `Drivebay-3.36.2-x64.dmg` (Intel). Node is included. Each Mac gets its own image because the Node runtime is built per architecture. The tarballs below stay on the release, and `version-manifest.json` stays the file update checks read.
+
+1. Download the disk image for this Mac from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest).
+2. Open it and drag Drivebay onto the Applications shortcut.
+3. The build is not signed or notarized yet. Right-click Drivebay in Applications and choose Open, then click Open. Or run `xattr -dr com.apple.quarantine /Applications/Drivebay.app`.
+4. Drivebay asks for Tailscale, Tailscale + Local, or Regular mode, a port (8765), a username, and a password of at least 8 characters. It installs a LaunchAgent so Drivebay starts when you log in.
+5. On this Mac, open `http://127.0.0.1:<port>/settings`.
+
+Open Drivebay again later to open settings. A newer disk image updates the program and keeps the account, port, and settings.
+
+The release workflow signs and notarizes when these secrets are set: `APPLE_CERTIFICATE` (base64 Developer ID Application `.p12`), `APPLE_CERTIFICATE_PASSWORD`, and for notarization `APPLE_NOTARY_KEY`, `APPLE_NOTARY_KEY_ID`, and `APPLE_NOTARY_ISSUER_ID`. `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID` are optional. No signing key is in this repository. `installer/macos/sign-dmg.sh` is the step that reads them.
+
+### Terminal archive (macOS or Linux)
+
+Each release also has an unsigned tarball per platform: `drivebay-server-darwin-arm64.tar.gz` (Apple silicon Mac), `drivebay-server-darwin-x64.tar.gz` (Intel Mac), `drivebay-server-linux-x64.tar.gz`, and `drivebay-server-linux-arm64.tar.gz`. Node is included.
 
 1. Download the tarball for this computer from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest).
 2. Unpack it: `mkdir drivebay && tar -xzf drivebay-server-*.tar.gz -C drivebay && cd drivebay`
-3. macOS only: the build is unsigned, so clear the download quarantine once: `xattr -dr com.apple.quarantine .`
+3. macOS only: the build is unsigned, so clear the download quarantine once. Right-click the folder and choose Open, or run `xattr -dr com.apple.quarantine .`
 4. Run `bash unix/install.sh`. It asks for Tailscale, Tailscale + Local, or Regular mode, a port (8765), a username, and a password of at least 8 characters. Linux starts a systemd user service. macOS starts a LaunchAgent. Both start Drivebay at login. Without a login item it starts Drivebay in the background.
 5. Open `http://127.0.0.1:<port>/settings` on this computer.
 
@@ -128,7 +144,7 @@ To update, run `bash unix/install.sh` from a newer tarball. It keeps the account
 
 `bash ~/.local/share/drivebay/program/uninstall.sh` removes the program, the command, and the login item. It asks before deleting the account. `DRIVEBAY_UNINSTALL_KEEP_DATA=1` keeps the account. `DRIVEBAY_UNINSTALL_FORCE=1` deletes it without asking.
 
-Signing and notarization stay off until `DRIVEBAY_CODESIGN_IDENTITY` and `DRIVEBAY_NOTARY_PROFILE` are set. `unix/sign-mac.sh` prints those steps and does not embed a key.
+A local folder can be signed with `DRIVEBAY_CODESIGN_IDENTITY`. `unix/sign-mac.sh` prints that step and does not embed a key.
 
 ## Mount a phone as a drive
 
@@ -315,6 +331,9 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### Unreleased
+- macOS disk images join the release next to the existing tarballs: `Drivebay-<version>-arm64.dmg` and `Drivebay-<version>-x64.dmg`. Double-click Drivebay.app to choose the mode, port, username, and password. It installs the same LaunchAgent as `unix/install.sh`. The image is unsigned until the `APPLE_*` release secrets are set. If macOS says it cannot be opened, right-click Drivebay and choose Open, then click Open, or run `xattr -dr com.apple.quarantine /Applications/Drivebay.app`. `version-manifest.json` and the tarballs stay on the release.
 
 ### 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.

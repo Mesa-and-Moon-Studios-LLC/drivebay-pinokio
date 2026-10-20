@@ -130,6 +130,12 @@ else
   say "If this version is below the published minimum, the update is required."
 fi
 
+# A disk image downloaded from the browser marks the payload with quarantine.
+# Clear it before the files are copied into the home directory.
+if [[ "$(uname -s)" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
+  xattr -dr com.apple.quarantine "$SOURCE" 2>/dev/null || true
+fi
+
 mkdir -p "$HOME_DIR/program" "$HOME_DIR/data" "$BIN_DIR"
 # Stop a running copy before its program files are replaced.
 if [[ "$existing" -eq 1 && -x "$BIN_DIR/drivebay" ]]; then
