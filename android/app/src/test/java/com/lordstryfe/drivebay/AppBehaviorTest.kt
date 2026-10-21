@@ -152,6 +152,24 @@ class PhoneShareLifecycleTest {
         assertEquals(30_000L, PhoneShareLifecycle.retryDelayMs(20))
     }
 
+    @Test fun addressInUseRetriesThenGivesUp() {
+        assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("Address already in use")))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("bind failed: EADDRINUSE (Address already in use)")))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(RuntimeException("start", java.net.BindException("Address already in use"))))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(ErrnoLike("bind failed", PhoneShareLifecycle.EADDRINUSE)))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(java.net.BindException("No address to share on")))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(ErrnoLike("network is down", 101)))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(null))
+        assertFalse(PhoneShareLifecycle.portInUseExhausted(0))
+        assertFalse(PhoneShareLifecycle.portInUseExhausted(PhoneShareLifecycle.PORT_IN_USE_TRIES - 1))
+        assertTrue(PhoneShareLifecycle.portInUseExhausted(PhoneShareLifecycle.PORT_IN_USE_TRIES))
+        assertEquals(5, PhoneShareLifecycle.PORT_IN_USE_TRIES)
+    }
+
+    private class ErrnoLike(message: String, private val errno: Int) : Exception(message) {
+        fun getErrno(): Int = errno
+    }
+
     @Test fun bannerSitsAboveTheList() {
         val top = ShareScreenLayout.listTop(statusBarInsetPx = 80, bannerHeightPx = 140, bannerVisible = true)
         assertEquals(220, top)
@@ -223,13 +241,13 @@ class PhoneDavRestartTest {
         val options = http(port, "OPTIONS / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         assertTrue(options.startsWith("HTTP/1.1 200"))
         assertTrue(options.contains("X-Drivebay-Phone: $peer"))
+        // A second instance must take the port from the first instead of failing EADDRINUSE.
         val busy = PhoneDavServer(store, hash, port, listOf("127.0.0.1"), peer)
-        try {
-            busy.start()
-            fail("expected BindException")
-        } catch (_: java.net.BindException) {
-        }
+        busy.start()
+        val taken = http(port, "OPTIONS / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        assertTrue(taken.startsWith("HTTP/1.1 200"))
         first.stop()
+        busy.stop()
         val second = PhoneDavServer(store, hash, port, listOf("127.0.0.1"), peer)
         var restarted = false
         var tries = 0

@@ -69,6 +69,7 @@
     <string name="upload_done">Uploaded to the PC</string>
     <string name="upload_failed">The upload did not finish</string>
     <string name="phone_share_err_folder">Drivebay can\'t open the chosen folders anymore. Choose them again.</string>
+    <string name="phone_share_port_retry">Port %1$d is busy. Trying again…</string>
     <string name="phone_share_err_port">Port %1$d is already in use on this phone. Phone sharing is off.</string>
     <string name="phone_share_err_permission">Android blocked phone sharing. Open Drivebay and try again.</string>
     <string name="phone_share_err_generic">Phone sharing couldn\'t start (%1$s). Details are in Error log.</string>

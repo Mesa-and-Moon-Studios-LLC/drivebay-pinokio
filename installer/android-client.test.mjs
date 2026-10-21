@@ -114,5 +114,10 @@ test("android download, tailscale, back, and port behavior is present", () => {
   assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneShareService.kt"), /Executors\.newSingleThreadExecutor/);
   assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneShareService.kt"), /CrashLog\.record/);
   assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneShareService.kt"), /bindMore/);
+  assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneShareService.kt"), /portInUseExhausted/);
+  assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneDavServer.kt"), /setReuseAddress\(true\)/);
+  const dav = read("app/src/main/java/com/lordstryfe/drivebay/PhoneDavServer.kt");
+  const openAt = dav.indexOf("private fun open");
+  assert.ok(dav.indexOf("setReuseAddress(true)", openAt) < dav.indexOf(".bind(", openAt));
   assert.match(main, /phone_share_whole/);
 });

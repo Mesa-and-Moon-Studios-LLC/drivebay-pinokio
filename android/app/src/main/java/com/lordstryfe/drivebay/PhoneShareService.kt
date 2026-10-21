@@ -36,10 +36,12 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class PhoneShareService : Service() {
     @Volatile private var server: PhoneDavServer? = null
+    private val serverLock = Any()
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "drivebay-phone-share").apply { isDaemon = true } }
     private val generation = AtomicInteger(0)
     private var servedKey: String? = null
     private var attempt = 0
+    private var portInUseFailures = 0
     @Volatile private var stopping = false
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var multicast: WifiManager.MulticastLock? = null
@@ -77,6 +79,7 @@ class PhoneShareService : Service() {
 
     private fun startSharing(): Int {
         stopping = false
+        portInUseFailures = 0
         val hosts = runCatching { shareHosts() }.getOrDefault(emptyList())
         // Started with startForegroundService(): call startForeground() before any early return,
         // or Android kills the app with ForegroundServiceDidNotStartInTimeException.
@@ -129,6 +132,7 @@ class PhoneShareService : Service() {
                 if (ticket != generation.get()) return
                 onMain {
                     attempt = 0
+                    portInUseFailures = 0
                     PhoneShareStore(this).setListening(bound)
                     broadcast(bound)
                     schedule(PhoneShareLifecycle.HEALTHY_POLL_MS)
@@ -144,7 +148,10 @@ class PhoneShareService : Service() {
                     PhoneShareStore(this).setListening(now)
                     broadcast(now)
                     enterForeground(notification(now))
-                    if (stillMissing.isEmpty()) attempt = 0 else attempt++
+                    if (stillMissing.isEmpty()) {
+                        attempt = 0
+                        portInUseFailures = 0
+                    } else attempt++
                     schedule(if (stillMissing.isEmpty()) PhoneShareLifecycle.HEALTHY_POLL_MS else PhoneShareLifecycle.retryDelayMs(attempt))
                 }
                 return
@@ -175,15 +182,21 @@ class PhoneShareService : Service() {
                 onMain { broadcast(listening) }
             }
             dav.start()
-            if (ticket != generation.get() || stopping) {
-                dav.stop()
-                return
-            }
-            server = dav
-            servedKey = key
             val listening = dav.boundHosts()
+            val published = synchronized(serverLock) {
+                if (ticket != generation.get() || stopping) {
+                    dav.stop()
+                    false
+                } else {
+                    server = dav
+                    servedKey = key
+                    true
+                }
+            }
+            if (!published) return
             onMain {
                 attempt = 0
+                portInUseFailures = 0
                 PhoneShareStore(this).setListening(listening)
                 broadcast(listening)
                 enterForeground(notification(listening))
@@ -191,12 +204,17 @@ class PhoneShareService : Service() {
             }
         } catch (e: Exception) {
             if (ticket != generation.get() || stopping) return
-            CrashLog.record(this, "Phone-as-drive server start", e)
-            if (e is FolderAccessException || e is AllFilesAccessException) {
-                val message = friendlyError(e)
-                onMain { shutdown(message) }
-            } else {
-                onMain { noteRetry() }
+            when {
+                e is FolderAccessException || e is AllFilesAccessException -> {
+                    CrashLog.record(this, "Phone-as-drive server start", e)
+                    val message = friendlyError(e)
+                    onMain { shutdown(message) }
+                }
+                PhoneShareLifecycle.isAddressInUse(e) -> onMain { notePortInUse(e) }
+                else -> {
+                    CrashLog.record(this, "Phone-as-drive server start", e)
+                    onMain { noteRetry() }
+                }
             }
         }
     }
@@ -224,6 +242,25 @@ class PhoneShareService : Service() {
         schedule(PhoneShareLifecycle.retryDelayMs(attempt))
     }
 
+    /**
+     * The previous listen socket, or another app, still has port 8780.
+     * Try a few times with backoff. Then turn sharing off and say why.
+     */
+    private fun notePortInUse(error: Exception) {
+        if (stopping) return
+        portInUseFailures++
+        PhoneShareStore(this).setListening(emptyList())
+        if (PhoneShareLifecycle.portInUseExhausted(portInUseFailures)) {
+            CrashLog.record(this, "Phone-as-drive port in use", error)
+            shutdown(getString(R.string.phone_share_err_port, PORT))
+            return
+        }
+        val detail = getString(R.string.phone_share_port_retry, PORT)
+        broadcast(emptyList(), detail = detail)
+        enterForeground(notification(emptyList(), detail))
+        schedule(PhoneShareLifecycle.retryDelayMs(portInUseFailures - 1))
+    }
+
     private fun schedule(delayMs: Long) {
         mainHandler.removeCallbacks(refreshRunnable)
         if (!stopping) mainHandler.postDelayed(refreshRunnable, delayMs)
@@ -234,10 +271,15 @@ class PhoneShareService : Service() {
     }
 
     override fun onDestroy() {
-        stopping = true
-        generation.incrementAndGet()
-        mainHandler.removeCallbacks(refreshRunnable)
-        stopServer()
+        synchronized(serverLock) {
+            stopping = true
+            generation.incrementAndGet()
+            mainHandler.removeCallbacks(refreshRunnable)
+            val running = server
+            server = null
+            servedKey = null
+            running?.stop()
+        }
         PhoneShareStore(this).setListening(emptyList())
         broadcast(emptyList())
         closeDiscovery()
@@ -253,17 +295,21 @@ class PhoneShareService : Service() {
     }
 
     private fun stopServer() {
-        val running = server
-        server = null
-        servedKey = null
-        running?.stop()
+        synchronized(serverLock) {
+            val running = server
+            server = null
+            servedKey = null
+            running?.stop()
+        }
     }
 
     /** Stops sharing. With an error the user must act on, sharing is switched off. */
     private fun shutdown(error: String?, keepEnabled: Boolean = false) {
-        stopping = true
-        generation.incrementAndGet()
-        mainHandler.removeCallbacks(refreshRunnable)
+        synchronized(serverLock) {
+            stopping = true
+            generation.incrementAndGet()
+            mainHandler.removeCallbacks(refreshRunnable)
+        }
         stopServer()
         if (error != null && !keepEnabled) runCatching { PhoneShareStore(this).setEnabled(false) }
         PhoneShareStore(this).setListening(emptyList())
@@ -376,7 +422,7 @@ class PhoneShareService : Service() {
         if (socket != null) runCatching { socket.close() }
     }
 
-    private fun notification(hosts: List<String>): Notification {
+    private fun notification(hosts: List<String>, status: String? = null): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(CHANNEL) == null) {
             manager.createNotificationChannel(
@@ -391,7 +437,9 @@ class PhoneShareService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val where = hosts.firstOrNull()?.let { "http://$it:$PORT/" } ?: getString(R.string.phone_share_reconnecting)
+        val where = status?.takeIf { it.isNotBlank() }
+            ?: hosts.firstOrNull()?.let { "http://$it:$PORT/" }
+            ?: getString(R.string.phone_share_reconnecting)
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(getString(R.string.phone_share_on))
@@ -415,13 +463,14 @@ class PhoneShareService : Service() {
         e
     }
 
-    private fun broadcast(hosts: List<String>, error: String? = null) {
+    private fun broadcast(hosts: List<String>, error: String? = null, detail: String? = null) {
         runCatching {
             sendBroadcast(
                 Intent(ACTION_STATE).apply {
                     setPackage(packageName)
                     putExtra(EXTRA_HOSTS, hosts.joinToString(","))
                     if (error != null) putExtra(EXTRA_ERROR, error)
+                    if (detail != null) putExtra(EXTRA_DETAIL, detail)
                 },
             )
         }
@@ -434,6 +483,7 @@ class PhoneShareService : Service() {
         const val ACTION_STATE = "com.lordstryfe.drivebay.PHONE_SHARE_STATE"
         const val EXTRA_HOSTS = "hosts"
         const val EXTRA_ERROR = "error"
+        const val EXTRA_DETAIL = "detail"
         private const val CHANNEL = "phone_share"
         private const val NOTIFICATION_ID = 44
 

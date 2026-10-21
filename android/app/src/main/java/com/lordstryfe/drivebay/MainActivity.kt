@@ -152,7 +152,10 @@ class MainActivity : AppCompatActivity() {
             }
             if (intent?.action == PhoneShareService.ACTION_STATE) {
                 intent.getStringExtra(PhoneShareService.EXTRA_ERROR)?.let { showPhoneShareError(it) }
-                renderPhoneShare(intent.getStringExtra(PhoneShareService.EXTRA_HOSTS))
+                renderPhoneShare(
+                    intent.getStringExtra(PhoneShareService.EXTRA_HOSTS),
+                    intent.getStringExtra(PhoneShareService.EXTRA_DETAIL),
+                )
                 return
             }
             if (intent?.action != DrivebayDownloadService.ACTION_FINISHED) return
@@ -763,7 +766,7 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
-    private fun renderPhoneShare(hostsCsv: String? = null) {
+    private fun renderPhoneShare(hostsCsv: String? = null, detail: String? = null) {
         phoneShareBox.removeAllViews()
         val toggle = CheckBox(this).apply {
             text = getString(R.string.phone_share_toggle)
@@ -865,8 +868,10 @@ class MainActivity : AppCompatActivity() {
             phoneShare.enabled() -> phoneShare.listeningHosts()
             else -> emptyList()
         }
+        val portBusy = phoneShare.enabled() && hosts.isEmpty() && !detail.isNullOrBlank()
         val status = when {
             !phoneShare.enabled() -> getString(R.string.phone_share_off)
+            portBusy -> detail
             hosts.isEmpty() -> getString(R.string.phone_share_reconnecting) + "\n" + getString(R.string.phone_share_waiting)
             else -> getString(R.string.phone_share_address, hosts.joinToString("  ") { "http://$it:${PhoneShareService.PORT}/" })
         }
@@ -884,13 +889,17 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(0, 12, 0, 0)
         })
-        shareBanner.text = PhoneShareLifecycle.bannerText(
-            getString(R.string.phone_share_on),
-            getString(R.string.phone_share_connected),
-            getString(R.string.phone_share_reconnecting),
-            hosts,
-            PhoneShareService.PORT,
-        )
+        shareBanner.text = if (portBusy) {
+            getString(R.string.phone_share_on) + "\n" + detail
+        } else {
+            PhoneShareLifecycle.bannerText(
+                getString(R.string.phone_share_on),
+                getString(R.string.phone_share_connected),
+                getString(R.string.phone_share_reconnecting),
+                hosts,
+                PhoneShareService.PORT,
+            )
+        }
         if (webView.visibility == View.VISIBLE) {
             shareBanner.visibility = if (phoneShare.enabled()) View.VISIBLE else View.GONE
         }

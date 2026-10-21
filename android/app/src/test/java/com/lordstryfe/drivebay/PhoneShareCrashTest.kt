@@ -72,6 +72,60 @@ class PhoneDavServerBindTest {
         }
     }
 
+    @Test fun stopClosesTheSocketAndASecondServerTakesThePort() {
+        val first = PhoneDavServer(MemoryDavStore(), "0".repeat(64), 0, listOf("127.0.0.1"))
+        first.start()
+        val port = first.port()
+        val second = PhoneDavServer(MemoryDavStore(), "0".repeat(64), port, listOf("127.0.0.1"))
+        second.start()
+        try {
+            Socket("127.0.0.1", port).use { socket ->
+                socket.getOutputStream().write("OPTIONS / HTTP/1.1\r\nHost: x\r\n\r\n".toByteArray())
+                val reply = socket.getInputStream().bufferedReader().readLine()
+                assertTrue(reply, reply.startsWith("HTTP/1.1 200"))
+            }
+            first.stop()
+            second.stop()
+            var freed = false
+            var last: Exception? = null
+            repeat(10) { n ->
+                try {
+                    ServerSocket().use { taken ->
+                        taken.reuseAddress = true
+                        taken.bind(java.net.InetSocketAddress("127.0.0.1", port))
+                    }
+                    freed = true
+                    return@repeat
+                } catch (e: BindException) {
+                    last = e
+                    Thread.sleep(20L * (n + 1))
+                }
+            }
+            if (!freed) throw last ?: BindException("port $port stayed busy after stop")
+        } finally {
+            first.stop()
+            second.stop()
+        }
+    }
+
+    @Test fun foreignHolderIsAddressInUseUntilItCloses() {
+        val port = freePort()
+        val holder = ServerSocket()
+        holder.reuseAddress = true
+        holder.bind(java.net.InetSocketAddress("127.0.0.1", port))
+        val server = PhoneDavServer(MemoryDavStore(), "0".repeat(64), port, listOf("127.0.0.1"))
+        try {
+            server.start()
+            fail("expected BindException")
+        } catch (e: BindException) {
+            assertTrue(e.toString(), PhoneShareLifecycle.isAddressInUse(e))
+        } finally {
+            holder.close()
+        }
+        server.start()
+        server.stop()
+    }
+
     @Test fun oneBadAddressDoesNotStopTheOthers() {
         val port = freePort()
         // 10.255.255.254 is private but not on this machine, so binding it fails.
@@ -111,6 +165,21 @@ class PhoneShareManifestTest {
         val nameFn = activity.substringAfter("private fun folderName(treeUri: Uri)").substringBefore("private fun showErrorLog")
         assertTrue(nameFn.contains("buildDocumentUriUsingTree"))
         assertFalse(nameFn.contains("query(treeUri"))
+    }
+
+    @Test fun reuseAddrIsSetBeforeBindAndPortInUseGivesUp() {
+        val dav = File("src/main/java/com/lordstryfe/drivebay/PhoneDavServer.kt").readText()
+        val open = dav.substringAfter("private fun open")
+        val reuse = open.indexOf("setReuseAddress(true)")
+        val bind = open.indexOf(".bind(")
+        assertTrue(reuse >= 0 && bind > reuse)
+        assertTrue(dav.contains("it.closeSockets()"))
+        assertTrue(service.contains("fun onDestroy()"))
+        assertTrue(service.contains("running?.stop()"))
+        assertTrue(service.contains("isAddressInUse"))
+        assertTrue(service.contains("portInUseExhausted"))
+        assertTrue(service.contains("phone_share_err_port"))
+        assertTrue(service.contains("phone_share_port_retry"))
     }
 
     @Test fun crashLogIsInstalled() {

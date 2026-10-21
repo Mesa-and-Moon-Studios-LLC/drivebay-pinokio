@@ -12,6 +12,12 @@ object PhoneShareLifecycle {
     const val PEER_HEADER = "X-Drivebay-Phone"
     const val HEALTHY_POLL_MS = 15_000L
 
+    /** EADDRINUSE on Linux and Android. A live listen socket still holds the port. */
+    const val EADDRINUSE = 98
+
+    /** Bind failures to absorb before phone sharing is turned off with a port-in-use message. */
+    const val PORT_IN_USE_TRIES = 5
+
     /** First 16 hex chars of the token hash. Stable for one token, not reversible to it. */
     fun peerId(tokenHash: String?): String? {
         if (tokenHash == null || !tokenHash.matches(Regex("^[0-9a-f]{64}$"))) return null
@@ -20,6 +26,30 @@ object PhoneShareLifecycle {
 
     fun shouldResume(enabled: Boolean, tokenHash: String?, folderCount: Int, wholePhone: Boolean = false): Boolean {
         return enabled && peerId(tokenHash) != null && (wholePhone || folderCount > 0)
+    }
+
+    /**
+     * True when [error] is EADDRINUSE. Walks the cause chain, including Android's
+     * ErrnoException (errno 98), whose class is not on the JVM test classpath.
+     */
+    fun isAddressInUse(error: Throwable?): Boolean {
+        var current = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            val message = current.message?.lowercase().orEmpty()
+            if (message.contains("eaddrinuse") || message.contains("address already in use")) return true
+            if (errnoOf(current) == EADDRINUSE) return true
+            current = current.cause
+        }
+        return false
+    }
+
+    /** True after [PORT_IN_USE_TRIES] failed binds, counting from 1. */
+    fun portInUseExhausted(failures: Int): Boolean = failures >= PORT_IN_USE_TRIES
+
+    private fun errnoOf(error: Throwable): Int? {
+        val method = error.javaClass.methods.firstOrNull { it.name == "getErrno" && it.parameterCount == 0 } ?: return null
+        return runCatching { method.invoke(error) as? Int }.getOrNull()
     }
 
     /** 1s, 2s, 4s, 8s, 16s, then 30s. */
