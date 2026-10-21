@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.2.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.3.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.36.2** — see [Changelog](#changelog) below.
+Current version: **3.36.3** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.36.2.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.36.3.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.36.3` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -219,7 +219,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
+To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.3. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -227,7 +227,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.2. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.3. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -315,6 +315,11 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.36.3
+- Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
+- Phone as a drive reconnects after the phone app or the PC tray is closed or restarted. The phone keeps the token hash and folders and starts the share again (including after reboot). The PC keeps the token in Credential Manager and the last address, retries with backoff, and looks up the phone's current Tailscale or LAN address. The banner and the tray say Reconnecting... or Connected. A new token is only needed when the phone refuses the saved one.
+- Android app 3.34.1 (versionCode 33401). The Windows installer and the server report 3.36.3. `/api/health` returns `version` 3.36.3.
 
 ### 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.

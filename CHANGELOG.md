@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.36.3
+- Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
+- Phone as a drive reconnects after the phone app or the PC tray is closed or restarted. The phone keeps the token hash and folders and starts the share again (including after reboot). The PC keeps the token in Credential Manager and the last address, retries with backoff, and looks up the phone's current Tailscale or LAN address. The banner and the tray say Reconnecting... or Connected. A new token is only needed when the phone refuses the saved one.
+- Android app 3.34.1 (versionCode 33401). The Windows installer and the server report 3.36.3. `/api/health` returns `version` 3.36.3.
+
 ## 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.
 - `unix/install.sh` reads x.y.z versions, stops a running copy before an update, records the new version, returns after setup instead of holding the terminal, does not start a second copy next to the login item, and does not open a browser without a desktop session. `drivebay --stop` and `unix/uninstall.sh` now also end a server that closed its port on SIGTERM but kept running.

@@ -46,7 +46,13 @@ object DavProtocol {
     private val httpDate: DateTimeFormatter =
         DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.US).withZone(ZoneOffset.UTC)
 
-    fun handle(request: DavRequest, store: DavStore, tokenHash: String): DavResponse {
+    fun handle(request: DavRequest, store: DavStore, tokenHash: String, peerId: String? = null): DavResponse {
+        val response = dispatch(request, store, tokenHash)
+        if (peerId.isNullOrBlank()) return response
+        return response.copy(headers = response.headers + (PhoneShareLifecycle.PEER_HEADER to peerId))
+    }
+
+    private fun dispatch(request: DavRequest, store: DavStore, tokenHash: String): DavResponse {
         val method = request.method.uppercase(Locale.US)
         if (method != "OPTIONS" && !PhoneShareAuth.authorized(header(request, "authorization"), tokenHash)) {
             return text(401, "Unauthorized", mapOf("WWW-Authenticate" to "Basic realm=\"Drivebay\""), "Sign in required")

@@ -794,10 +794,14 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, 8, 0, 0)
             })
         }
-        val hosts = hostsCsv?.split(',')?.filter { it.isNotBlank() } ?: if (phoneShare.enabled()) PhoneShareService.shareHosts() else emptyList()
+        val hosts = when {
+            hostsCsv != null -> hostsCsv.split(',').filter { it.isNotBlank() }
+            phoneShare.enabled() -> phoneShare.listeningHosts()
+            else -> emptyList()
+        }
         val status = when {
             !phoneShare.enabled() -> getString(R.string.phone_share_off)
-            hosts.isEmpty() -> getString(R.string.phone_share_waiting)
+            hosts.isEmpty() -> getString(R.string.phone_share_reconnecting) + "\n" + getString(R.string.phone_share_waiting)
             else -> getString(R.string.phone_share_address, hosts.joinToString("  ") { "http://$it:${PhoneShareService.PORT}/" })
         }
         phoneShareBox.addView(TextView(this).apply {
@@ -806,9 +810,13 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(0, 12, 0, 0)
         })
-        shareBanner.text = if (hosts.isNotEmpty()) {
-            getString(R.string.phone_share_on) + "\n" + hosts.joinToString("  ") { "http://$it:${PhoneShareService.PORT}/" }
-        } else getString(R.string.phone_share_on)
+        shareBanner.text = PhoneShareLifecycle.bannerText(
+            getString(R.string.phone_share_on),
+            getString(R.string.phone_share_connected),
+            getString(R.string.phone_share_reconnecting),
+            hosts,
+            PhoneShareService.PORT,
+        )
         if (webView.visibility == View.VISIBLE) {
             shareBanner.visibility = if (phoneShare.enabled()) View.VISIBLE else View.GONE
         }

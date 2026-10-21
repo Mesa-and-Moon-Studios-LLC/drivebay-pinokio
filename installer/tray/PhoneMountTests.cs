@@ -100,8 +100,55 @@ internal static class PhoneMountTests
         Eq("a b", PhoneMountLogic.Scrub("a\nb"), "scrub newline");
 
         Eq("Connected", PhoneMountLogic.StatusText(PhoneStatus.Connected), "text connected");
+        Eq("Reconnecting...", PhoneMountLogic.StatusText(PhoneStatus.Reconnecting), "text reconnecting");
         Eq("Phone not found", PhoneMountLogic.StatusText(PhoneStatus.PhoneNotFound), "text missing");
         Eq("Code expired, get a new code", PhoneMountLogic.StatusText(PhoneStatus.CodeExpired), "text expired");
+
+        Eq(PhoneStatus.Off, PhoneMountLogic.InitialStatus(false, false, true), "init off");
+        Eq(PhoneStatus.CodeExpired, PhoneMountLogic.InitialStatus(true, true, true), "init expired");
+        Eq(PhoneStatus.Reconnecting, PhoneMountLogic.InitialStatus(true, false, true), "init paired");
+        Eq(PhoneStatus.Searching, PhoneMountLogic.InitialStatus(true, false, false), "init new");
+        Eq(PhoneStatus.Reconnecting, PhoneMountLogic.MissingStatus("100.1.1.1", "", PhoneStatus.Connected), "missing known host");
+        Eq(PhoneStatus.PhoneNotFound, PhoneMountLogic.MissingStatus("", "", PhoneStatus.Searching), "missing never paired");
+
+        Eq(PhoneStep.Verify, PhoneMountLogic.Decide(PhoneStatus.Reconnecting, true, false, false), "reconnect verifies");
+        Eq(PhoneStep.MarkNotFound, PhoneMountLogic.Decide(PhoneStatus.Reconnecting, false, false, true), "reconnect still waiting");
+        Eq(PhoneStep.Nothing, PhoneMountLogic.Decide(PhoneStatus.CodeExpired, true, false, false), "expired stays stopped");
+
+        Eq(AuthResult.Unreachable, PhoneMountLogic.ClassifyMapError(1219), "1219 is not a bad token");
+        Eq(true, PhoneMountLogic.ShouldResetSession(1219), "1219 drops the session");
+        Eq(true, PhoneMountLogic.ShouldResetSession(85), "85 drops the session");
+        Eq(false, PhoneMountLogic.ShouldResetSession(1326), "logon failure is not a stale session");
+
+        List<string[]> lan = new List<string[]>();
+        lan.Add(new string[] { "192.168.1.50", "8780" });
+        List<string> tail = new List<string>();
+        tail.Add("100.9.9.9");
+        tail.Add("100.2.2.2");
+        List<string[]> ordered = PhoneMountLogic.OrderCandidates(true, "100.1.1.1", 8780, "100.2.2.2", 8780, lan, tail);
+        Eq(4, ordered.Count, "stale manual is not the only candidate");
+        Eq("100.1.1.1", ordered[0][0], "manual first");
+        Eq("100.2.2.2", ordered[1][0], "saved second");
+        Eq("100.9.9.9", ordered[2][0], "tailscale before lan");
+        Eq("192.168.1.50", ordered[3][0], "lan last");
+
+        string peer; int dport;
+        Eq(true, PhoneMountLogic.TryParseDiscovery("DRIVEBAY1 abcdef0123456789 8780", out peer, out dport), "beacon");
+        Eq("abcdef0123456789", peer, "beacon peer");
+        Eq(8780, dport, "beacon port");
+        Eq(false, PhoneMountLogic.TryParseDiscovery("DRIVEBAY1 nope", out peer, out dport), "beacon short");
+        Eq(false, PhoneMountLogic.TryParseDiscovery("HELLO abcdef0123456789 8780", out peer, out dport), "beacon magic");
+
+        List<string> candHosts = new List<string>(new string[] { "100.1.1.1", "100.2.2.2", "192.168.1.50" });
+        List<bool> candOk = new List<bool>(new bool[] { true, false, true });
+        List<string> candIds = new List<string>(new string[] { "aaaaaaaaaaaaaaaa", "", "bbbbbbbbbbbbbbbb" });
+        Eq(2, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.2.2.2"), "pick matching peer");
+        Eq(0, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "", "100.2.2.2"), "first answer before a peer is saved");
+        candOk[2] = false;
+        candIds[0] = "";
+        Eq(0, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.1.1.1"), "saved host without a header still counts");
+        candOk[0] = false;
+        Eq(-1, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.1.1.1"), "different phone is ignored");
 
         Console.WriteLine(passed + " passed, " + failed + " failed");
         return failed == 0 ? 0 : 1;

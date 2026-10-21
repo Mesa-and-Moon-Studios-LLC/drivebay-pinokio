@@ -7,5 +7,6 @@ class DrivebayApp : Application() {
         super.onCreate()
         DownloadNotifier(this).ensureChannels()
         DrivebayDownloadService.resumeIncomplete(this)
+        PhoneShareService.resumeIfEnabled(this)
     }
 }

@@ -44,7 +44,7 @@
     <string name="download_pause">Pause</string>
     <string name="download_cancel">Cancel</string>
     <string name="phone_share_title">Phone as a drive</string>
-    <string name="phone_share_help">Off until you turn it on. Shares only the folders you pick, and only on Tailscale or your home network. The PC mounts it with a token.</string>
+    <string name="phone_share_help">Off until you turn it on. Shares only the folders you pick, and only on Tailscale or your home network. The token stays on this phone, so the PC reconnects after either side restarts. Tap New token only when you want to replace it.</string>
     <string name="phone_share_toggle">Share this phone as a drive</string>
     <string name="phone_share_on">This phone is shared as a drive</string>
     <string name="phone_share_off">Phone sharing is off</string>
@@ -52,8 +52,10 @@
     <string name="phone_share_token">New token</string>
     <string name="phone_share_need_folder">Choose at least one folder first.</string>
     <string name="phone_share_waiting">Waiting for Tailscale or Wi-Fi. Nothing is shared on a public network.</string>
-    <string name="phone_share_address">Open on the PC: %1$s</string>
-    <string name="phone_share_token_once">Copy this token now. It is shown once. Username: drivebay</string>
+    <string name="phone_share_connected">Connected</string>
+    <string name="phone_share_reconnecting">Reconnecting...</string>
+    <string name="phone_share_address">Connected. Open on the PC: %1$s</string>
+    <string name="phone_share_token_once">Copy this token now. It is shown once. Username: drivebay. The PC keeps using this token after the phone or the PC restarts. Tap New token only to replace it.</string>
     <string name="upload_started">Uploading to the PC</string>
     <string name="upload_done">Uploaded to the PC</string>
     <string name="upload_failed">The upload did not finish</string>

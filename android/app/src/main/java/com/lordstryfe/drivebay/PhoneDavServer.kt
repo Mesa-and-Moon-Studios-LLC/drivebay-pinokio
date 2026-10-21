@@ -10,24 +10,47 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Serves [DavProtocol] on the given local addresses only.
  * Callers pass Tailscale and LAN addresses, never a public one.
+ * A bind failure on one address does not stop the others, and [start] returns
+ * false instead of throwing so the service can retry.
  */
 class PhoneDavServer(
     private val store: DavStore,
     private val tokenHash: String,
     private val port: Int,
     private val bindHosts: List<String>,
+    private val peerId: String? = null,
 ) {
     private val running = AtomicBoolean(false)
     private val sockets = mutableListOf<ServerSocket>()
 
-    fun start() {
-        if (!running.compareAndSet(false, true)) return
+    fun start(): Boolean {
+        if (!running.compareAndSet(false, true)) return sockets.isNotEmpty()
         val hosts = bindHosts.filter { PhoneShareNet.isPrivateOrTailscale(it) }.distinct()
         if (hosts.isEmpty()) {
             running.set(false)
-            return
+            return false
         }
-        for (host in hosts) {
+        for (host in hosts) open(host)
+        if (sockets.isEmpty()) {
+            running.set(false)
+            return false
+        }
+        return true
+    }
+
+    /** Bind addresses that came up after the server started, without dropping the ones already open. */
+    fun bindMore(extra: List<String>): Boolean {
+        if (!running.get()) return false
+        var added = false
+        for (host in extra.filter { PhoneShareNet.isPrivateOrTailscale(it) }.distinct()) {
+            if (boundHosts().any { it.equals(host, ignoreCase = true) }) continue
+            if (open(host)) added = true
+        }
+        return added
+    }
+
+    private fun open(host: String): Boolean {
+        return try {
             val server = ServerSocket()
             server.reuseAddress = true
             server.bind(InetSocketAddress(host, port))
@@ -42,10 +65,17 @@ class PhoneDavServer(
                     Thread({ handle(client) }, "drivebay-phone-dav").apply { isDaemon = true }.start()
                 }
             }, "drivebay-phone-dav-accept").apply { isDaemon = true }.start()
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
     fun port(): Int = sockets.firstOrNull()?.localPort ?: port
+
+    fun boundHosts(): List<String> = sockets.mapNotNull { socket ->
+        (socket.localSocketAddress as? InetSocketAddress)?.address?.hostAddress?.substringBefore('%')
+    }
 
     fun stop() {
         running.set(false)
@@ -95,6 +125,7 @@ class PhoneDavServer(
                 DavRequest(requestLine[0].uppercase(Locale.US), requestLine[1], headers, body),
                 store,
                 tokenHash,
+                peerId,
             )
             val status = "HTTP/1.1 ${response.status} ${response.reason}\r\n"
             val headerText = buildString {

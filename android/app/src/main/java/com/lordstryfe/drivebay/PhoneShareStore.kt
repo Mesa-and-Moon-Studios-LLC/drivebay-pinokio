@@ -47,11 +47,20 @@ class PhoneShareStore(context: Context) {
         prefs.edit().putString(KEY_FOLDERS, array.toString()).apply()
     }
 
+    /** Addresses the WebDAV server is actually listening on. Empty while it is down. */
+    fun listeningHosts(): List<String> =
+        prefs.getString(KEY_LISTENING, null).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun setListening(hosts: List<String>) {
+        prefs.edit().putString(KEY_LISTENING, hosts.joinToString(",")).commit()
+    }
+
     companion object {
         private const val PREFS = "drivebay_phone_share"
         const val KEY_ENABLED = "enabled"
         private const val KEY_HASH = "token_hash"
         private const val KEY_FOLDERS = "folders"
+        private const val KEY_LISTENING = "listening"
     }
 }
 
