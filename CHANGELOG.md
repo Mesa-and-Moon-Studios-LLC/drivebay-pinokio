@@ -4,6 +4,7 @@ All user-facing Drivebay versions. Newest first.
 
 ## 3.36.3
 - Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
+- Android: Open on a finished download opens the file. The saved URI and MIME type are both kept, the file is shared with a FileProvider content URI and read permission, and a chooser picks the app. If none can open it, a toast says so.
 - Phone as a drive reconnects after the phone app or the PC tray is closed or restarted. The phone keeps the token hash and folders and starts the share again (including after reboot). The PC keeps the token in Credential Manager and the last address, retries with backoff, and looks up the phone's current Tailscale or LAN address. The banner and the tray say Reconnecting... or Connected. A new token is only needed when the phone refuses the saved one.
 - Android app 3.34.1 (versionCode 33401). The Windows installer and the server report 3.36.3. `/api/health` returns `version` 3.36.3.
 

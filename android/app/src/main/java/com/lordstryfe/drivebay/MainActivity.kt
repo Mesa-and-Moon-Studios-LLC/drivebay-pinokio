@@ -993,24 +993,14 @@ class MainActivity : AppCompatActivity() {
             .setTitle(R.string.download_saved)
             .setMessage(name)
             .setPositiveButton(R.string.download_open) { _, _ ->
-                startActivity(
-                    Intent(this, DownloadOpenActivity::class.java).apply {
-                        data = uri
-                        type = mime
-                        putExtra(DownloadOpenActivity.EXTRA_SHARE, false)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    },
-                )
+                startActivity(Intent(this, DownloadOpenActivity::class.java).also {
+                    DownloadOpenActivity.fill(it, uri, mime, name, share = false)
+                })
             }
             .setNegativeButton(R.string.download_share) { _, _ ->
-                startActivity(
-                    Intent(this, DownloadOpenActivity::class.java).apply {
-                        data = uri
-                        type = mime
-                        putExtra(DownloadOpenActivity.EXTRA_SHARE, true)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    },
-                )
+                startActivity(Intent(this, DownloadOpenActivity::class.java).also {
+                    DownloadOpenActivity.fill(it, uri, mime, name, share = true)
+                })
             }
             .setNeutralButton(R.string.download_done, null)
             .show()

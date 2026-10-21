@@ -22,6 +22,9 @@
     <string name="download_open">Open</string>
     <string name="download_share">Share</string>
     <string name="download_done">Done</string>
+    <string name="download_no_app">No app can open this file</string>
+    <string name="download_no_share">No app can share this file</string>
+    <string name="download_open_failed">Couldn\'t open this file</string>
     <string name="download_need_http">Can’t save that link. Use the Download button in Drivebay.</string>
     <string name="download_started">Saving to Downloads/Drivebay</string>
     <string name="server_name_label">Name</string>

@@ -62,8 +62,9 @@ class DownloadNotifier(private val context: Context) {
 
     fun complete(job: DownloadJob, uri: Uri, mime: String) {
         manager.cancel(PROGRESS_ID)
-        val open = openIntent(uri, mime, share = false)
-        val share = openIntent(uri, mime, share = true)
+        val type = DownloadOpen.mimeType(job.fileName, mime)
+        val open = openIntent(uri, type, job.fileName, share = false)
+        val share = openIntent(uri, type, job.fileName, share = true)
         val builder = base(CHANNEL_DONE, job.fileName, "Saved to Downloads/Drivebay")
             .setOngoing(false)
             .setAutoCancel(true)
@@ -106,18 +107,16 @@ class DownloadNotifier(private val context: Context) {
         return NotificationCompat.Action(0, label, pending)
     }
 
-    private fun openIntent(uri: Uri, mime: String, share: Boolean): PendingIntent {
+    private fun openIntent(uri: Uri, mime: String, name: String, share: Boolean): PendingIntent {
         val intent = Intent(context, DownloadOpenActivity::class.java).apply {
-            data = uri
-            type = mime
-            putExtra(DownloadOpenActivity.EXTRA_SHARE, share)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            DownloadOpenActivity.fill(this, uri, mime, name, share)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         return PendingIntent.getActivity(
             context,
             (uri.toString() + share).hashCode(),
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_GRANT_READ_URI_PERMISSION,
         )
     }
 

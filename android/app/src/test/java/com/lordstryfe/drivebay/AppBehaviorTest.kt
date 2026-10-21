@@ -174,6 +174,40 @@ class PhoneShareLifecycleTest {
     }
 }
 
+class DownloadOpenTest {
+    @Test fun settingTypeAfterDataDropsTheUri() {
+        val lost = IntentSlots().apply {
+            assignData("content://media/external/downloads/12")
+            assignType("application/pdf")
+        }
+        assertNull(lost.data)
+        val kept = DownloadOpen.launchSlots("content://media/external/downloads/12", "application/pdf")
+        assertEquals("content://media/external/downloads/12", kept.data)
+        assertEquals("application/pdf", kept.type)
+    }
+
+    @Test fun mimeFollowsTheFileWhenTheServerSaysOctetStream() {
+        assertEquals("application/pdf", DownloadOpen.mimeType("report.PDF", null))
+        assertEquals("application/pdf", DownloadOpen.mimeType("report.pdf", "application/octet-stream"))
+        assertEquals("image/png", DownloadOpen.mimeType("photo.bin", "image/png"))
+        assertEquals("application/octet-stream", DownloadOpen.mimeType("blob", "application/octet-stream"))
+    }
+
+    @Test fun openChooserUsesAFileProviderUri() {
+        assertEquals(DownloadOpen.Step.CHOOSER, DownloadOpen.step(1))
+        assertEquals(DownloadOpen.Step.TOAST, DownloadOpen.step(0))
+        assertEquals("No app can open this file", DownloadOpen.NO_APP)
+        val authority = DownloadOpen.authority("com.mesaandmoon.drivebay")
+        assertEquals("com.mesaandmoon.drivebay.fileprovider", authority)
+        assertTrue(DownloadOpen.isFileProviderUri("content://$authority/open/photo.jpg", "com.mesaandmoon.drivebay"))
+        assertFalse(DownloadOpen.isFileProviderUri("content://media/external/downloads/12", "com.mesaandmoon.drivebay"))
+        val cache = DownloadOpen.cacheFileName("../Camera/a.pdf", "content://media/external/downloads/12")
+        assertTrue(cache.endsWith(".pdf"))
+        assertFalse(cache.contains("/"))
+        assertFalse(cache.contains(".."))
+    }
+}
+
 class PhoneDavRestartTest {
     @Test fun sameTokenWorksAfterRestartAndABusyPortDoesNotThrow() {
         val store = MemoryDavStore()

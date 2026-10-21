@@ -318,6 +318,7 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 
 ### 3.36.3
 - Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
+- Android: Open on a finished download opens the file in another app. The file is a FileProvider link with read permission. If no app can open it, a toast says so.
 - Phone as a drive reconnects after the phone app or the PC tray is closed or restarted. The phone keeps the token hash and folders and starts the share again (including after reboot). The PC keeps the token in Credential Manager and the last address, retries with backoff, and looks up the phone's current Tailscale or LAN address. The banner and the tray say Reconnecting... or Connected. A new token is only needed when the phone refuses the saved one.
 - Android app 3.34.1 (versionCode 33401). The Windows installer and the server report 3.36.3. `/api/health` returns `version` 3.36.3.
 

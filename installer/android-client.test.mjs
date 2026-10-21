@@ -70,6 +70,19 @@ test("android download, tailscale, back, and port behavior is present", () => {
   assert.match(service, /ACTION_CANCEL/);
   assert.match(service, /wifiOnly/);
 
+  const opener = read("app/src/main/java/com/lordstryfe/drivebay/DownloadOpenActivity.kt");
+  assert.match(opener, /setDataAndType/);
+  assert.match(opener, /Intent\.ACTION_VIEW/);
+  assert.match(opener, /Intent\.createChooser/);
+  assert.match(opener, /FLAG_GRANT_READ_URI_PERMISSION/);
+  assert.match(opener, /FileProvider\.getUriForFile/);
+  assert.match(opener, /download_no_app/);
+  const notifier = read("app/src/main/java/com/lordstryfe/drivebay/DownloadNotifier.kt");
+  assert.match(notifier, /DownloadOpenActivity\.fill/);
+  assert.equal(notifier.includes("type = mime"), false);
+  assert.match(main, /DownloadOpenActivity\.fill/);
+  assert.match(read("app/src/main/res/xml/file_paths.xml"), /cache-path name="open"/);
+
   const route = fs.readFileSync(path.join(root, "app/src/routes/api/download.ts"), "utf8");
   assert.match(route, /HEAD:/);
   assert.match(route, /planDownload/);
