@@ -17,7 +17,7 @@ using Microsoft.Win32;
 
 internal static class PhoneCredentials
 {
-    const string GenericTarget = "Drivebay/PhoneShare";
+    const string GenericTarget = "Drivebay/PhoneShare"; // PhoneMountLogic.GenericCredentialTarget
     const int CRED_TYPE_GENERIC = 1;
     const int CRED_TYPE_DOMAIN_PASSWORD = 2;
     const int CRED_PERSIST_LOCAL_MACHINE = 2;
@@ -112,9 +112,43 @@ internal static class PhoneCredentials
     // error is the Win32 code from CredRead. 1168 means the token is really gone.
     public static string Read(out int error)
     {
+        return ReadTarget(GenericTarget, out error);
+    }
+
+    // This PC's token, then the single credential from before per-PC pairing.
+    public static string Read(string peer, out int error)
+    {
+        string target = PhoneMountLogic.CredentialTarget(peer);
+        if (target != GenericTarget)
+        {
+            string own = ReadTarget(target, out error);
+            if (own != null) return own;
+        }
+        return ReadTarget(GenericTarget, out error);
+    }
+
+    // Copies the legacy credential onto this PC's target so reconnect keeps working after an upgrade.
+    public static bool BindToPeer(string peer)
+    {
+        string target = PhoneMountLogic.CredentialTarget(peer);
+        if (target == GenericTarget) return false;
+        int error;
+        string secret = Read(out error);
+        if (secret == null) return false;
+        return Write(CRED_TYPE_GENERIC, target, PhoneMountLogic.User, secret);
+    }
+
+    public static void DeletePeer(string peer)
+    {
+        string target = PhoneMountLogic.CredentialTarget(peer);
+        if (target != GenericTarget) CredDelete(target, CRED_TYPE_GENERIC, 0);
+    }
+
+    static string ReadTarget(string target, out int error)
+    {
         error = 0;
         IntPtr p;
-        if (!CredRead(GenericTarget, CRED_TYPE_GENERIC, 0, out p))
+        if (!CredRead(target, CRED_TYPE_GENERIC, 0, out p))
         {
             error = Marshal.GetLastWin32Error();
             return null;
@@ -133,7 +167,13 @@ internal static class PhoneCredentials
 
     public static void Delete(string host)
     {
+        Delete(host, "");
+    }
+
+    public static void Delete(string host, string peer)
+    {
         CredDelete(GenericTarget, CRED_TYPE_GENERIC, 0);
+        DeletePeer(peer);
         if (!string.IsNullOrEmpty(host)) DeleteOldDomainCredential(host);
     }
 }
@@ -253,11 +293,17 @@ internal static class PhoneMount
 
     static void RememberPeer()
     {
-        if (string.IsNullOrEmpty(seenPeer)) return;
-        if (string.Equals(Settings.PeerId, seenPeer, StringComparison.OrdinalIgnoreCase)) return;
-        Settings.PeerId = seenPeer;
+        string peer = PhoneMountLogic.MatchingPeer(seenPeer, Settings.PeerId);
+        if (string.IsNullOrEmpty(peer)) peer = PhoneMountLogic.MatchingPeer(seenPeer, "");
+        if (string.IsNullOrEmpty(peer)) return;
+        if (!string.IsNullOrEmpty(Settings.PeerId) && !string.Equals(Settings.PeerId, peer, StringComparison.OrdinalIgnoreCase))
+            PhoneCredentials.DeletePeer(Settings.PeerId);
+        bool changed = !string.Equals(Settings.PeerId, peer, StringComparison.OrdinalIgnoreCase);
+        Settings.PeerId = peer;
+        PhoneCredentials.BindToPeer(peer);
+        if (!changed) return;
         Settings.Save();
-        Log("saved peer " + seenPeer);
+        Log("saved peer " + peer);
     }
 
     static void SetStatus(PhoneStatus s)
@@ -320,7 +366,7 @@ internal static class PhoneMount
         if (step == PhoneStep.Verify)
         {
             int credErr;
-            string secret = PhoneCredentials.Read(out credErr);
+            string secret = PhoneCredentials.Read(Settings.PeerId, out credErr);
             if (secret == null)
             {
                 if (credErr == 1168) { MarkExpired(); return; }
@@ -354,21 +400,21 @@ internal static class PhoneMount
         // Remove the mapping and saved password so Windows cannot keep
         // retrying a bad code and lock it on the phone.
         if (Settings.Letter != '\0') Unmap(Settings.Letter, Settings.Host, Settings.Port);
-        PhoneCredentials.Delete(Settings.Host);
+        PhoneCredentials.Delete(Settings.Host, Settings.PeerId);
         Settings.Expired = true;
         Settings.Letter = '\0';
         Settings.PeerId = "";
         Settings.Save();
         verified = false;
         SetStatus(PhoneStatus.CodeExpired);
-        Notify("Drivebay Phone", "Code expired, get a new code. Open Drivebay on your phone, tap New token, then use Connect my phone.");
+        Notify("Drivebay Phone", "Code expired, get a new code. Open Drivebay on your phone, tap Pair a PC, then use Connect my phone.");
     }
 
     // Maps with WNetAddConnection2W: user + code passed in memory only.
     static AuthResult MapNow()
     {
         int credErr;
-        string secret = PhoneCredentials.Read(out credErr);
+        string secret = PhoneCredentials.Read(Settings.PeerId, out credErr);
         if (secret == null)
         {
             Log("map: no saved code in Credential Manager (" + credErr + ")");
@@ -490,7 +536,7 @@ internal static class PhoneMount
     public static void Disconnect()
     {
         if (Settings.Letter != '\0') Unmap(Settings.Letter, Settings.Host, Settings.Port);
-        PhoneCredentials.Delete(Settings.Host);
+        PhoneCredentials.Delete(Settings.Host, Settings.PeerId);
         Settings.Enabled = false; Settings.Expired = false; Settings.Letter = '\0';
         Settings.PeerId = "";
         Settings.Host = "";
@@ -677,6 +723,9 @@ internal static class PhoneMount
             req.ContentLength = 0;
             using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
             {
+                string client = res.Headers[PhoneMountLogic.ClientHeader];
+                string matched = PhoneMountLogic.MatchingPeer(client, "");
+                if (matched.Length > 0) seenPeer = matched;
                 return PhoneMountLogic.Classify((int)res.StatusCode);
             }
         }
@@ -785,7 +834,7 @@ internal sealed class PhoneForm : Form
         ClientSize = new Size(440, 250);
 
         Label help = new Label();
-        help.Text = "On your phone, turn on Share this phone as a drive and tap New token. Paste that token here once. Drivebay saves it and reconnects if the phone or this PC restarts.";
+        help.Text = "On your phone, set the owner password, turn on sharing, and tap Pair a PC. Paste this PC's token here once. Drivebay saves it and reconnects if the phone or this PC restarts.";
         help.SetBounds(16, 12, 408, 72);
 
         code = new TextBox();

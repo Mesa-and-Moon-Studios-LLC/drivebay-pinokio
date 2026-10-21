@@ -87,7 +87,7 @@ class PhoneShareService : Service() {
             return START_NOT_STICKY
         }
         val store = PhoneShareStore(this)
-        if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.tokenHash(), store.folders().size, store.wholePhone())) {
+        if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.pairs(), store.folders().size, store.wholePhone())) {
             shutdown(null)
             return START_NOT_STICKY
         }
@@ -102,17 +102,18 @@ class PhoneShareService : Service() {
         if (stopping) return
         ensureDiscovery()
         val store = PhoneShareStore(this)
-        val hash = store.tokenHash()
         val folders = store.folders()
         val wholePhone = store.wholePhone()
-        if (!PhoneShareLifecycle.shouldResume(store.enabled(), hash, folders.size, wholePhone)) {
+        val pairs = store.pairs()
+        if (!PhoneShareLifecycle.shouldResume(store.enabled(), pairs, folders.size, wholePhone)) {
             shutdown(null)
             return
         }
+        val hash = pairs.first().tokenHash
         val hosts = runCatching { shareHosts() }.getOrDefault(emptyList())
         val ticket = generation.incrementAndGet()
         try {
-            worker.execute { openServer(ticket, folders, wholePhone, hash!!, hosts) }
+            worker.execute { openServer(ticket, folders, wholePhone, hash, hosts) }
         } catch (e: Exception) {
             CrashLog.record(this, "Phone-as-drive server start", e)
             noteRetry()
@@ -163,13 +164,16 @@ class PhoneShareService : Service() {
             }
             val docs = openStore(folders, wholePhone)
             stopServer()
+            val shareStore = PhoneShareStore(this)
             val dav = PhoneDavServer(
                 docs,
                 hash,
                 PORT,
                 hosts,
                 PhoneShareLifecycle.peerId(hash),
-                PhoneShareStore(this),
+                shareStore,
+                shareStore,
+                { shareStore.pairs().mapNotNull { PhoneShareLifecycle.peerId(it.tokenHash) } },
             ) {
                 val listening = server?.boundHosts().orEmpty()
                 onMain { broadcast(listening) }
@@ -342,13 +346,15 @@ class PhoneShareService : Service() {
                 }
                 val text = String(packet.data, 0, packet.length, Charsets.US_ASCII).trim()
                 if (text != PhoneShareLifecycle.DISCOVERY_QUERY) continue
-                val hash = PhoneShareStore(this).tokenHash() ?: continue
-                val peer = PhoneShareLifecycle.peerId(hash) ?: continue
-                val msg = PhoneShareLifecycle.discoveryMessage(peer, PORT).toByteArray(Charsets.US_ASCII)
-                val reply = DatagramPacket(msg, msg.size, packet.address, packet.port)
-                try {
-                    socket.send(reply)
-                } catch (_: Exception) {
+                val peers = PhoneShareStore(this).pairs().mapNotNull { PhoneShareLifecycle.peerId(it.tokenHash) }
+                if (peers.isEmpty()) continue
+                for (peer in peers) {
+                    val msg = PhoneShareLifecycle.discoveryMessage(peer, PORT).toByteArray(Charsets.US_ASCII)
+                    val reply = DatagramPacket(msg, msg.size, packet.address, packet.port)
+                    try {
+                        socket.send(reply)
+                    } catch (_: Exception) {
+                    }
                 }
             }
             if (discovery == socket) discovery = null

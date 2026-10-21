@@ -100,6 +100,80 @@ export function mountPlan({ platform = process.platform, url, user = "drivebay",
   };
 }
 
+/** hostname:port. This PC keeps a separate token for each phone address. */
+export function phoneKey(url) {
+  const parsed = cleanUrl(url);
+  if (!parsed) return null;
+  const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  return `${parsed.hostname}:${port}`;
+}
+
+export function rememberPhoneToken(records, { url, secret, peer, now } = {}) {
+  const key = phoneKey(url);
+  if (!key || !secret) return { ...(records || {}) };
+  return {
+    ...(records || {}),
+    [key]: {
+      url: String(url),
+      secret: String(secret),
+      peer: peer ? String(peer) : "",
+      seenAt: Number(now) || Date.now(),
+    },
+  };
+}
+
+export function tokenForPhone(records, url) {
+  const key = phoneKey(url);
+  if (!key || !records) return null;
+  const row = records[key];
+  return row && row.secret ? String(row.secret) : null;
+}
+
+/** Fields the browser may see. The token stays on the server. */
+export function publicPhones(records) {
+  return Object.entries(records || {}).map(([key, row]) => ({
+    key,
+    url: row && row.url ? String(row.url) : "",
+    peer: row && row.peer ? String(row.peer) : "",
+    seenAt: row && row.seenAt ? Number(row.seenAt) : 0,
+  }));
+}
+
+export function forgetPhone(records, key) {
+  const next = { ...(records || {}) };
+  delete next[key];
+  return next;
+}
+
+export function phoneTokenFile(home) {
+  return path.join(home, "phone-tokens.json");
+}
+
+export function loadPhoneTokens(home) {
+  if (!home) return {};
+  try {
+    const parsed = JSON.parse(fs.readFileSync(phoneTokenFile(home), "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function savePhoneTokens(home, records) {
+  if (!home) return false;
+  fs.mkdirSync(home, { recursive: true });
+  const file = phoneTokenFile(home);
+  const tmp = `${file}.part`;
+  fs.writeFileSync(tmp, `${JSON.stringify(records)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    // Some systems refuse chmod. The file is still the per-phone token store.
+  }
+  return true;
+}
+
 export function runMount(plan) {
   if (!plan?.ok) return Promise.resolve({ code: 1, output: plan?.error || "Cannot mount" });
   if (plan.mountPoint) fs.mkdirSync(plan.mountPoint, { recursive: true });

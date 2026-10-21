@@ -149,6 +149,16 @@ internal static class PhoneMountTests
         Eq(0, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.1.1.1"), "saved host without a header still counts");
         candOk[0] = false;
         Eq(-1, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.1.1.1"), "different phone is ignored");
+        candOk[0] = true;
+        candIds[0] = "aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb";
+        Eq(0, PhoneMountLogic.PickCandidate(candHosts, candOk, candIds, "bbbbbbbbbbbbbbbb", "100.2.2.2"), "header listing several peers matches this PC");
+        Eq("Drivebay/PhoneShare", PhoneMountLogic.CredentialTarget(""), "legacy credential target");
+        Eq("Drivebay/PhoneShare/bbbbbbbbbbbbbbbb", PhoneMountLogic.CredentialTarget("BBBBBBBBBBBBBBBB"), "per-PC credential target");
+        Eq("Drivebay/PhoneShare", PhoneMountLogic.CredentialTarget("not a peer"), "bad peer stays on the legacy target");
+        Eq(true, PhoneMountLogic.PeerHeaderMatches("aaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbb", "bbbbbbbbbbbbbbbb"), "peer header match");
+        Eq(false, PhoneMountLogic.PeerHeaderMatches("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"), "peer header miss");
+        Eq("bbbbbbbbbbbbbbbb", PhoneMountLogic.MatchingPeer("aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb", "bbbbbbbbbbbbbbbb"), "keep this PC's peer from the list");
+        Eq("aaaaaaaaaaaaaaaa", PhoneMountLogic.MatchingPeer("aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb", ""), "first peer before one is saved");
 
         Console.WriteLine(passed + " passed, " + failed + " failed");
         return failed == 0 ? 0 : 1;
