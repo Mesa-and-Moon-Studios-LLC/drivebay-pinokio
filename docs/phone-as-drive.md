@@ -13,7 +13,19 @@ The phone binds only to private and Tailscale addresses. It does not listen on a
 5. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`.
 6. Leave the phone on the same Tailscale network, or on the same LAN, as the PC. Turn the switch off to stop sharing.
 
+The green banner is its own row under the status bar, above the New folder / Upload / Rename / Delete toolbar. The file list starts below that, so the first row is visible and scrolls.
+
 Port **8780** is the WebDAV port. Drivebay's own file server stays on its usual port (8765 unless you changed it).
+
+## If the phone or the PC restarts
+
+The token hash, the folders, and the on/off switch stay on the phone. The token stays in Windows Credential Manager, and the last address stays in `%LOCALAPPDATA%\Drivebay\phone-mount.txt`. You do not enter the token again.
+
+The phone starts the share again when the app process starts, including after a reboot, and keeps it in a foreground service when you leave the app. The banner says **Reconnecting...** until Tailscale or Wi-Fi is back, then **Connected** and the current address.
+
+The PC tray checks again every 30 seconds, backing off to 5 minutes while the phone is away. It tries the saved address, then online Tailscale Android peers, then a reply on the LAN (UDP port 8781). A phone that moved to a new private address is mounted again. The tray menu and Connect my phone say **Reconnecting...** or **Connected**.
+
+A refused token still stops the retries. Tap New token on the phone and paste it once. Creating a new token replaces the old one.
 
 ## On Windows
 

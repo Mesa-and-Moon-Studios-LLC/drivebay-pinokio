@@ -12,7 +12,8 @@ internal enum PhoneStatus
     Searching,      // set up, looking for the phone
     Connected,
     PhoneNotFound,
-    CodeExpired     // 401: stopped retrying until the user enters a new code
+    CodeExpired,    // 401: stopped retrying until the user enters a new code
+    Reconnecting    // saved pairing, phone or PC came back, trying again
 }
 
 internal enum PhoneStep
@@ -33,6 +34,9 @@ internal enum AuthResult
 internal static class PhoneMountLogic
 {
     public const int DefaultPort = 8780;
+    public const int DiscoveryPort = 8781;
+    public const string DiscoveryQuery = "DRIVEBAY?";
+    public const string PeerHeader = "X-Drivebay-Phone";
     public const string Label = "Drivebay Phone";
     public const string User = "drivebay";
 
@@ -41,11 +45,28 @@ internal static class PhoneMountLogic
         switch (s)
         {
             case PhoneStatus.Connected: return "Connected";
+            case PhoneStatus.Reconnecting: return "Reconnecting...";
             case PhoneStatus.PhoneNotFound: return "Phone not found";
             case PhoneStatus.CodeExpired: return "Code expired, get a new code";
             case PhoneStatus.Searching: return "Looking for your phone...";
             default: return "Not connected";
         }
+    }
+
+    // Saved pairing comes back as Reconnecting. A brand-new setup is Searching.
+    public static PhoneStatus InitialStatus(bool enabled, bool expired, bool paired)
+    {
+        if (!enabled) return PhoneStatus.Off;
+        if (expired) return PhoneStatus.CodeExpired;
+        if (paired) return PhoneStatus.Reconnecting;
+        return PhoneStatus.Searching;
+    }
+
+    public static PhoneStatus MissingStatus(string host, string peer, PhoneStatus current)
+    {
+        if (!string.IsNullOrEmpty(host) || !string.IsNullOrEmpty(peer) || current == PhoneStatus.Connected || current == PhoneStatus.Reconnecting)
+            return PhoneStatus.Reconnecting;
+        return PhoneStatus.PhoneNotFound;
     }
 
     // Online Android peers from `tailscale status --json`, first IPv4 each.
@@ -182,6 +203,85 @@ internal static class PhoneMountLogic
         if (win32 == 0) return AuthResult.Ok;
         if (win32 == 1326 || win32 == 86 || win32 == 5 || win32 == 1244) return AuthResult.BadCode; // logon failure, bad password, denied, not authenticated
         return AuthResult.Unreachable;
+    }
+
+    // A dead WebClient session (1219 and friends). Drop it and try the map once more.
+    // These are not a wrong token.
+    public static bool ShouldResetSession(int win32)
+    {
+        return win32 == 1219 || win32 == 85 || win32 == 1202 || win32 == 64 || win32 == 59 || win32 == 2250 || win32 == 1203;
+    }
+
+    // manual, then last known host, then Tailscale peers, then LAN replies.
+    // A stale manual address is first but is not the only candidate.
+    public static List<string[]> OrderCandidates(bool hasManual, string manualHost, int manualPort, string savedHost, int savedPort, IList<string[]> lan, IList<string> tailscaleIps)
+    {
+        List<string[]> list = new List<string[]>();
+        if (hasManual) AddCandidate(list, manualHost, manualPort);
+        if (!string.IsNullOrEmpty(savedHost)) AddCandidate(list, savedHost, savedPort > 0 ? savedPort : DefaultPort);
+        if (tailscaleIps != null)
+        {
+            foreach (string ip in tailscaleIps) AddCandidate(list, ip, DefaultPort);
+        }
+        if (lan != null)
+        {
+            foreach (string[] row in lan)
+            {
+                if (row == null || row.Length < 2) continue;
+                int p;
+                if (!int.TryParse(row[1], out p)) p = DefaultPort;
+                AddCandidate(list, row[0], p);
+            }
+        }
+        return list;
+    }
+
+    static void AddCandidate(List<string[]> list, string host, int port)
+    {
+        if (string.IsNullOrEmpty(host) || port < 1 || port > 65535) return;
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (string.Equals(list[i][0], host, StringComparison.OrdinalIgnoreCase) && list[i][1] == port.ToString()) return;
+        }
+        list.Add(new string[] { host, port.ToString() });
+    }
+
+    // Reply to DRIVEBAY? : "DRIVEBAY1 <peerId> <port>".
+    public static bool TryParseDiscovery(string message, out string peer, out int port)
+    {
+        peer = null;
+        port = 0;
+        if (string.IsNullOrEmpty(message)) return false;
+        string[] parts = message.Trim().Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3 || parts[0] != "DRIVEBAY1") return false;
+        if (!Regex.IsMatch(parts[1], "^[0-9a-f]{8,32}$")) return false;
+        int p;
+        if (!int.TryParse(parts[2], out p) || p < 1 || p > 65535) return false;
+        peer = parts[1];
+        port = p;
+        return true;
+    }
+
+    // Index of the phone that answered, or -1. With a saved peer id, ignore a
+    // different phone. A saved host that answers without the header (older app)
+    // is still accepted.
+    public static int PickCandidate(IList<string> hosts, IList<bool> answered, IList<string> peerIds, string expectedPeer, string savedHost)
+    {
+        if (hosts == null || answered == null || peerIds == null) return -1;
+        int n = hosts.Count;
+        if (answered.Count < n) n = answered.Count;
+        if (peerIds.Count < n) n = peerIds.Count;
+        int fallback = -1;
+        for (int i = 0; i < n; i++)
+        {
+            if (!answered[i]) continue;
+            string id = peerIds[i] ?? "";
+            if (string.IsNullOrEmpty(expectedPeer)) return i;
+            if (string.Equals(id, expectedPeer, StringComparison.OrdinalIgnoreCase)) return i;
+            if (id.Length == 0 && !string.IsNullOrEmpty(savedHost) && string.Equals(hosts[i], savedHost, StringComparison.OrdinalIgnoreCase) && fallback < 0)
+                fallback = i;
+        }
+        return fallback;
     }
 
     // 85 = ERROR_ALREADY_ASSIGNED, 1202 = ERROR_DEVICE_ALREADY_REMEMBERED

@@ -3,4 +3,5 @@
     <external-path name="drivebay_downloads" path="Download/Drivebay/" />
     <files-path name="partial" path="downloads/partial/" />
     <cache-path name="uploads" path="uploads/" />
+    <cache-path name="open" path="open/" />
 </paths>

@@ -4,7 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class ServerProfilesTest {
     @Test fun keyIgnoresPathAndSlash() {
@@ -121,5 +124,192 @@ class DavProtocolTest {
         assertTrue(response.headers.getValue("Allow").contains("LOCK"))
     }
 
+    @Test fun optionsCarryPeerId() {
+        val hash = PhoneShareAuth.hash("db_" + "ab".repeat(32))
+        val peer = PhoneShareLifecycle.peerId(hash)
+        val response = DavProtocol.handle(DavRequest("OPTIONS", "/", emptyMap()), MemoryDavStore(), hash, peer)
+        assertEquals(peer, response.headers[PhoneShareLifecycle.PEER_HEADER])
+    }
+
     private var stored: String = ""
+}
+
+class PhoneShareLifecycleTest {
+    @Test fun resumeNeedsSavedTokenAndAFolder() {
+        val hash = PhoneShareAuth.hash(PhoneShareAuth.generateToken())
+        assertTrue(PhoneShareLifecycle.shouldResume(true, hash, 1))
+        assertFalse(PhoneShareLifecycle.shouldResume(false, hash, 1))
+        assertFalse(PhoneShareLifecycle.shouldResume(true, null, 1))
+        assertFalse(PhoneShareLifecycle.shouldResume(true, hash, 0))
+        assertTrue(PhoneShareLifecycle.shouldResume(true, hash, 0, wholePhone = true))
+        assertEquals(16, PhoneShareLifecycle.peerId(hash)!!.length)
+    }
+
+    @Test fun retryBackoffCaps() {
+        assertEquals(1_000L, PhoneShareLifecycle.retryDelayMs(0))
+        assertEquals(2_000L, PhoneShareLifecycle.retryDelayMs(1))
+        assertEquals(4_000L, PhoneShareLifecycle.retryDelayMs(2))
+        assertEquals(30_000L, PhoneShareLifecycle.retryDelayMs(20))
+    }
+
+    @Test fun backgroundStartIsRefusedAndBootDependsOnTheServiceType() {
+        val types = PhoneShareLifecycle.FOREGROUND_SERVICE_TYPES
+        assertEquals("specialUse|dataSync", types)
+        assertFalse(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.APPLICATION, types, 36))
+        assertTrue(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.ACTIVITY, types, 36))
+        assertTrue(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.PACKAGE_REPLACED, types, 36))
+        assertFalse(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.BOOT_COMPLETED, types, 36))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt(types, 35))
+        assertTrue(PhoneShareLifecycle.bootCompletedExempt(types, 34))
+        assertTrue(PhoneShareLifecycle.bootCompletedExempt("specialUse", 36))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt("microphone", 34))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt("camera|specialUse", 35))
+    }
+
+    @Test fun foregroundStartBlockIsNotLoggedAsANormalFailure() {
+        val system = IllegalStateException("startForegroundService() not allowed due to mAllowStartForeground false")
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(system))
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(RuntimeException("wrap", system)))
+        val named = ForegroundServiceStartNotAllowedException("blocked")
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(named))
+        assertFalse(PhoneShareLifecycle.isForegroundStartBlocked(IllegalStateException("bind failed")))
+        assertFalse(PhoneShareLifecycle.isForegroundStartBlocked(null))
+    }
+
+    private class ForegroundServiceStartNotAllowedException(message: String) : IllegalStateException(message)
+
+    @Test fun addressInUseRetriesThenGivesUp() {
+        assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("Address already in use")))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("bind failed: EADDRINUSE (Address already in use)")))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(RuntimeException("start", java.net.BindException("Address already in use"))))
+        assertTrue(PhoneShareLifecycle.isAddressInUse(ErrnoLike("bind failed", PhoneShareLifecycle.EADDRINUSE)))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(java.net.BindException("No address to share on")))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(ErrnoLike("network is down", 101)))
+        assertFalse(PhoneShareLifecycle.isAddressInUse(null))
+        assertFalse(PhoneShareLifecycle.portInUseExhausted(0))
+        assertFalse(PhoneShareLifecycle.portInUseExhausted(PhoneShareLifecycle.PORT_IN_USE_TRIES - 1))
+        assertTrue(PhoneShareLifecycle.portInUseExhausted(PhoneShareLifecycle.PORT_IN_USE_TRIES))
+        assertEquals(5, PhoneShareLifecycle.PORT_IN_USE_TRIES)
+    }
+
+    private class ErrnoLike(message: String, private val errno: Int) : Exception(message) {
+        fun getErrno(): Int = errno
+    }
+
+    @Test fun bannerSitsAboveTheList() {
+        val top = ShareScreenLayout.listTop(statusBarInsetPx = 80, bannerHeightPx = 140, bannerVisible = true)
+        assertEquals(220, top)
+        assertTrue(ShareScreenLayout.firstRowVisible(80, 140, true, top))
+        assertFalse(ShareScreenLayout.firstRowVisible(80, 140, true, top - 1))
+        assertEquals(80, ShareScreenLayout.listTop(80, 140, bannerVisible = false))
+        val text = PhoneShareLifecycle.bannerText("This phone is shared as a drive", "Connected", "Reconnecting...", listOf("100.70.1.2"), 8780)
+        assertTrue(text.startsWith("This phone is shared as a drive\nConnected\n"))
+        assertTrue(text.contains("http://100.70.1.2:8780/"))
+        val waiting = PhoneShareLifecycle.bannerText("This phone is shared as a drive", "Connected", "Reconnecting...", emptyList(), 8780)
+        assertEquals("This phone is shared as a drive\nReconnecting...", waiting)
+        assertFalse(waiting.contains("http://"))
+    }
+
+    @Test fun discoveryRoundTrip() {
+        val message = PhoneShareLifecycle.discoveryMessage("abcdef0123456789", 8780)
+        val parsed = PhoneShareLifecycle.parseDiscovery(message)
+        assertEquals("abcdef0123456789", parsed!!.peerId)
+        assertEquals(8780, parsed.port)
+        assertNull(PhoneShareLifecycle.parseDiscovery("DRIVEBAY? "))
+        assertNull(PhoneShareLifecycle.parseDiscovery("nope"))
+    }
+}
+
+class DownloadOpenTest {
+    @Test fun settingTypeAfterDataDropsTheUri() {
+        val lost = IntentSlots().apply {
+            assignData("content://media/external/downloads/12")
+            assignType("application/pdf")
+        }
+        assertNull(lost.data)
+        val kept = DownloadOpen.launchSlots("content://media/external/downloads/12", "application/pdf")
+        assertEquals("content://media/external/downloads/12", kept.data)
+        assertEquals("application/pdf", kept.type)
+    }
+
+    @Test fun mimeFollowsTheFileWhenTheServerSaysOctetStream() {
+        assertEquals("application/pdf", DownloadOpen.mimeType("report.PDF", null))
+        assertEquals("application/pdf", DownloadOpen.mimeType("report.pdf", "application/octet-stream"))
+        assertEquals("image/png", DownloadOpen.mimeType("photo.bin", "image/png"))
+        assertEquals("application/octet-stream", DownloadOpen.mimeType("blob", "application/octet-stream"))
+    }
+
+    @Test fun openChooserUsesAFileProviderUri() {
+        assertEquals(DownloadOpen.Step.CHOOSER, DownloadOpen.step(1))
+        assertEquals(DownloadOpen.Step.TOAST, DownloadOpen.step(0))
+        assertEquals("No app can open this file", DownloadOpen.NO_APP)
+        val authority = DownloadOpen.authority("com.mesaandmoon.drivebay")
+        assertEquals("com.mesaandmoon.drivebay.fileprovider", authority)
+        assertTrue(DownloadOpen.isFileProviderUri("content://$authority/open/photo.jpg", "com.mesaandmoon.drivebay"))
+        assertFalse(DownloadOpen.isFileProviderUri("content://media/external/downloads/12", "com.mesaandmoon.drivebay"))
+        val cache = DownloadOpen.cacheFileName("../Camera/a.pdf", "content://media/external/downloads/12")
+        assertTrue(cache.endsWith(".pdf"))
+        assertFalse(cache.contains("/"))
+        assertFalse(cache.contains(".."))
+    }
+}
+
+class PhoneDavRestartTest {
+    @Test fun sameTokenWorksAfterRestartAndABusyPortThrows() {
+        val store = MemoryDavStore()
+        assertTrue(store.mkcol("/Camera"))
+        val token = PhoneShareAuth.generateToken()
+        val hash = PhoneShareAuth.hash(token)
+        val peer = PhoneShareLifecycle.peerId(hash)
+        val first = PhoneDavServer(store, hash, 0, listOf("127.0.0.1"), peer)
+        first.start()
+        val port = first.port()
+        val options = http(port, "OPTIONS / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        assertTrue(options.startsWith("HTTP/1.1 200"))
+        assertTrue(options.contains("X-Drivebay-Phone: $peer"))
+        // A second instance must take the port from the first instead of failing EADDRINUSE.
+        val busy = PhoneDavServer(store, hash, port, listOf("127.0.0.1"), peer)
+        busy.start()
+        val taken = http(port, "OPTIONS / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        assertTrue(taken.startsWith("HTTP/1.1 200"))
+        first.stop()
+        busy.stop()
+        val second = PhoneDavServer(store, hash, port, listOf("127.0.0.1"), peer)
+        var restarted = false
+        var tries = 0
+        while (tries < 8 && !restarted) {
+            try {
+                second.start()
+                restarted = true
+            } catch (_: java.net.BindException) {
+                Thread.sleep(40)
+            }
+            tries++
+        }
+        assertTrue("share should bind again on the same port", restarted)
+        val header = PhoneShareAuth.basicHeader(PhoneShareAuth.USER, token)
+        val listing = http(
+            second.port(),
+            "PROPFIND / HTTP/1.1\r\nHost: 127.0.0.1\r\nDepth: 1\r\nAuthorization: $header\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )
+        assertTrue(listing.startsWith("HTTP/1.1 207"))
+        assertTrue(listing.contains("/Camera"))
+        second.stop()
+        try {
+            PhoneDavServer(store, hash, 0, listOf("8.8.8.8"), peer).start()
+            fail("a public address is not a place to share")
+        } catch (_: java.net.BindException) {
+        }
+    }
+
+    private fun http(port: Int, request: String): String {
+        val socket = Socket()
+        socket.connect(InetSocketAddress("127.0.0.1", port), 2000)
+        socket.soTimeout = 2000
+        socket.use {
+            it.getOutputStream().write(request.toByteArray(Charsets.ISO_8859_1))
+            it.getOutputStream().flush()
+            return it.getInputStream().readBytes().toString(Charsets.ISO_8859_1)
+        }
+    }
 }

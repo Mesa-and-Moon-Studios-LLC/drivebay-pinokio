@@ -9,13 +9,68 @@ import java.io.ByteArrayOutputStream
 
 data class SharedFolder(val uri: String, val name: String)
 
-class PhoneShareStore(context: Context) {
+/** Folder names for the tree URIs the system folder picker returns. Pure, so JVM tests cover it. */
+object PhoneShareNames {
+    /**
+     * Name from a tree document id such as "primary:DCIM/Camera" or "1234-ABCD:Download".
+     * The storage root itself ("primary:") becomes "Phone storage".
+     */
+    fun fromTreeDocumentId(documentId: String?): String {
+        if (documentId.isNullOrBlank()) return "Folder"
+        val path = documentId.substringAfter(':', documentId).trimEnd('/')
+        if (path.isBlank()) return if (documentId.startsWith("primary")) "Phone storage" else "SD card"
+        return clean(path.substringAfterLast('/'))
+    }
+
+    /** WebDAV top-level names must be unique and must not contain a slash. */
+    fun clean(raw: String): String {
+        val name = raw.replace('/', '_').replace('\\', '_').trim()
+        return if (name.isEmpty() || name == "." || name == "..") "Folder" else name
+    }
+
+    fun unique(name: String, taken: Collection<String>): String {
+        if (name !in taken) return name
+        var n = 2
+        while ("$name ($n)" in taken) n++
+        return "$name ($n)"
+    }
+}
+
+class PhoneShareStore(context: Context) : PhoneShareCodeState {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun enabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
 
+    /** Turning sharing off also clears the 6-digit code. */
     fun setEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_ENABLED, value).apply()
+        val edit = prefs.edit().putBoolean(KEY_ENABLED, value)
+        if (!value) edit.remove(KEY_CODE).remove(KEY_CODE_FAILURES)
+        edit.commit()
+    }
+
+    override fun codeRecord(): String? = prefs.getString(KEY_CODE, null)
+
+    override fun codeFailures(): Int = prefs.getInt(KEY_CODE_FAILURES, 0)
+
+    override fun saveCodeFailures(count: Int) {
+        prefs.edit().putInt(KEY_CODE_FAILURES, count).commit()
+    }
+
+    override fun saveCode(record: String?, failures: Int) {
+        val edit = prefs.edit().putInt(KEY_CODE_FAILURES, failures)
+        if (record == null) edit.remove(KEY_CODE) else edit.putString(KEY_CODE, record)
+        edit.commit()
+    }
+
+    fun codeLocked(): Boolean = codeRecord() != null && codeFailures() >= PhoneShareCode.MAX_FAILURES
+
+    /** New token: new code hash and a fresh strike count. The plain token and code are never stored. */
+    fun setCredentials(tokenHash: String, codeRecord: String) {
+        prefs.edit()
+            .putString(KEY_HASH, tokenHash)
+            .putString(KEY_CODE, codeRecord)
+            .putInt(KEY_CODE_FAILURES, 0)
+            .commit()
     }
 
     fun tokenHash(): String? = prefs.getString(KEY_HASH, null)?.takeIf { it.length == 64 }
@@ -23,6 +78,16 @@ class PhoneShareStore(context: Context) {
     fun setTokenHash(hash: String) {
         prefs.edit().putString(KEY_HASH, hash).apply()
     }
+
+    /** Opt-in whole-phone mode (All files access). Off by default; picked folders stay the default. */
+    fun wholePhone(): Boolean = prefs.getBoolean(KEY_WHOLE_PHONE, false)
+
+    fun setWholePhone(value: Boolean) {
+        prefs.edit().putBoolean(KEY_WHOLE_PHONE, value).commit()
+    }
+
+    /** Something to share: whole phone mode or at least one picked folder. */
+    fun hasShareSource(): Boolean = wholePhone() || folders().isNotEmpty()
 
     fun folders(): List<SharedFolder> {
         val raw = prefs.getString(KEY_FOLDERS, null) ?: return emptyList()
@@ -47,11 +112,23 @@ class PhoneShareStore(context: Context) {
         prefs.edit().putString(KEY_FOLDERS, array.toString()).apply()
     }
 
+    /** Addresses the WebDAV server is actually listening on. Empty while it is down. */
+    fun listeningHosts(): List<String> =
+        prefs.getString(KEY_LISTENING, null).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
+    fun setListening(hosts: List<String>) {
+        prefs.edit().putString(KEY_LISTENING, hosts.joinToString(",")).commit()
+    }
+
     companion object {
         private const val PREFS = "drivebay_phone_share"
         const val KEY_ENABLED = "enabled"
         private const val KEY_HASH = "token_hash"
         private const val KEY_FOLDERS = "folders"
+        private const val KEY_LISTENING = "listening"
+        private const val KEY_CODE = "code_hash"
+        private const val KEY_CODE_FAILURES = "code_failures"
+        private const val KEY_WHOLE_PHONE = "whole_phone"
     }
 }
 
@@ -61,10 +138,17 @@ class DocumentPhoneStore(
     folders: List<SharedFolder>,
 ) : DavStore {
     private val roots: List<Pair<String, DocumentFile>> = folders.mapNotNull { folder ->
-        val doc = DocumentFile.fromTreeUri(context, Uri.parse(folder.uri)) ?: return@mapNotNull null
-        if (!doc.isDirectory) return@mapNotNull null
-        folder.name to doc
+        // A folder whose access was revoked (or that was deleted) is skipped, not fatal.
+        try {
+            val doc = DocumentFile.fromTreeUri(context, Uri.parse(folder.uri)) ?: return@mapNotNull null
+            if (!doc.isDirectory) return@mapNotNull null
+            folder.name to doc
+        } catch (_: Exception) {
+            null
+        }
     }
+
+    fun rootCount(): Int = roots.size
 
     override fun list(path: String): List<DavNode>? {
         if (path == "/") return roots.map { (name, _) -> DavNode("/$name", name, true, 0, 0) }

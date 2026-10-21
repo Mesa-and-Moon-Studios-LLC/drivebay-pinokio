@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -104,8 +105,20 @@ internal static class PhoneCredentials
 
     public static string Read()
     {
+        int ignored;
+        return Read(out ignored);
+    }
+
+    // error is the Win32 code from CredRead. 1168 means the token is really gone.
+    public static string Read(out int error)
+    {
+        error = 0;
         IntPtr p;
-        if (!CredRead(GenericTarget, CRED_TYPE_GENERIC, 0, out p)) return null;
+        if (!CredRead(GenericTarget, CRED_TYPE_GENERIC, 0, out p))
+        {
+            error = Marshal.GetLastWin32Error();
+            return null;
+        }
         try
         {
             CREDENTIAL c = (CREDENTIAL)Marshal.PtrToStructure(p, typeof(CREDENTIAL));
@@ -135,6 +148,7 @@ internal sealed class PhoneSettings
     public string ManualAddress = ""; // Advanced; blank = find automatically
     public char Letter = '\0';        // the letter we mapped
     public char PreferredLetter = 'P';
+    public string PeerId = "";        // X-Drivebay-Phone, not the token
 
     static string FilePath()
     {
@@ -160,6 +174,7 @@ internal sealed class PhoneSettings
                 else if (k == "manual") s.ManualAddress = v;
                 else if (k == "letter" && v.Length == 1) s.Letter = char.ToUpperInvariant(v[0]);
                 else if (k == "preferred" && v.Length == 1) s.PreferredLetter = char.ToUpperInvariant(v[0]);
+                else if (k == "peer" && v.Length >= 8 && v.Length <= 32) s.PeerId = v.ToLowerInvariant();
             }
         }
         catch
@@ -181,7 +196,8 @@ internal sealed class PhoneSettings
                 "port=" + Port,
                 "manual=" + ManualAddress,
                 "letter=" + (Letter == '\0' ? "" : Letter.ToString()),
-                "preferred=" + PreferredLetter
+                "preferred=" + PreferredLetter,
+                "peer=" + (PeerId ?? "")
             });
         }
         catch
@@ -222,15 +238,26 @@ internal static class PhoneMount
 
     static bool verified;
     static int misses;
+    static string seenPeer = "";
     static DateTime nextCheck = DateTime.MinValue;
     static int busy;
 
     public static void Init()
     {
         Settings = PhoneSettings.Load();
-        if (!Settings.Enabled) Status = PhoneStatus.Off;
-        else if (Settings.Expired) Status = PhoneStatus.CodeExpired;
-        else Status = PhoneStatus.Searching;
+        bool paired = !string.IsNullOrEmpty(Settings.Host) || !string.IsNullOrEmpty(Settings.PeerId);
+        Status = PhoneMountLogic.InitialStatus(Settings.Enabled, Settings.Expired, paired);
+        if (Settings.Enabled && !Settings.Expired)
+            Log("saved phone " + Settings.Host + ":" + Settings.Port + " peer=" + (string.IsNullOrEmpty(Settings.PeerId) ? "none" : Settings.PeerId));
+    }
+
+    static void RememberPeer()
+    {
+        if (string.IsNullOrEmpty(seenPeer)) return;
+        if (string.Equals(Settings.PeerId, seenPeer, StringComparison.OrdinalIgnoreCase)) return;
+        Settings.PeerId = seenPeer;
+        Settings.Save();
+        Log("saved peer " + seenPeer);
     }
 
     static void SetStatus(PhoneStatus s)
@@ -269,7 +296,7 @@ internal static class PhoneMount
     static void Check()
     {
         string host; int port;
-        bool found = FindPhone(out host, out port);
+        bool found = FindPhone(out host, out port, true);
         if (found && (host != Settings.Host || port != Settings.Port))
         {
             // Phone moved to a new address: remap there, re-verify once.
@@ -286,28 +313,37 @@ internal static class PhoneMount
         {
             misses++;
             verified = false; // re-check the code once when it comes back
-            SetStatus(PhoneStatus.PhoneNotFound);
+            SetStatus(PhoneMountLogic.MissingStatus(Settings.Host, Settings.PeerId, Status));
             return;
         }
         misses = 0;
         if (step == PhoneStep.Verify)
         {
-            string secret = PhoneCredentials.Read();
-            if (secret == null) { MarkExpired(); return; }
+            int credErr;
+            string secret = PhoneCredentials.Read(out credErr);
+            if (secret == null)
+            {
+                if (credErr == 1168) { MarkExpired(); return; }
+                Log("check: credential unreadable (" + credErr + "), retrying");
+                misses++;
+                SetStatus(PhoneStatus.Reconnecting);
+                return;
+            }
             AuthResult r = VerifyOnce(Settings.Host, Settings.Port, secret);
             secret = null;
             Log("check: verify -> " + r);
             PhoneStatus after = PhoneMountLogic.AfterVerify(r);
             if (after == PhoneStatus.CodeExpired) { MarkExpired(); return; }
-            if (after != PhoneStatus.Connected) { misses++; SetStatus(after); return; }
+            if (after != PhoneStatus.Connected) { misses++; SetStatus(PhoneStatus.Reconnecting); return; }
             verified = true;
+            RememberPeer();
             step = PhoneStep.Map; // (re)connect the session with the verified code
         }
         if (step == PhoneStep.Map)
         {
             AuthResult m = MapNow();
             if (m == AuthResult.BadCode) { MarkExpired(); return; }
-            if (m != AuthResult.Ok) { misses++; verified = false; SetStatus(PhoneStatus.PhoneNotFound); return; }
+            if (m != AuthResult.Ok) { misses++; verified = false; SetStatus(PhoneStatus.Reconnecting); return; }
         }
         SetStatus(PhoneStatus.Connected);
     }
@@ -321,6 +357,7 @@ internal static class PhoneMount
         PhoneCredentials.Delete(Settings.Host);
         Settings.Expired = true;
         Settings.Letter = '\0';
+        Settings.PeerId = "";
         Settings.Save();
         verified = false;
         SetStatus(PhoneStatus.CodeExpired);
@@ -330,15 +367,19 @@ internal static class PhoneMount
     // Maps with WNetAddConnection2W: user + code passed in memory only.
     static AuthResult MapNow()
     {
-        string secret = PhoneCredentials.Read();
-        if (secret == null) { Log("map: no saved code in Credential Manager"); return AuthResult.BadCode; }
+        int credErr;
+        string secret = PhoneCredentials.Read(out credErr);
+        if (secret == null)
+        {
+            Log("map: no saved code in Credential Manager (" + credErr + ")");
+            return credErr == 1168 ? AuthResult.BadCode : AuthResult.Unreachable;
+        }
         string unc = PhoneMountLogic.UncPath(Settings.Host, Settings.Port);
         char current = Settings.Letter;
-        if (current != '\0' && IsMapped(current, Settings.Host, Settings.Port))
-        {
-            int c = WNetCancelConnection2W(current + ":", 0, true);
-            Log("map: dropped old session on " + current + ": result " + c);
-        }
+        // A phone or PC restart leaves a dead WebClient session. Drop the letter
+        // and the UNC before mapping again, or Windows returns 1219 / 85 and
+        // the drive never comes back.
+        DropSession(current, Settings.Host, Settings.Port);
         char letter = PhoneMountLogic.PickLetter(UsedLetters(current), Settings.PreferredLetter, current);
         if (letter == '\0') { Log("map: no free drive letter"); return AuthResult.Unreachable; }
         SetLabel(Settings.Host, Settings.Port);
@@ -347,9 +388,9 @@ internal static class PhoneMount
         nr.lpLocalName = letter + ":";
         nr.lpRemoteName = unc;
         int rc = WNetAddConnection2W(ref nr, secret, PhoneMountLogic.User, CONNECT_UPDATE_PROFILE);
-        if (PhoneMountLogic.IsLetterBusy(rc) && current == letter)
+        if (PhoneMountLogic.ShouldResetSession(rc))
         {
-            WNetCancelConnection2W(letter + ":", CONNECT_UPDATE_PROFILE, true);
+            DropSession(letter, Settings.Host, Settings.Port);
             rc = WNetAddConnection2W(ref nr, secret, PhoneMountLogic.User, CONNECT_UPDATE_PROFILE);
         }
         secret = null;
@@ -408,11 +449,14 @@ internal static class PhoneMount
         Settings.ManualAddress = (manualAddress ?? "").Trim();
         Settings.PreferredLetter = preferred == '\0' ? 'P' : preferred;
         string host; int port;
-        if (!FindPhone(out host, out port))
+        if (!FindPhone(out host, out port, false))
         {
             Log("connect: phone not found; code saved for later");
             // Save the code so it connects as soon as the phone shows up.
+            // A new token replaces the old phone identity, or the next reply
+            // from this phone would be ignored.
             Settings.Host = host ?? Settings.Host;
+            Settings.PeerId = "";
             PhoneCredentials.SaveOwnCopy(secret);
             Settings.Enabled = true; Settings.Expired = false; verified = false; misses = 1;
             Settings.Save();
@@ -429,14 +473,15 @@ internal static class PhoneMount
         if (r != AuthResult.Ok) { SetStatus(PhoneStatus.PhoneNotFound); return PhoneStatus.PhoneNotFound; }
         if (Settings.Letter != '\0' && (host != Settings.Host || port != Settings.Port)) Unmap(Settings.Letter, Settings.Host, Settings.Port);
         Settings.Host = host; Settings.Port = port;
-        PhoneCredentials.Save(host, secret);
+        if (!PhoneCredentials.Save(host, secret)) Log("connect: could not save the token in Credential Manager");
         Settings.Enabled = true; Settings.Expired = false;
         verified = true; misses = 0;
+        RememberPeer();
         if (Settings.Letter != '\0' && !IsMapped(Settings.Letter, host, port)) Settings.Letter = '\0';
         Settings.Save();
         AuthResult m = MapNow();
         if (m == AuthResult.BadCode) { MarkExpired(); return PhoneStatus.CodeExpired; }
-        if (m != AuthResult.Ok) { verified = false; misses = 1; SetStatus(PhoneStatus.PhoneNotFound); return PhoneStatus.PhoneNotFound; }
+        if (m != AuthResult.Ok) { verified = false; misses = 1; SetStatus(PhoneStatus.Reconnecting); return PhoneStatus.Reconnecting; }
         SetStatus(PhoneStatus.Connected);
         return PhoneStatus.Connected;
     }
@@ -447,6 +492,8 @@ internal static class PhoneMount
         if (Settings.Letter != '\0') Unmap(Settings.Letter, Settings.Host, Settings.Port);
         PhoneCredentials.Delete(Settings.Host);
         Settings.Enabled = false; Settings.Expired = false; Settings.Letter = '\0';
+        Settings.PeerId = "";
+        Settings.Host = "";
         Settings.Save();
         verified = false;
         SetStatus(PhoneStatus.Off);
@@ -454,36 +501,109 @@ internal static class PhoneMount
 
     // ----- discovery -----
 
-    static bool FindPhone(out string host, out int port)
+    static bool FindPhone(out string host, out int port, bool matchPeer)
     {
-        host = null; port = PhoneMountLogic.DefaultPort;
-        List<string[]> candidates = new List<string[]>();
-        string mh; int mp;
-        if (!string.IsNullOrEmpty(Settings.ManualAddress) && PhoneMountLogic.TryParseAddress(Settings.ManualAddress, out mh, out mp))
+        host = null;
+        port = PhoneMountLogic.DefaultPort;
+        seenPeer = "";
+        string mh = null;
+        int mp = PhoneMountLogic.DefaultPort;
+        bool hasManual = false;
+        if (!string.IsNullOrEmpty(Settings.ManualAddress))
+            hasManual = PhoneMountLogic.TryParseAddress(Settings.ManualAddress, out mh, out mp);
+        List<string[]> lan = ProbeLan();
+        if (matchPeer && !string.IsNullOrEmpty(Settings.PeerId))
         {
-            candidates.Add(new string[] { mh, mp.ToString() });
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(Settings.Host)) candidates.Add(new string[] { Settings.Host, Settings.Port.ToString() });
-            string ts = TailscaleStatusJson();
-            List<string> peers = PhoneMountLogic.ParseAndroidPeers(ts);
-            Log("discover: tailscale " + (ts == null ? "not available" : "ok") + ", online Android peers " + peers.Count);
-            foreach (string ip in peers)
+            List<string[]> mine = new List<string[]>();
+            foreach (string[] row in lan)
             {
-                if (ip != Settings.Host) candidates.Add(new string[] { ip, PhoneMountLogic.DefaultPort.ToString() });
+                if (row.Length >= 3 && string.Equals(row[2], Settings.PeerId, StringComparison.OrdinalIgnoreCase)) mine.Add(row);
             }
+            lan = mine;
         }
+        string ts = TailscaleStatusJson();
+        List<string> peers = PhoneMountLogic.ParseAndroidPeers(ts);
+        Log("discover: tailscale " + (ts == null ? "not available" : "ok") + ", online Android peers " + peers.Count + ", lan replies " + lan.Count);
+        List<string[]> candidates = PhoneMountLogic.OrderCandidates(hasManual, mh, mp, Settings.Host, Settings.Port, lan, peers);
+        List<string> hosts = new List<string>();
+        List<bool> answered = new List<bool>();
+        List<string> ids = new List<string>();
         foreach (string[] c in candidates)
         {
             int p = int.Parse(c[1]);
-            int st = OptionsStatus(c[0], p);
+            string id;
+            int st = OptionsStatus(c[0], p, out id);
             Log("discover: OPTIONS " + c[0] + ":" + p + " -> " + (st < 0 ? "no answer" : st.ToString()));
-            if (st == 200) { host = c[0]; port = p; return true; }
+            hosts.Add(c[0]);
+            answered.Add(st == 200);
+            ids.Add(id ?? "");
         }
-        Log("discover: " + candidates.Count + " candidate(s), none answered");
-        if (candidates.Count > 0) { host = candidates[0][0]; port = int.Parse(candidates[0][1]); }
-        return false;
+        string expected = matchPeer ? Settings.PeerId : "";
+        int pick = PhoneMountLogic.PickCandidate(hosts, answered, ids, expected, Settings.Host);
+        if (pick < 0)
+        {
+            Log("discover: " + candidates.Count + " candidate(s), none matched");
+            if (candidates.Count > 0) { host = candidates[0][0]; port = int.Parse(candidates[0][1]); }
+            return false;
+        }
+        host = hosts[pick];
+        port = int.Parse(candidates[pick][1]);
+        seenPeer = ids[pick] ?? "";
+        Log("discover: using " + host + ":" + port + (seenPeer.Length == 0 ? "" : " peer " + seenPeer));
+        return true;
+    }
+
+    static List<string[]> ProbeLan()
+    {
+        List<string[]> found = new List<string[]>();
+        Socket socket = null;
+        try
+        {
+            socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            socket.EnableBroadcast = true;
+            socket.ReceiveTimeout = 400;
+            socket.SendTimeout = 400;
+            byte[] query = Encoding.ASCII.GetBytes(PhoneMountLogic.DiscoveryQuery);
+            socket.SendTo(query, new IPEndPoint(IPAddress.Broadcast, PhoneMountLogic.DiscoveryPort));
+            DateTime until = DateTime.UtcNow.AddMilliseconds(450);
+            while (DateTime.UtcNow < until)
+            {
+                byte[] buf = new byte[256];
+                EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+                int n;
+                try { n = socket.ReceiveFrom(buf, ref remote); }
+                catch { break; }
+                if (n <= 0) break;
+                string peer;
+                int dport;
+                if (!PhoneMountLogic.TryParseDiscovery(Encoding.ASCII.GetString(buf, 0, n), out peer, out dport)) continue;
+                IPEndPoint ep = remote as IPEndPoint;
+                if (ep == null) continue;
+                found.Add(new string[] { ep.Address.ToString(), dport.ToString(), peer });
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("discover: lan probe " + ex.GetType().Name);
+        }
+        finally
+        {
+            if (socket != null) socket.Close();
+        }
+        return found;
+    }
+
+    static void DropSession(char letter, string host, int port)
+    {
+        if (letter != '\0')
+        {
+            int c = WNetCancelConnection2W(letter + ":", 0, true);
+            if (c != 0 && c != 2250) Log("map: drop " + letter + ": result " + c);
+        }
+        if (string.IsNullOrEmpty(host)) return;
+        int unc = WNetCancelConnection2W(PhoneMountLogic.UncPath(host, port), 0, true);
+        WNetCancelConnection2W(PhoneMountLogic.BaseUrl(host, port), 0, true);
+        if (unc != 0 && unc != 2250 && unc != 67) Log("map: drop unc result " + unc);
     }
 
     static string TailscaleStatusJson()
@@ -515,8 +635,9 @@ internal static class PhoneMount
     }
 
     // Unauthenticated OPTIONS: no code is sent, so it can't count as a try.
-    static int OptionsStatus(string host, int port)
+    static int OptionsStatus(string host, int port, out string peer)
     {
+        peer = "";
         try
         {
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(PhoneMountLogic.BaseUrl(host, port));
@@ -525,6 +646,8 @@ internal static class PhoneMount
             {
                 int code = (int)res.StatusCode;
                 if (code == 200 && res.Headers["DAV"] == null) return 299; // answered, but not WebDAV
+                string id = res.Headers[PhoneMountLogic.PeerHeader];
+                if (!string.IsNullOrEmpty(id)) peer = id.Trim().ToLowerInvariant();
                 return code;
             }
         }
@@ -662,41 +785,41 @@ internal sealed class PhoneForm : Form
         ClientSize = new Size(440, 250);
 
         Label help = new Label();
-        help.Text = "On your phone, open Drivebay > Settings > Phone as a drive, turn sharing on, and tap New token. Type the 6-digit code here. You only need to do this once.";
-        help.SetBounds(16, 12, 408, 60);
+        help.Text = "On your phone, turn on Share this phone as a drive and tap New token. Paste that token here once. Drivebay saves it and reconnects if the phone or this PC restarts.";
+        help.SetBounds(16, 12, 408, 72);
 
         code = new TextBox();
-        code.SetBounds(16, 78, 200, 28);
+        code.SetBounds(16, 92, 200, 28);
         code.UseSystemPasswordChar = true;
         code.MaxLength = 200;
 
         connect = new Button();
         connect.Text = "Connect my phone";
-        connect.SetBounds(226, 76, 198, 32);
+        connect.SetBounds(226, 90, 198, 32);
         connect.Click += delegate { DoConnect(); };
         AcceptButton = connect;
 
         status = new Label();
-        status.SetBounds(16, 118, 408, 24);
+        status.SetBounds(16, 132, 408, 24);
         status.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
 
         disconnect = new Button();
         disconnect.Text = "Unmount and forget phone";
-        disconnect.SetBounds(16, 150, 220, 30);
+        disconnect.SetBounds(16, 164, 220, 30);
         disconnect.Click += delegate { DoDisconnect(); };
 
         advancedLink = new LinkLabel();
         advancedLink.Text = "Advanced";
-        advancedLink.SetBounds(340, 156, 84, 24);
+        advancedLink.SetBounds(340, 168, 84, 24);
         advancedLink.TextAlign = ContentAlignment.MiddleRight;
         advancedLink.LinkClicked += delegate
         {
             advanced.Visible = !advanced.Visible;
-            ClientSize = new Size(440, advanced.Visible ? 300 : 200);
+            ClientSize = new Size(440, advanced.Visible ? 320 : 214);
         };
 
         advanced = new Panel();
-        advanced.SetBounds(16, 190, 408, 100);
+        advanced.SetBounds(16, 204, 408, 100);
         advanced.Visible = false;
         Label al = new Label(); al.Text = "Phone address (blank = find it automatically)"; al.SetBounds(0, 0, 408, 22);
         address = new TextBox(); address.SetBounds(0, 24, 260, 28);
@@ -712,7 +835,7 @@ internal sealed class PhoneForm : Form
 
         Controls.Add(help); Controls.Add(code); Controls.Add(connect); Controls.Add(status);
         Controls.Add(disconnect); Controls.Add(advancedLink); Controls.Add(advanced);
-        ClientSize = new Size(440, 200);
+        ClientSize = new Size(440, 214);
 
         Action refresh = delegate { ShowStatus(PhoneMount.Status); };
         PhoneMount.StatusChanged += refresh;
@@ -723,10 +846,10 @@ internal sealed class PhoneForm : Form
     void ShowStatus(PhoneStatus s)
     {
         string text = PhoneMountLogic.StatusText(s);
-        if (s == PhoneStatus.Connected && PhoneMount.Settings.Letter != '\0')
-            text = "Connected (" + PhoneMount.Settings.Letter + ": Drivebay Phone)";
+        if ((s == PhoneStatus.Connected || s == PhoneStatus.Reconnecting) && PhoneMount.Settings.Letter != '\0')
+            text = PhoneMountLogic.StatusText(s) + " (" + PhoneMount.Settings.Letter + ": Drivebay Phone)";
         status.Text = text;
-        status.ForeColor = s == PhoneStatus.Connected ? Color.ForestGreen : (s == PhoneStatus.CodeExpired ? Color.Firebrick : SystemColors.ControlText);
+        status.ForeColor = s == PhoneStatus.Connected ? Color.ForestGreen : (s == PhoneStatus.CodeExpired ? Color.Firebrick : (s == PhoneStatus.Reconnecting ? Color.DarkGoldenrod : SystemColors.ControlText));
         disconnect.Enabled = PhoneMount.Settings.Enabled || PhoneMount.Settings.Letter != '\0';
     }
 
@@ -735,7 +858,7 @@ internal sealed class PhoneForm : Form
         string secret = code.Text;
         if (!PhoneMountLogic.LooksLikeSecret(secret))
         {
-            status.Text = "Type the 6-digit code from your phone.";
+            status.Text = "Paste the token from your phone.";
             status.ForeColor = Color.Firebrick;
             return;
         }
