@@ -1,6 +1,7 @@
-Drivebay 3.36.3: phone share reconnect
+Drivebay 3.36.4: one-click desktop update
 
-- Android: the green "This phone is shared as a drive" banner sits above the file list, so the first row is visible and the list scrolls.
-- The phone share comes back after the phone app or the PC tray closes or restarts. The saved token is reused. The screen says Reconnecting... until it says Connected.
-- Android: Open on a finished download opens the file. If no app can open it, a toast says so.
-- Android app 3.34.5 (versionCode 33405), including the 3.34.4 banner, reconnect, and Open fixes. Play installs show Update available (flexible, or immediate when the Play priority is 4 or 5) and ask you to restart after the download. Sideloaded installs check the latest GitHub release for a newer APK. Settings has Check for updates. The Windows installer and the server report 3.36.3.
+- Windows, Mac, and Linux servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates.
+- Windows shows Update available in the tray and on the page. One click downloads the installer and runs it silently, then restarts the server. The account, port, and settings stay. A version below the published minimum still must update.
+- Mac and Linux show Update available on the page. Update downloads the matching tarball, replaces the program files, and restarts the service. Config stays.
+- If the check cannot reach GitHub, Drivebay keeps running.
+- Android app 3.34.5 (versionCode 33405). Play installs show Update available. Sideloaded installs check GitHub for a newer APK. The Windows installer and the server report 3.36.4.

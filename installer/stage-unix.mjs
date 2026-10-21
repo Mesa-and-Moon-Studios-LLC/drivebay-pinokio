@@ -66,6 +66,7 @@ function stageCommon(dir) {
     fs.copyFileSync(path.join(here, name), path.join(dir, name));
   }
   fs.copyFileSync(path.join(root, "app/src/lib/files/update-policy.mjs"), path.join(dir, "update-policy.mjs"));
+  fs.copyFileSync(path.join(root, "app/src/lib/files/update-apply.mjs"), path.join(dir, "update-apply.mjs"));
   fs.copyFileSync(path.join(root, "app/src/lib/files/phone-drive.mjs"), path.join(dir, "phone-drive-lib.mjs"));
   const versionLine = fs.readFileSync(path.join(root, "VERSION.txt"), "utf8").split(/\r?\n/)[0];
   fs.writeFileSync(

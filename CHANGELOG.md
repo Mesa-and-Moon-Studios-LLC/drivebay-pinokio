@@ -2,6 +2,12 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.36.4
+- Desktop servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates. The page says Update available when a newer release is published.
+- On Windows, Update downloads the setup exe and runs it silently. The installer keeps the account, port, and settings, then restarts the server. The tray shows Update available and a notification. A version below `minimum` in version-manifest.json still must update. If the check cannot reach GitHub, Drivebay keeps running.
+- On macOS and Linux, Update downloads the matching server tarball, replaces the program files, and restarts the service. Config stays.
+- The Windows installer and the server report 3.36.4. `/api/health` returns `version` 3.36.4. Android stays 3.34.5 (versionCode 33405).
+
 ## 3.36.3
 - Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
 - Android: Open on a finished download opens the file. The saved URI and MIME type are both kept, the file is shared with a FileProvider content URI and read permission, and a chooser picks the app. If none can open it, a toast says so.

@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.3.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.4.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.36.3** — see [Changelog](#changelog) below.
+Current version: **3.36.4** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.36.3.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.36.4.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.3` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.36.4` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -219,7 +219,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.3. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
+To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.4. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -227,7 +227,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.3. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.36.4. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -315,6 +315,12 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.36.4
+- Desktop servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates. The page says Update available when a newer release is published.
+- On Windows, Update downloads `Drivebay-Setup-3.36.4.exe` and runs it silently. The installer keeps the account, port, and settings, then restarts the server. The tray shows Update available and a notification. A version below `minimum` in version-manifest.json still must update. If the check cannot reach GitHub, Drivebay keeps running.
+- On macOS and Linux, Update downloads the matching `drivebay-server-*.tar.gz`, replaces the program files, and restarts the service. Config stays.
+- The Windows installer and the server report 3.36.4. `/api/health` returns `version` 3.36.4. Android stays 3.34.5 (versionCode 33405).
 
 ### 3.36.3
 - Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
