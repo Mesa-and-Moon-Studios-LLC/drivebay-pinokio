@@ -152,6 +152,32 @@ class PhoneShareLifecycleTest {
         assertEquals(30_000L, PhoneShareLifecycle.retryDelayMs(20))
     }
 
+    @Test fun backgroundStartIsRefusedAndBootDependsOnTheServiceType() {
+        val types = PhoneShareLifecycle.FOREGROUND_SERVICE_TYPES
+        assertEquals("specialUse|dataSync", types)
+        assertFalse(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.APPLICATION, types, 36))
+        assertTrue(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.ACTIVITY, types, 36))
+        assertTrue(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.PACKAGE_REPLACED, types, 36))
+        assertFalse(PhoneShareLifecycle.allowsForegroundStart(PhoneShareLifecycle.ShareStartOrigin.BOOT_COMPLETED, types, 36))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt(types, 35))
+        assertTrue(PhoneShareLifecycle.bootCompletedExempt(types, 34))
+        assertTrue(PhoneShareLifecycle.bootCompletedExempt("specialUse", 36))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt("microphone", 34))
+        assertFalse(PhoneShareLifecycle.bootCompletedExempt("camera|specialUse", 35))
+    }
+
+    @Test fun foregroundStartBlockIsNotLoggedAsANormalFailure() {
+        val system = IllegalStateException("startForegroundService() not allowed due to mAllowStartForeground false")
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(system))
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(RuntimeException("wrap", system)))
+        val named = ForegroundServiceStartNotAllowedException("blocked")
+        assertTrue(PhoneShareLifecycle.isForegroundStartBlocked(named))
+        assertFalse(PhoneShareLifecycle.isForegroundStartBlocked(IllegalStateException("bind failed")))
+        assertFalse(PhoneShareLifecycle.isForegroundStartBlocked(null))
+    }
+
+    private class ForegroundServiceStartNotAllowedException(message: String) : IllegalStateException(message)
+
     @Test fun addressInUseRetriesThenGivesUp() {
         assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("Address already in use")))
         assertTrue(PhoneShareLifecycle.isAddressInUse(java.net.BindException("bind failed: EADDRINUSE (Address already in use)")))

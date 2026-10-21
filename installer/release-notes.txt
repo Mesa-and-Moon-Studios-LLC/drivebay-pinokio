@@ -3,5 +3,6 @@ Drivebay 3.36.3: phone share reconnect
 - Android: the green "This phone is shared as a drive" banner sits above the file list, so the first row is visible and the list scrolls.
 - The phone share comes back after the phone app or the PC tray closes or restarts. The saved token is reused. The screen says Reconnecting... until it says Connected.
 - Android: Open on a finished download opens the file. If no app can open it, a toast says so.
+- Android: a background start no longer crashes. Phone sharing resumes when you open the app. If it cannot start, a notification says "Tap to resume phone sharing".
 - Android: restarting phone-as-drive closes the previous server, sets SO_REUSEADDR, and retries when port 8780 is busy. If it stays busy, sharing turns off and says so.
 - Android app 3.34.4 (versionCode 33404), including the 3.34.3 phone-as-drive code and whole-storage work plus the banner, reconnect, Open, and port-in-use fixes. The Windows installer and the server report 3.36.3.

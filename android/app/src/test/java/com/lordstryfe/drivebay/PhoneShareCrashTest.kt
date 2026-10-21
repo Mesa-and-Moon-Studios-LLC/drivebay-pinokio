@@ -186,4 +186,29 @@ class PhoneShareManifestTest {
         val app = File("src/main/java/com/lordstryfe/drivebay/DrivebayApp.kt").readText()
         assertTrue(app.contains("CrashLog.install(this)"))
     }
+
+    @Test fun backgroundProcessDoesNotStartPhoneShare() {
+        val app = File("src/main/java/com/lordstryfe/drivebay/DrivebayApp.kt").readText()
+        val onCreate = app.substringAfter("override fun onCreate()")
+        assertFalse(onCreate.contains("resumeIfEnabled"))
+        assertFalse(onCreate.contains("startForegroundService"))
+        val onStart = activity.substringAfter("override fun onStart()").substringBefore("override fun onResume()")
+        assertFalse(onStart.contains("startPhoneShare"))
+        assertFalse(onStart.contains("resumeIfEnabled"))
+        val onResume = activity.substringAfter("override fun onResume()").substringBefore("override fun onPause()")
+        assertTrue(onResume.contains("resumeIfEnabled"))
+        assertTrue(onResume.contains("ShareStartOrigin.ACTIVITY"))
+        val boot = File("src/main/java/com/lordstryfe/drivebay/PhoneShareBoot.kt").readText()
+        assertTrue(boot.contains("ShareStartOrigin.BOOT_COMPLETED"))
+        assertTrue(boot.contains("ShareStartOrigin.PACKAGE_REPLACED"))
+        val start = service.substringAfter("fun start(context: Context)")
+        assertTrue(start.contains("isForegroundStartBlocked"))
+        assertTrue(start.indexOf("isForegroundStartBlocked") < start.indexOf("CrashLog.record"))
+        assertTrue(service.contains("phone_share_tap_resume"))
+        assertTrue(service.contains("ACTION_RESUME"))
+        assertTrue(service.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
+        val manifest = File("src/main/AndroidManifest.xml").readText()
+        val block = manifest.substringAfter("android:name=\".PhoneShareService\"").substringBefore("</service>")
+        assertTrue(block.contains("android:foregroundServiceType=\"${PhoneShareLifecycle.FOREGROUND_SERVICE_TYPES}\""))
+    }
 }

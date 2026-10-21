@@ -18,6 +18,21 @@ object PhoneShareLifecycle {
     /** Bind failures to absorb before phone sharing is turned off with a port-in-use message. */
     const val PORT_IN_USE_TRIES = 5
 
+    /** Manifest foregroundServiceType for [com.lordstryfe.drivebay.PhoneShareService]. */
+    const val FOREGROUND_SERVICE_TYPES = "specialUse|dataSync"
+
+    /** Where a resume of the phone-share foreground service was requested. */
+    enum class ShareStartOrigin {
+        /** Process start. Never allowed: mAllowStartForeground is still false. */
+        APPLICATION,
+        /** Activity is in the foreground (onResume). */
+        ACTIVITY,
+        /** ACTION_BOOT_COMPLETED, allowed only for foreground types Android exempts. */
+        BOOT_COMPLETED,
+        /** ACTION_MY_PACKAGE_REPLACED. Android treats this as a background-start exemption. */
+        PACKAGE_REPLACED,
+    }
+
     /** First 16 hex chars of the token hash. Stable for one token, not reversible to it. */
     fun peerId(tokenHash: String?): String? {
         if (tokenHash == null || !tokenHash.matches(Regex("^[0-9a-f]{64}$"))) return null
@@ -26,6 +41,49 @@ object PhoneShareLifecycle {
 
     fun shouldResume(enabled: Boolean, tokenHash: String?, folderCount: Int, wholePhone: Boolean = false): Boolean {
         return enabled && peerId(tokenHash) != null && (wholePhone || folderCount > 0)
+    }
+
+    /**
+     * True when this origin may call startForegroundService.
+     * Application.onCreate is never allowed. An activity in the foreground is.
+     * BOOT_COMPLETED is allowed except for the types Android 15 blocks when targetSdk is 35+
+     * (dataSync, camera, mediaPlayback, phoneCall, mediaProjection), and microphone since target 34.
+     * specialUse alone is allowed from boot. This service also declares dataSync, so boot is not.
+     */
+    fun allowsForegroundStart(origin: ShareStartOrigin, foregroundServiceTypes: String, targetSdk: Int): Boolean {
+        return when (origin) {
+            ShareStartOrigin.APPLICATION -> false
+            ShareStartOrigin.ACTIVITY -> true
+            ShareStartOrigin.PACKAGE_REPLACED -> true
+            ShareStartOrigin.BOOT_COMPLETED -> bootCompletedExempt(foregroundServiceTypes, targetSdk)
+        }
+    }
+
+    fun bootCompletedExempt(foregroundServiceTypes: String, targetSdk: Int): Boolean {
+        val types = foregroundServiceTypes.split('|').map { it.trim() }.filter { it.isNotEmpty() }
+        val blockedAt35 = setOf("dataSync", "camera", "mediaPlayback", "phoneCall", "mediaProjection")
+        if (targetSdk >= 35 && types.any { it in blockedAt35 }) return false
+        if (targetSdk >= 34 && types.any { it == "microphone" }) return false
+        return true
+    }
+
+    /**
+     * True for ForegroundServiceStartNotAllowedException, including when it is wrapped.
+     * The class is not on the JVM test classpath, so the name and the system message are checked.
+     */
+    fun isForegroundStartBlocked(error: Throwable?): Boolean {
+        var current = error
+        val seen = HashSet<Throwable>()
+        while (current != null && seen.add(current)) {
+            val name = current.javaClass.name
+            val simple = name.substringAfterLast('.').substringAfterLast('$')
+            if (simple == "ForegroundServiceStartNotAllowedException") return true
+            val message = current.message?.lowercase().orEmpty()
+            if (message.contains("mallowstartforeground")) return true
+            if (message.contains("startforegroundservice") && message.contains("not allowed")) return true
+            current = current.cause
+        }
+        return false
     }
 
     /**

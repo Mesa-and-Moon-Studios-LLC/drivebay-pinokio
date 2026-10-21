@@ -8,6 +8,8 @@ class DrivebayApp : Application() {
         CrashLog.install(this)
         DownloadNotifier(this).ensureChannels()
         DrivebayDownloadService.resumeIncomplete(this)
-        PhoneShareService.resumeIfEnabled(this)
+        // Do not start phone sharing here. A background process start has
+        // mAllowStartForeground false, and launching the foreground service crashes.
+        // MainActivity.onResume and PhoneShareBoot resume it from an allowed context.
     }
 }

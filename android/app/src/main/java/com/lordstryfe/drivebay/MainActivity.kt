@@ -378,13 +378,14 @@ class MainActivity : AppCompatActivity() {
         )
         DrivebayDownloadService.resumeIncomplete(this)
         refreshDownloadsUi()
-        if (phoneShare.enabled()) startPhoneShare()
     }
 
     override fun onResume() {
         super.onResume()
         webView.onResume()
         runCatching { syncWholePhoneAccess() }
+        // The activity is in the foreground, so Android allows the phone-share foreground service.
+        PhoneShareService.resumeIfEnabled(this, PhoneShareLifecycle.ShareStartOrigin.ACTIVITY)
         if (tailscalePanel.visibility == View.VISIBLE && isTailscaleInstalled()) {
             continueAfterTailscale()
         }

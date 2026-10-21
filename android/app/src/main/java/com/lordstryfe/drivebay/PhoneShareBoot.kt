@@ -8,7 +8,11 @@ import android.content.Intent
 class PhoneShareBoot : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
-        if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        PhoneShareService.resumeIfEnabled(context)
+        val origin = when (action) {
+            Intent.ACTION_BOOT_COMPLETED -> PhoneShareLifecycle.ShareStartOrigin.BOOT_COMPLETED
+            Intent.ACTION_MY_PACKAGE_REPLACED -> PhoneShareLifecycle.ShareStartOrigin.PACKAGE_REPLACED
+            else -> return
+        }
+        PhoneShareService.resumeIfEnabled(context, origin)
     }
 }

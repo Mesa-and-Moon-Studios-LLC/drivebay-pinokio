@@ -30,9 +30,13 @@ import java.util.concurrent.atomic.AtomicInteger
  * WebDAV share for the folders the user picked, or the whole phone if they opted in.
  * Off until they turn it on. The token hash, 6-digit code, and folder list live in
  * [PhoneShareStore], so a killed or restarted process can bind again without a new token.
- * Opening folders and binding port 8780 happens on a background thread. A missing
- * Tailscale or LAN address is retried with backoff, and a new address is added
- * without dropping the sockets that are already up.
+ * The foreground service is not started from [android.app.Application.onCreate]: a
+ * background process start throws ForegroundServiceStartNotAllowedException.
+ * [MainActivity] resumes it from onResume. A reboot resumes it only when this
+ * service's foreground type is allowed from BOOT_COMPLETED; otherwise a notification
+ * asks the user to tap. Opening folders and binding port 8780 happens on a background
+ * thread. A missing Tailscale or LAN address is retried with backoff, and a new address
+ * is added without dropping the sockets that are already up.
  */
 class PhoneShareService : Service() {
     @Volatile private var server: PhoneDavServer? = null
@@ -66,8 +70,10 @@ class PhoneShareService : Service() {
         return try {
             startSharing()
         } catch (e: Exception) {
-            CrashLog.record(this, "Phone-as-drive service start", e)
-            shutdown(friendlyError(e))
+            if (!PhoneShareLifecycle.isForegroundStartBlocked(e)) {
+                CrashLog.record(this, "Phone-as-drive service start", e)
+            }
+            shutdown(if (PhoneShareLifecycle.isForegroundStartBlocked(e)) null else friendlyError(e), keepEnabled = PhoneShareLifecycle.isForegroundStartBlocked(e))
             START_NOT_STICKY
         }
     }
@@ -85,8 +91,10 @@ class PhoneShareService : Service() {
         // or Android kills the app with ForegroundServiceDidNotStartInTimeException.
         val foregroundError = enterForeground(notification(server?.boundHosts().orEmpty().ifEmpty { hosts }))
         if (foregroundError != null) {
-            CrashLog.record(this, "Phone-as-drive startForeground", foregroundError)
-            shutdown(friendlyError(foregroundError), keepEnabled = true)
+            if (!PhoneShareLifecycle.isForegroundStartBlocked(foregroundError)) {
+                CrashLog.record(this, "Phone-as-drive startForeground", foregroundError)
+            }
+            shutdown(if (PhoneShareLifecycle.isForegroundStartBlocked(foregroundError)) null else friendlyError(foregroundError), keepEnabled = true)
             return START_NOT_STICKY
         }
         val store = PhoneShareStore(this)
@@ -484,8 +492,11 @@ class PhoneShareService : Service() {
         const val EXTRA_HOSTS = "hosts"
         const val EXTRA_ERROR = "error"
         const val EXTRA_DETAIL = "detail"
+        const val ACTION_RESUME = "com.lordstryfe.drivebay.PHONE_SHARE_RESUME"
         private const val CHANNEL = "phone_share"
+        private const val RESUME_CHANNEL = "phone_share_resume"
         private const val NOTIFICATION_ID = 44
+        private const val RESUME_NOTIFICATION_ID = 45
 
         /** True when Android granted All files access (Android 11+), or storage is open on older versions. */
         fun allFilesAccess(): Boolean = try {
@@ -509,28 +520,86 @@ class PhoneShareService : Service() {
             return out.toList()
         }
 
-        fun resumeIfEnabled(context: Context) {
+        fun resumeIfEnabled(context: Context, origin: PhoneShareLifecycle.ShareStartOrigin) {
             val store = PhoneShareStore(context)
-            if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.tokenHash(), store.folders().size, store.wholePhone())) return
+            if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.tokenHash(), store.folders().size, store.wholePhone())) {
+                cancelResumeNotification(context)
+                return
+            }
+            val targetSdk = runCatching { context.applicationInfo.targetSdkVersion }.getOrDefault(36)
+            if (!PhoneShareLifecycle.allowsForegroundStart(origin, PhoneShareLifecycle.FOREGROUND_SERVICE_TYPES, targetSdk)) {
+                showResumeNotification(context)
+                return
+            }
             start(context)
         }
 
-        /** Returns null on success, or the reason it could not start. Never throws. */
+        /**
+         * Returns null when the service was started, or when Android refused a background start.
+         * A refusal is not a failure: it posts "Tap to resume phone sharing" and is not logged.
+         * Never throws.
+         */
         fun start(context: Context): Exception? {
             val intent = Intent(context, PhoneShareService::class.java).apply { action = ACTION_START }
             return try {
                 ContextCompat.startForegroundService(context, intent)
+                cancelResumeNotification(context)
                 null
             } catch (e: Exception) {
-                CrashLog.record(context, "Phone-as-drive startForegroundService", e)
-                e
+                if (PhoneShareLifecycle.isForegroundStartBlocked(e)) {
+                    showResumeNotification(context)
+                    null
+                } else {
+                    CrashLog.record(context, "Phone-as-drive startForegroundService", e)
+                    e
+                }
             }
         }
 
         fun stop(context: Context) {
+            cancelResumeNotification(context)
             // stopService, not startForegroundService: a foreground start that never calls
             // startForeground() is itself a crash on Android 8+.
             runCatching { context.stopService(Intent(context, PhoneShareService::class.java)) }
+        }
+
+        /** Shown when Android will not let a background process start the foreground service. */
+        private fun showResumeNotification(context: Context) {
+            runCatching {
+                val manager = context.getSystemService(NotificationManager::class.java) ?: return@runCatching
+                if (Build.VERSION.SDK_INT >= 26 && manager.getNotificationChannel(RESUME_CHANNEL) == null) {
+                    manager.createNotificationChannel(
+                        NotificationChannel(RESUME_CHANNEL, "Phone sharing", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                            description = "Shown when phone sharing is waiting for you to open Drivebay"
+                        },
+                    )
+                }
+                val open = PendingIntent.getActivity(
+                    context,
+                    1,
+                    Intent(context, MainActivity::class.java).apply {
+                        action = ACTION_RESUME
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val text = context.getString(R.string.phone_share_tap_resume)
+                val notification = NotificationCompat.Builder(context, RESUME_CHANNEL)
+                    .setSmallIcon(android.R.drawable.stat_notify_sync)
+                    .setContentTitle(text)
+                    .setContentText(text)
+                    .setContentIntent(open)
+                    .setAutoCancel(true)
+                    .setOnlyAlertOnce(true)
+                    .build()
+                manager.notify(RESUME_NOTIFICATION_ID, notification)
+            }
+        }
+
+        private fun cancelResumeNotification(context: Context) {
+            runCatching {
+                context.getSystemService(NotificationManager::class.java)?.cancel(RESUME_NOTIFICATION_ID)
+            }
         }
     }
 }

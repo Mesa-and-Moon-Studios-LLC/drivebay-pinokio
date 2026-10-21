@@ -100,6 +100,11 @@ test("android download, tailscale, back, and port behavior is present", () => {
   assert.match(manifest, /FOREGROUND_SERVICE_SPECIAL_USE/);
   assert.match(manifest, /stopWithTask="false"/);
   assert.match(manifest, /PhoneShareBoot/);
+  const app = read("app/src/main/java/com/lordstryfe/drivebay/DrivebayApp.kt");
+  assert.equal(app.includes("resumeIfEnabled"), false);
+  assert.match(read("app/src/main/java/com/lordstryfe/drivebay/MainActivity.kt"), /ShareStartOrigin\.ACTIVITY/);
+  assert.match(read("app/src/main/java/com/lordstryfe/drivebay/PhoneShareService.kt"), /isForegroundStartBlocked/);
+  assert.match(read("app/src/main/res/values/strings.xml"), /Tap to resume phone sharing/);
   const layout = read("app/src/main/res/layout/activity_main.xml");
   assert.match(layout, /android:orientation="vertical"/);
   const bannerAt = layout.indexOf("@+id/shareBanner");
