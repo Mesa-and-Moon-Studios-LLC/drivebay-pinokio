@@ -18,8 +18,8 @@ object PhoneShareLifecycle {
         return tokenHash.substring(0, 16)
     }
 
-    fun shouldResume(enabled: Boolean, tokenHash: String?, folderCount: Int): Boolean {
-        return enabled && peerId(tokenHash) != null && folderCount > 0
+    fun shouldResume(enabled: Boolean, tokenHash: String?, folderCount: Int, wholePhone: Boolean = false): Boolean {
+        return enabled && peerId(tokenHash) != null && (wholePhone || folderCount > 0)
     }
 
     /** 1s, 2s, 4s, 8s, 16s, then 30s. */
