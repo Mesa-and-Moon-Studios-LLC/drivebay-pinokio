@@ -26,7 +26,7 @@ class PhoneDavServer(
     onCodeLocked: () -> Unit = {},
 ) {
     private val gate: DavAuthorizer = if (pairs != null) {
-        PhonePairGate(pairs, onCodeLocked = { _ -> onCodeLocked() })
+        PhonePairGate(pairs, onCodeLocked = { _ -> onCodeLocked() }, onRenamed = onCodeLocked)
     } else {
         PhoneShareGate(tokenHash, codeState, onCodeLocked)
     }

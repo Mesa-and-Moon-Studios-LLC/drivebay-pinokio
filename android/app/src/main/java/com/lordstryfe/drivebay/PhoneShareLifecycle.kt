@@ -12,6 +12,8 @@ object PhoneShareLifecycle {
     const val PEER_HEADER = "X-Drivebay-Phone"
     /** Peer id of the credential that just authenticated, when several PCs are paired. */
     const val CLIENT_HEADER = "X-Drivebay-Client"
+    /** Hostname the PC sends so a new pairing can be named before the user renames it. */
+    const val PC_NAME_HEADER = "X-Drivebay-PC-Name"
     const val HEALTHY_POLL_MS = 15_000L
 
     /** First 16 hex chars of the token hash. Stable for one token, not reversible to it. */

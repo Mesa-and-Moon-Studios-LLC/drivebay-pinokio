@@ -25,6 +25,7 @@ export const mountPhoneDrive = createServerFn({ method: "POST" })
     if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount", display: "" };
     const result = await drive.runMount(plan);
     if (result.code === 0) {
+      await drive.announcePc(data.url, data.secret, drive.pcName());
       const home = process.env.DRIVEBAY_HOME;
       if (home) {
         const records = drive.rememberPhoneToken(drive.loadPhoneTokens(home), {
@@ -70,6 +71,7 @@ export const remountPhoneDrive = createServerFn({ method: "POST" })
     });
     if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount", display: "" };
     const result = await drive.runMount(plan);
+    if (result.code === 0) await drive.announcePc(row.url, row.secret, drive.pcName());
     const recordsNext = drive.rememberPhoneToken(records, {
       url: row.url,
       secret: row.secret,

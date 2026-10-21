@@ -159,6 +159,8 @@ internal static class PhoneMountTests
         Eq(false, PhoneMountLogic.PeerHeaderMatches("aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"), "peer header miss");
         Eq("bbbbbbbbbbbbbbbb", PhoneMountLogic.MatchingPeer("aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb", "bbbbbbbbbbbbbbbb"), "keep this PC's peer from the list");
         Eq("aaaaaaaaaaaaaaaa", PhoneMountLogic.MatchingPeer("aaaaaaaaaaaaaaaa,bbbbbbbbbbbbbbbb", ""), "first peer before one is saved");
+        Eq("Office-PC", PhoneMountLogic.CleanPcName(" Office-PC\r\n"), "pc name keeps the hostname");
+        Eq("", PhoneMountLogic.CleanPcName("   "), "blank pc name stays blank");
 
         Console.WriteLine(passed + " passed, " + failed + " failed");
         return failed == 0 ? 0 : 1;

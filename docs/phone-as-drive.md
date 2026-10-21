@@ -10,7 +10,7 @@ The phone binds only to private and Tailscale addresses. It does not listen on a
 2. Open the app settings (the gear on the connect screen).
 3. Under **Share this phone as a drive**, choose the folders to share. Android scoped storage keeps the choice as a document tree. Drivebay does not get access to folders you did not pick.
 4. Set an owner password. It stays on the phone as a hash and is required to start sharing or to pair and revoke PCs. It is not the password the PC uses.
-5. Tap **Pair a PC**. Each PC gets its own 6-digit code and token, shown once. Pair another PC the same way. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC, named This PC.
+5. Tap **Pair a PC**. Type a name such as Work PC or Home PC, or leave it blank to use that PC's hostname when it connects. Each PC gets its own 6-digit code and token, shown once. Pairing adds a PC and keeps the others. Rename a PC later from the list. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC until that PC connects and supplies its hostname.
 6. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`. Several paired PCs can be connected at the same time.
 7. Leave the phone on the same Tailscale network, or on the same LAN, as the PC. Turn the switch off to stop sharing. The paired PCs stay in the list.
 

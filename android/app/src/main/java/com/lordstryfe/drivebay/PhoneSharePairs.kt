@@ -13,6 +13,8 @@ data class PhonePair(
     val codeRecord: String?,
     val codeFailures: Int,
     val lastSeenMs: Long,
+    /** False until the user types a name. A blank or migrated name is replaced by the PC's hostname. */
+    val customName: Boolean = false,
 )
 
 /** Live list of paired PCs. The WebDAV server reads this on every request, so a revoke applies immediately. */
@@ -32,6 +34,17 @@ interface PhonePairDirectory {
     fun recordCodeMiss() {
         save(PhonePairRules.noteCodeMiss(snapshot()))
     }
+
+    /**
+     * Sets the name from the PC's hostname when the user has not named this pairing.
+     * Returns true only when the visible name changed. Other pairings stay in the list.
+     */
+    fun noteHostName(id: String, hostName: String, now: Long): Boolean {
+        val current = snapshot()
+        val next = PhonePairRules.applyHostName(current, id, hostName, now) ?: return false
+        if (next !== current) save(next)
+        return true
+    }
 }
 
 class MemoryPairDirectory(pairs: List<PhonePair> = emptyList()) : PhonePairDirectory {
@@ -50,6 +63,13 @@ class MemoryPairDirectory(pairs: List<PhonePair> = emptyList()) : PhonePairDirec
     }
     override fun recordCodeMiss() {
         synchronized(lock) { current = PhonePairRules.noteCodeMiss(current) }
+    }
+    override fun noteHostName(id: String, hostName: String, now: Long): Boolean {
+        synchronized(lock) {
+            val next = PhonePairRules.applyHostName(current, id, hostName, now) ?: return false
+            current = next
+            return true
+        }
     }
 }
 
@@ -78,25 +98,55 @@ object PhonePairRules {
         )
     }
 
-    fun cleanName(raw: String?): String {
-        val name = raw.orEmpty().replace('\n', ' ').replace('\r', ' ').trim().take(NAME_LIMIT).trim()
-        return if (name.isEmpty()) "PC" else name
-    }
+    fun cleanName(raw: String?): String = storedName(raw).ifEmpty { "PC" }
 
-    /** Last seen stays unset until that PC connects. */
+    /** User-typed or hostname text. Blank stays blank so a later hostname can fill it. */
+    fun storedName(raw: String?): String =
+        raw.orEmpty().replace('\n', ' ').replace('\r', ' ').trim().take(NAME_LIMIT).trim()
+
+    fun label(name: String): String = name.ifBlank { DEFAULT_NAME }
+
+    /** Last seen stays unset until that PC connects. A typed name is kept; a blank name waits for the hostname. */
     fun create(name: String, token: String, code: String, random: SecureRandom = SecureRandom()): PhonePair {
         val hash = PhoneShareAuth.hash(token)
+        val stored = storedName(name)
         return PhonePair(
             id = hash,
-            name = cleanName(name),
+            name = stored,
             tokenHash = hash,
             codeRecord = PhoneShareCode.hash(code, random),
             codeFailures = 0,
             lastSeenMs = 0,
+            customName = stored.isNotEmpty(),
         )
     }
 
+    /** Adds a pairing. An existing id is left as it is, and every other pairing stays. */
+    fun append(existing: List<PhonePair>, pair: PhonePair): List<PhonePair> {
+        if (existing.any { it.id == pair.id }) return existing
+        return existing + pair
+    }
+
     fun revoke(pairs: List<PhonePair>, id: String): List<PhonePair> = pairs.filterNot { it.id == id }
+
+    /**
+     * Uses the PC hostname when this pairing was not named by the user.
+     * Null when nothing should be written. The returned list still contains every other PC.
+     */
+    fun applyHostName(pairs: List<PhonePair>, id: String, hostName: String, now: Long): List<PhonePair>? {
+        val host = storedName(hostName)
+        if (host.isEmpty()) return null
+        val pair = pairs.firstOrNull { it.id == id } ?: return null
+        if (pair.customName || pair.name == host) return null
+        return pairs.map { if (it.id == id) it.copy(name = host, lastSeenMs = now) else it }
+    }
+
+    /** A later rename sticks. The hostname will not replace it. */
+    fun rename(pairs: List<PhonePair>, id: String, raw: String): List<PhonePair>? {
+        val name = storedName(raw)
+        if (name.isEmpty() || pairs.none { it.id == id }) return null
+        return pairs.map { if (it.id == id) it.copy(name = name, customName = true) else it }
+    }
 
     /** Skip the write when this PC was seen in the last minute, so a directory listing does not save every time. */
     fun touch(pairs: List<PhonePair>, id: String, now: Long): List<PhonePair> {
@@ -144,7 +194,8 @@ object PhonePairJson {
                     .put("tokenHash", pair.tokenHash)
                     .put("codeRecord", pair.codeRecord ?: JSONObject.NULL)
                     .put("codeFailures", pair.codeFailures)
-                    .put("lastSeenMs", pair.lastSeenMs),
+                    .put("lastSeenMs", pair.lastSeenMs)
+                    .put("customName", pair.customName),
             )
         }
         return array.toString()
@@ -168,11 +219,12 @@ object PhonePairJson {
                     add(
                         PhonePair(
                             id = id,
-                            name = PhonePairRules.cleanName(obj.optString("name")),
+                            name = PhonePairRules.storedName(obj.optString("name")),
                             tokenHash = hash,
                             codeRecord = code,
                             codeFailures = obj.optInt("codeFailures", 0).coerceAtLeast(0),
                             lastSeenMs = obj.optLong("lastSeenMs", 0),
+                            customName = obj.optBoolean("customName", false),
                         ),
                     )
                 }
@@ -219,23 +271,31 @@ object PhoneOwnerPassword {
 class PhonePairGate(
     private val directory: PhonePairDirectory,
     private val onCodeLocked: (String) -> Unit = {},
+    private val onRenamed: () -> Unit = {},
     private val now: () -> Long = { System.currentTimeMillis() },
 ) : DavAuthorizer {
     private val lock = Any()
     private val verified = HashMap<String, Pair<String, ByteArray>>()
     private val accepted = ThreadLocal<String?>()
+    private val offeredName = ThreadLocal<String?>()
 
     override fun acceptedPeer(): String? = accepted.get()
 
+    override fun rememberClientName(name: String?) {
+        offeredName.set(name)
+    }
+
     override fun authorized(header: String?, remote: String?): Boolean {
         accepted.set(null)
+        val clientName = offeredName.get()
+        offeredName.set(null)
         val (user, secret) = PhoneShareAuth.parseBasic(header) ?: return false
         if (!user.equals(PhoneShareAuth.USER, ignoreCase = true)) return false
         synchronized(lock) {
             val pairs = directory.snapshot()
             if (PhoneShareAuth.looksLikeToken(secret)) {
                 val hit = pairs.firstOrNull { PhoneShareAuth.matches(secret, it.tokenHash) } ?: return false
-                return accept(hit.id, hit.tokenHash)
+                return accept(hit.id, hit.tokenHash, clientName)
             }
             if (!PhoneShareCode.looksLikeCode(secret)) return false
             if (!PhoneShareCode.allowedFrom(remote)) return false
@@ -245,11 +305,11 @@ class PhonePairGate(
                 val fast = fastDigest(record, secret)
                 val cached = verified[pair.id]
                 if (cached != null && cached.first == record && MessageDigest.isEqual(cached.second, fast)) {
-                    return accept(pair.id, pair.tokenHash)
+                    return accept(pair.id, pair.tokenHash, clientName)
                 }
                 if (PhoneShareCode.matches(secret, record)) {
                     verified[pair.id] = record to fast
-                    return accept(pair.id, pair.tokenHash)
+                    return accept(pair.id, pair.tokenHash, clientName)
                 }
             }
             // A code that belongs to a PC whose code is already locked is refused without striking the others.
@@ -271,10 +331,12 @@ class PhonePairGate(
         }
     }
 
-    private fun accept(id: String, tokenHash: String): Boolean {
+    private fun accept(id: String, tokenHash: String, clientName: String?): Boolean {
+        val renamed = clientName?.let { directory.noteHostName(id, it, now()) } == true
         directory.noteSeen(id, now())
         if (directory.snapshot().none { it.id == id }) return false
         accepted.set(PhoneShareLifecycle.peerId(tokenHash))
+        if (renamed) runCatching { onRenamed() }
         return true
     }
 

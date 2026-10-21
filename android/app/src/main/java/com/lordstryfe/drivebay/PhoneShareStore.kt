@@ -108,6 +108,20 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
         synchronized(pairLock) { writePairs(PhonePairRules.noteCodeMiss(loadPairs())) }
     }
 
+    override fun noteHostName(id: String, hostName: String, now: Long): Boolean {
+        synchronized(pairLock) {
+            val next = PhonePairRules.applyHostName(loadPairs(), id, hostName, now) ?: return false
+            writePairs(next)
+            return true
+        }
+    }
+
+    fun rename(id: String, name: String): Boolean = synchronized(pairLock) {
+        val next = PhonePairRules.rename(loadPairs(), id, name) ?: return false
+        writePairs(next)
+        true
+    }
+
     private fun loadPairs(): List<PhonePair> {
         if (prefs.contains(KEY_PAIRS)) return PhonePairJson.decode(prefs.getString(KEY_PAIRS, null))
         val legacy = legacyTokenHash() ?: return emptyList()
@@ -127,15 +141,17 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
 
     /** Adds one PC. Hashes only: the caller passes SHA-256 of the token and PBKDF2 of the code. */
     fun addPair(name: String, tokenHash: String, codeRecord: String): PhonePair = synchronized(pairLock) {
+        val stored = PhonePairRules.storedName(name)
         val pair = PhonePair(
             id = tokenHash,
-            name = PhonePairRules.cleanName(name),
+            name = stored,
             tokenHash = tokenHash,
             codeRecord = codeRecord.takeIf { it.startsWith("pbkdf2-sha256$") },
             codeFailures = 0,
             lastSeenMs = 0,
+            customName = stored.isNotEmpty(),
         )
-        val next = loadPairs() + pair
+        val next = PhonePairRules.append(loadPairs(), pair)
         val edit = prefs.edit().putString(KEY_PAIRS, PhonePairJson.encode(next))
         if (legacyTokenHash() == null) {
             edit.putString(KEY_HASH, tokenHash).putString(KEY_CODE, codeRecord).putInt(KEY_CODE_FAILURES, 0)

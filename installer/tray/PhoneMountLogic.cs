@@ -38,6 +38,7 @@ internal static class PhoneMountLogic
     public const string DiscoveryQuery = "DRIVEBAY?";
     public const string PeerHeader = "X-Drivebay-Phone";
     public const string ClientHeader = "X-Drivebay-Client";
+    public const string PcNameHeader = "X-Drivebay-PC-Name";
     public const string GenericCredentialTarget = "Drivebay/PhoneShare";
     public const string Label = "Drivebay Phone";
     public const string User = "drivebay";
@@ -265,6 +266,15 @@ internal static class PhoneMountLogic
     }
 
     // One credential per paired PC. An older install keeps Drivebay/PhoneShare.
+    // The name the phone shows until the user renames the pairing. Blank if the machine name is unusable.
+    public static string CleanPcName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "";
+        string name = raw.Replace("\r", " ").Replace("\n", " ").Trim();
+        if (name.Length > 40) name = name.Substring(0, 40).Trim();
+        return name;
+    }
+
     public static string CredentialTarget(string peer)
     {
         if (string.IsNullOrEmpty(peer)) return GenericCredentialTarget;

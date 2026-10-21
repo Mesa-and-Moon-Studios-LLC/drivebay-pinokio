@@ -9,6 +9,7 @@ import {
   isMountableHost,
   loadPhoneTokens,
   mountPlan,
+  pcName,
   phoneKey,
   publicPhones,
   redact,
@@ -62,6 +63,12 @@ test("mount plans redact the token and refuse drive C", () => {
   assert.equal(linux.file, "gio");
   assert.equal(linux.display.includes(secret), false);
   assert.match(linux.display, /gio mount/);
+});
+
+test("a blank pairing name uses this PC's hostname", () => {
+  assert.equal(pcName(" Office-PC\n"), "Office-PC");
+  assert.equal(pcName("   "), "");
+  assert.equal(pcName("x".repeat(50)).length, 40);
 });
 
 test("each phone keeps its own token and the browser copy omits it", () => {

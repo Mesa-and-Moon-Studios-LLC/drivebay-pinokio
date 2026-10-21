@@ -720,6 +720,8 @@ internal static class PhoneMount
             req.Method = "PROPFIND"; req.Timeout = 8000; req.Proxy = null; req.AllowAutoRedirect = false;
             req.Headers["Depth"] = "0";
             req.Headers["Authorization"] = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(PhoneMountLogic.User + ":" + secret));
+            string pcName = PhoneMountLogic.CleanPcName(Environment.MachineName);
+            if (pcName.Length > 0) req.Headers[PhoneMountLogic.PcNameHeader] = pcName;
             req.ContentLength = 0;
             using (HttpWebResponse res = (HttpWebResponse)req.GetResponse())
             {

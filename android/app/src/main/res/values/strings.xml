@@ -61,9 +61,11 @@
     <string name="phone_share_pick">Choose a folder</string>
     <string name="phone_share_token">Pair a PC</string>
     <string name="phone_share_pair">Pair a PC</string>
-    <string name="phone_share_pair_name">Name this PC. The code and token are shown once.</string>
+    <string name="phone_share_pair_name">Name this PC, such as Work PC or Home PC. Leave it blank and Drivebay uses that PC\'s own name when it connects. Pairing adds a PC. It does not replace the ones you already have.</string>
+    <string name="phone_share_name_hint">Work PC</string>
+    <string name="phone_share_rename">Rename</string>
+    <string name="phone_share_name_blank">Type a name for this PC.</string>
     <string name="phone_share_default_pc">This PC</string>
-    <string name="phone_share_pc_n">PC %1$d</string>
     <string name="phone_share_pairs">Paired PCs</string>
     <string name="phone_share_pair_row">%1$s · %2$s</string>
     <string name="phone_share_pair_row_locked">%1$s · %2$s · code locked</string>

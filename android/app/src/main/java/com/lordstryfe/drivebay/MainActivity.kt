@@ -817,7 +817,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 ensureOwner {
                     if (phoneShare.pairs().isEmpty()) {
-                        pairPc(getString(R.string.phone_share_default_pc)) {
+                        pairPc {
+
                             phoneShare.setEnabled(true)
                             startPhoneShare()
                         }
@@ -873,7 +874,7 @@ class MainActivity : AppCompatActivity() {
             text = getString(R.string.phone_share_pair)
             isAllCaps = false
             setTextColor(0xFFE8EEF7.toInt())
-            setOnClickListener { ensureOwner { pairPc(nextPcName()) } }
+            setOnClickListener { ensureOwner { pairPc() } }
         }
         phoneShareBox.addView(token)
         val errorLog = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
@@ -920,19 +921,26 @@ class MainActivity : AppCompatActivity() {
             paired.forEach { pair ->
                 val locked = pair.codeRecord != null && pair.codeFailures >= PhoneShareCode.MAX_FAILURES
                 val seen = PhonePairRules.lastSeenLabel(pair.lastSeenMs, now)
+                val shown = pair.name.ifBlank { getString(R.string.phone_share_default_pc) }
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
                 }
                 row.addView(TextView(this).apply {
                     text = if (locked) {
-                        getString(R.string.phone_share_pair_row_locked, pair.name, seen)
+                        getString(R.string.phone_share_pair_row_locked, shown, seen)
                     } else {
-                        getString(R.string.phone_share_pair_row, pair.name, seen)
+                        getString(R.string.phone_share_pair_row, shown, seen)
                     }
                     setTextColor(if (locked) 0xFFFCA5A5.toInt() else 0xFFCBD5E1.toInt())
                     textSize = 14f
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                row.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = getString(R.string.phone_share_rename)
+                    isAllCaps = false
+                    setTextColor(0xFFE8EEF7.toInt())
+                    setOnClickListener { renamePair(pair) }
                 })
                 row.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                     text = getString(R.string.phone_share_revoke)
@@ -1014,11 +1022,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun nextPcName(): String {
-        val count = phoneShare.pairs().size
-        return if (count == 0) getString(R.string.phone_share_default_pc) else getString(R.string.phone_share_pc_n, count + 1)
-    }
-
     /** Set the owner password the first time, or ask for it. Sharing that is already on does not come through here. */
     private fun ensureOwner(then: () -> Unit) {
         val record = phoneShare.ownerRecord()
@@ -1084,10 +1087,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun pairPc(defaultName: String, after: (() -> Unit)? = null) {
+    private fun pairPc(after: (() -> Unit)? = null) {
         val input = EditText(this).apply {
-            setText(defaultName)
-            setSelection(text?.length ?: 0)
+            hint = getString(R.string.phone_share_name_hint)
             val pad = (12 * resources.displayMetrics.density).toInt()
             setPadding(pad, pad, pad, pad)
         }
@@ -1099,7 +1101,7 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text?.toString().orEmpty()
                 val token = PhoneShareAuth.generateToken()
                 val code = PhoneShareCode.generate()
-                // Only hashes are kept. Each PC gets its own code and token.
+                // Only hashes are kept. Each PC is added. A blank name becomes that PC's hostname when it connects.
                 phoneShare.addPair(name, PhoneShareAuth.hash(token), PhoneShareCode.hash(code))
                 if (phoneShare.enabled()) startPhoneShare()
                 AlertDialog.Builder(this)
@@ -1116,11 +1118,37 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun renamePair(pair: PhonePair) {
+        ensureOwner {
+            val input = EditText(this).apply {
+                setText(pair.name)
+                hint = getString(R.string.phone_share_name_hint)
+                val pad = (12 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.phone_share_rename)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val typed = input.text?.toString().orEmpty()
+                    if (PhonePairRules.storedName(typed).isEmpty()) {
+                        Toast.makeText(this, R.string.phone_share_name_blank, Toast.LENGTH_LONG).show()
+                        return@setPositiveButton
+                    }
+                    phoneShare.rename(pair.id, typed)
+                    if (phoneShare.enabled()) startPhoneShare()
+                    renderPhoneShare()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
     private fun confirmRevoke(pair: PhonePair) {
         ensureOwner {
             AlertDialog.Builder(this)
                 .setTitle(R.string.phone_share_revoke)
-                .setMessage(getString(R.string.phone_share_revoke_confirm, pair.name))
+                .setMessage(getString(R.string.phone_share_revoke_confirm, pair.name.ifBlank { getString(R.string.phone_share_default_pc) }))
                 .setPositiveButton(R.string.phone_share_revoke) { _, _ ->
                     phoneShare.revoke(pair.id)
                     if (phoneShare.pairs().isEmpty()) {

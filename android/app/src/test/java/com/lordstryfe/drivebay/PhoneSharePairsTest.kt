@@ -137,6 +137,27 @@ class PhoneSharePairsTest {
         assertNull(PhonePairJson.decode("{").firstOrNull())
     }
 
+    @Test fun aNewPairKeepsTheOldOneAndABlankNameBecomesTheHostname() {
+        val home = pair("Home", tokenA, codeA).copy(name = "Home PC", customName = true)
+        val work = pair("Work", tokenB, codeB).copy(name = "", customName = false)
+        val both = PhonePairRules.append(listOf(home), work)
+        assertEquals(listOf("Home PC", ""), both.map { it.name })
+        assertSame(both, PhonePairRules.append(both, work))
+        val named = PhonePairRules.applyHostName(both, work.id, " OFFICE-PC\n", 2_000)
+        assertEquals(listOf("Home PC", "OFFICE-PC"), named!!.map { it.name })
+        assertEquals("Home PC", PhonePairRules.applyHostName(named, home.id, "OTHER", 3_000)?.get(0)?.name ?: named[0].name)
+        val renamed = PhonePairRules.rename(named, work.id, "Work PC")
+        assertEquals("Work PC", renamed!![1].name)
+        assertTrue(renamed[1].customName)
+        assertEquals(null, PhonePairRules.applyHostName(renamed, work.id, "OFFICE-PC", 4_000))
+        val dir = MemoryPairDirectory(listOf(work))
+        val gate = PhonePairGate(dir, now = { 8_000 })
+        gate.rememberClientName("Home-PC")
+        assertTrue(gate.authorized(basic(tokenB), "10.0.0.4"))
+        assertEquals("Home-PC", dir.snapshot().single().name)
+        assertEquals(listOf(work.id), dir.snapshot().map { it.id })
+    }
+
     @Test fun discoveryNamesEveryPairedPc() {
         val ids = listOf(PhoneShareLifecycle.peerId(PhoneShareAuth.hash(tokenA))!!, PhoneShareLifecycle.peerId(PhoneShareAuth.hash(tokenB))!!)
         assertEquals("${ids[0]},${ids[1]}", PhoneShareLifecycle.peerHeader(ids + ids[0]))

@@ -132,6 +132,7 @@ class PhoneShareService : Service() {
                     attempt = 0
                     PhoneShareStore(this).setListening(bound)
                     broadcast(bound)
+                    enterForeground(notification(bound))
                     schedule(PhoneShareLifecycle.HEALTHY_POLL_MS)
                 }
                 return
@@ -176,7 +177,10 @@ class PhoneShareService : Service() {
                 { shareStore.pairs().mapNotNull { PhoneShareLifecycle.peerId(it.tokenHash) } },
             ) {
                 val listening = server?.boundHosts().orEmpty()
-                onMain { broadcast(listening) }
+                onMain {
+                    broadcast(listening)
+                    if (server != null) enterForeground(notification(listening))
+                }
             }
             dav.start()
             if (ticket != generation.get() || stopping) {
@@ -398,10 +402,15 @@ class PhoneShareService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val where = hosts.firstOrNull()?.let { "http://$it:$PORT/" } ?: getString(R.string.phone_share_reconnecting)
+        val names = PhoneShareStore(this).pairs().joinToString(", ") {
+            it.name.ifBlank { getString(R.string.phone_share_default_pc) }
+        }
+        val text = if (names.isBlank()) where else names
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle(getString(R.string.phone_share_on))
-            .setContentText(where)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(if (names.isBlank()) where else "$names\n$where"))
             .setContentIntent(open)
             .setOngoing(true)
             .build()

@@ -159,6 +159,42 @@ export function loadPhoneTokens(home) {
   }
 }
 
+/** The name sent to the phone when the user left the pairing name blank. */
+export function pcName(name = os.hostname()) {
+  return String(name ?? "")
+    .replace(/[\r\n]/g, " ")
+    .trim()
+    .slice(0, 40)
+    .trim();
+}
+
+/** Tells the phone this PC's hostname. Failure leaves the mount itself alone. */
+export async function announcePc(url, secret, name = pcName()) {
+  const parsed = cleanUrl(url);
+  const hostName = pcName(name);
+  if (!parsed || !secret || !hostName) return false;
+  const href = parsed.href.endsWith("/") ? parsed.href : `${parsed.href}/`;
+  const auth = Buffer.from(`drivebay:${secret}`).toString("base64");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch(href, {
+      method: "PROPFIND",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Depth: "0",
+        "X-Drivebay-PC-Name": hostName,
+      },
+      signal: controller.signal,
+    });
+    return response.status === 207 || response.status === 200;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function savePhoneTokens(home, records) {
   if (!home) return false;
   fs.mkdirSync(home, { recursive: true });

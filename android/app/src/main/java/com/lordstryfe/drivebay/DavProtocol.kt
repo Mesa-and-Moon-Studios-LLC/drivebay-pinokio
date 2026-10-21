@@ -48,6 +48,9 @@ data class DavResponse(
 interface DavAuthorizer {
     fun authorized(header: String?, remote: String?): Boolean
 
+    /** Hostname offered by this PC on the current request. Ignored unless the gate names pairings. */
+    fun rememberClientName(name: String?) {}
+
     /** Peer id of the credential accepted on this thread, or null. */
     fun acceptedPeer(): String? = null
 }
@@ -72,6 +75,7 @@ object DavProtocol {
 
     private fun dispatch(request: DavRequest, store: DavStore, gate: DavAuthorizer): DavResponse {
         val method = request.method.uppercase(Locale.US)
+        if (method != "OPTIONS") gate.rememberClientName(header(request, PhoneShareLifecycle.PC_NAME_HEADER))
         if (method != "OPTIONS" && !gate.authorized(header(request, "authorization"), request.remoteAddress)) {
             return text(401, "Unauthorized", mapOf("WWW-Authenticate" to "Basic realm=\"Drivebay\""), "Sign in required")
         }
