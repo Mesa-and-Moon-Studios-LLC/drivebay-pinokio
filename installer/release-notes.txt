@@ -3,4 +3,4 @@ Drivebay 3.36.3: phone share reconnect
 - Android: the green "This phone is shared as a drive" banner sits above the file list, so the first row is visible and the list scrolls.
 - The phone share comes back after the phone app or the PC tray closes or restarts. The saved token is reused. The screen says Reconnecting... until it says Connected.
 - Android: Open on a finished download opens the file. If no app can open it, a toast says so.
-- Android app 3.34.4 (versionCode 33404), including the 3.34.3 phone-as-drive code and whole-storage work plus the banner, reconnect, and Open fixes. The Windows installer and the server report 3.36.3.
+- Android app 3.34.5 (versionCode 33405), including the 3.34.4 banner, reconnect, and Open fixes. Play installs show Update available (flexible, or immediate when the Play priority is 4 or 5) and ask you to restart after the download. Sideloaded installs check the latest GitHub release for a newer APK. Settings has Check for updates. The Windows installer and the server report 3.36.3.
