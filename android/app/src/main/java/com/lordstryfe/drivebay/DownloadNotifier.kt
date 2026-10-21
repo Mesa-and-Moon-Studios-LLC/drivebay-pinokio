@@ -116,7 +116,7 @@ class DownloadNotifier(private val context: Context) {
             context,
             (uri.toString() + share).hashCode(),
             intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_GRANT_READ_URI_PERMISSION,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
