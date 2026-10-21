@@ -4,4 +4,5 @@
     <files-path name="partial" path="downloads/partial/" />
     <cache-path name="uploads" path="uploads/" />
     <cache-path name="open" path="open/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

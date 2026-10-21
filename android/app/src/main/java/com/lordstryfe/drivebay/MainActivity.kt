@@ -41,6 +41,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
+import com.lordstryfe.drivebay.update.SideloadUpdatePrompt
+import com.lordstryfe.drivebay.update.UpdateCheckResult
+import com.lordstryfe.drivebay.update.UpdateInstaller
+import com.lordstryfe.drivebay.update.UpdateSource
 import com.mesaandmoon.update.AppUpdateGate
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +66,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var serversHint: TextView
     private lateinit var downloadsBtn: MaterialButton
     private lateinit var downloadsFab: FloatingActionButton
+    private lateinit var updateGate: AppUpdateGate
+    private lateinit var sideloadUpdates: SideloadUpdatePrompt
 
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     private val servers by lazy { ServerStore(this) }
@@ -176,8 +182,11 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_main)
-        // Required/optional Play update check, controlled by version.json (see mm-update-check README).
-        AppUpdateGate.attach(this, UPDATE_CONFIG_URL)
+        // Play: in-app updates (version.json required gate, plus flexible / priority immediate).
+        // Sideload: GitHub release APK. Both check on launch and on resume, once per 12 hours.
+        updateGate = AppUpdateGate.attach(this, UPDATE_CONFIG_URL)
+        sideloadUpdates = SideloadUpdatePrompt.attach(this)
+        findViewById<MaterialButton>(R.id.checkUpdatesBtn).setOnClickListener { checkForUpdates() }
         webView = findViewById(R.id.webView)
         setupPanel = findViewById(R.id.setupPanel)
         tailscalePanel = findViewById(R.id.tailscalePanel)
@@ -698,6 +707,24 @@ class MainActivity : AppCompatActivity() {
         settingsFab.visibility = View.VISIBLE
         downloadsFab.visibility = if (downloadsAttention > 0) View.VISIBLE else View.GONE
         shareBanner.visibility = if (phoneShare.enabled()) View.VISIBLE else View.GONE
+    }
+
+    private fun checkForUpdates() {
+        Toast.makeText(this, R.string.update_checking, Toast.LENGTH_SHORT).show()
+        val started = when (UpdateInstaller.source(this)) {
+            UpdateSource.PLAY -> updateGate.checkNow { toastUpdateResult(it) }
+            UpdateSource.SIDELOAD -> sideloadUpdates.checkNow { toastUpdateResult(it) }
+        }
+        if (!started) return
+    }
+
+    private fun toastUpdateResult(result: UpdateCheckResult) {
+        val message = when (result) {
+            UpdateCheckResult.UP_TO_DATE -> R.string.update_up_to_date
+            UpdateCheckResult.FAILED -> R.string.update_check_failed
+            UpdateCheckResult.UPDATE_AVAILABLE -> return
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     private fun showSetup(keepUrl: Boolean) {
