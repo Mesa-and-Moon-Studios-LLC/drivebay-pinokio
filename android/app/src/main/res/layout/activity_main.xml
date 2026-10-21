@@ -25,6 +25,20 @@
         android:textSize="13sp"
         android:visibility="gone" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/pairedPcsBtn"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#163028"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:minHeight="40dp"
+        android:text="@string/phone_share_pairs"
+        android:textAllCaps="false"
+        android:textColor="#BBF7D0"
+        android:visibility="gone" />
+
     <FrameLayout
         android:id="@+id/content"
         android:layout_width="match_parent"
@@ -233,7 +247,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="24dp"
-                    android:text="@string/phone_share_title"
+                    android:text="@string/phone_share_section"
                     android:textColor="#E8EEF7"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -245,6 +259,26 @@
                     android:text="@string/phone_share_help"
                     android:textColor="#94A3B8"
                     android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/ownerPasswordBtn"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/phone_share_owner_enter"
+                    android:textAllCaps="false"
+                    android:textColor="#E8EEF7" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/pairedPcsSettingsBtn"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/phone_share_pairs"
+                    android:textAllCaps="false"
+                    android:textColor="#E8EEF7" />
 
                 <LinearLayout
                     android:id="@+id/phoneShareBox"

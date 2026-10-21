@@ -54,7 +54,8 @@
     <string name="download_pause">Pause</string>
     <string name="download_cancel">Cancel</string>
     <string name="phone_share_title">Phone as a drive</string>
-    <string name="phone_share_help">Off until you turn it on. Shares the folders you pick, or all of internal storage if you opt in, and only on Tailscale or your home network. An owner password is required to start sharing or to pair and revoke PCs. Each PC gets its own 6-digit code and token. Several PCs can be connected at the same time. Revoke drops that PC immediately. A PC that was already paired stays connected after either side restarts.</string>
+    <string name="phone_share_section">Phone-as-drive</string>
+    <string name="phone_share_help">Off until you turn it on. Shares the folders you pick, or all of internal storage if you opt in, and only on Tailscale or your home network. An owner password is required to start sharing or to pair and revoke PCs. Each PC gets its own 6-digit code and token. Several PCs can be connected at the same time. Revoke drops that PC immediately. A PC that was already paired stays connected after either side restarts. Paired PCs is under the share banner and in this section. Owner password sets or changes that password, and changing it asks for the current one.</string>
     <string name="phone_share_toggle">Share this phone as a drive</string>
     <string name="phone_share_on">This phone is shared as a drive</string>
     <string name="phone_share_off">Phone sharing is off</string>
@@ -67,6 +68,10 @@
     <string name="phone_share_name_blank">Type a name for this PC.</string>
     <string name="phone_share_default_pc">This PC</string>
     <string name="phone_share_pairs">Paired PCs</string>
+    <string name="phone_share_add">Add PC</string>
+    <string name="phone_share_connected_now">Connected now</string>
+    <string name="phone_share_last_seen">Last seen %1$s</string>
+    <string name="phone_share_pairs_empty">No PCs paired yet.</string>
     <string name="phone_share_pair_row">%1$s · %2$s</string>
     <string name="phone_share_pair_row_locked">%1$s · %2$s · code locked</string>
     <string name="phone_share_revoke">Revoke</string>
@@ -75,6 +80,9 @@
     <string name="phone_share_owner_set_help">This password stays on the phone as a hash. It is required to start sharing and to pair or revoke a PC. It is not the password the PC uses.</string>
     <string name="phone_share_owner_confirm">Confirm the owner password</string>
     <string name="phone_share_owner_enter">Owner password</string>
+    <string name="phone_share_owner_current">Enter the current owner password</string>
+    <string name="phone_share_owner_change">Change the owner password</string>
+    <string name="phone_share_owner_changed">Owner password saved</string>
     <string name="phone_share_owner_short">Use at least 8 characters.</string>
     <string name="phone_share_owner_mismatch">Those passwords do not match.</string>
     <string name="phone_share_owner_wrong">That owner password is wrong.</string>

@@ -8,13 +8,13 @@ The phone binds only to private and Tailscale addresses. It does not listen on a
 
 1. Install Drivebay 3.34.0 or newer.
 2. Open the app settings (the gear on the connect screen).
-3. Under **Share this phone as a drive**, choose the folders to share. Android scoped storage keeps the choice as a document tree. Drivebay does not get access to folders you did not pick.
-4. Set an owner password. It stays on the phone as a hash and is required to start sharing or to pair and revoke PCs. It is not the password the PC uses.
-5. Tap **Pair a PC**. Type a name such as Work PC or Home PC, or leave it blank to use that PC's hostname when it connects. Each PC gets its own 6-digit code and token, shown once. Pairing adds a PC and keeps the others. Rename a PC later from the list. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC until that PC connects and supplies its hostname.
-6. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`. Several paired PCs can be connected at the same time.
+3. Under **Phone-as-drive**, choose the folders to share. Android scoped storage keeps the choice as a document tree. Drivebay does not get access to folders you did not pick.
+4. Tap **Owner password** to set it. It stays on the phone as a hash and is required to start sharing or to pair and revoke PCs. It is not the password the PC uses. To change it, enter the current password, then the new one twice.
+5. Tap **Paired PCs**, then **Add PC**. Type a name such as Work PC or Home PC, or leave it blank to use that PC's hostname when it connects. Each PC gets its own 6-digit code and token, shown once. Pairing adds a PC and keeps the others. The same list is on the share screen, under the banner. Rename or revoke a PC from that list. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC until that PC connects and supplies its hostname.
+6. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`. Several paired PCs can be connected at the same time. The list shows **Connected now** while a PC is using the share, otherwise when it was last seen.
 7. Leave the phone on the same Tailscale network, or on the same LAN, as the PC. Turn the switch off to stop sharing. The paired PCs stay in the list.
 
-The green banner is its own row under the status bar, above the New folder / Upload / Rename / Delete toolbar. The file list starts below that, so the first row is visible and scrolls.
+The green banner is its own row under the status bar, above the New folder / Upload / Rename / Delete toolbar. **Paired PCs** sits under that banner. The file list starts below that, so the first row is visible and scrolls.
 
 Port **8780** is the WebDAV port. Drivebay's own file server stays on its usual port (8765 unless you changed it).
 
@@ -26,7 +26,7 @@ The phone starts the share again when the app process starts, including after a 
 
 The PC tray checks again every 30 seconds, backing off to 5 minutes while the phone is away. It tries the saved address, then online Tailscale Android peers, then a reply on the LAN (UDP port 8781). A phone that moved to a new private address is mounted again. The tray menu and Connect my phone say **Reconnecting...** or **Connected**.
 
-A refused token still stops the retries for that PC. Tap **Pair a PC** on the phone and paste that PC's new token once. Other paired PCs keep their own tokens. On this PC, Settings remembers a token per phone and can remount it without showing the token again. The Windows tray still keeps its token in Credential Manager, one target per paired phone.
+A refused token still stops the retries for that PC. Tap **Paired PCs**, then **Add PC**, and paste that PC's new token once. Other paired PCs keep their own tokens. On this PC, Settings remembers a token per phone and can remount it without showing the token again. The Windows tray still keeps its token in Credential Manager, one target per paired phone.
 
 ## On Windows
 

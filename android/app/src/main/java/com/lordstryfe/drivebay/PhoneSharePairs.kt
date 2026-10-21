@@ -76,6 +76,8 @@ class MemoryPairDirectory(pairs: List<PhonePair> = emptyList()) : PhonePairDirec
 object PhonePairRules {
     const val NAME_LIMIT = 40
     const val SEEN_THROTTLE_MS = 60_000L
+    /** Longer than the last-seen write throttle, so a PC that is browsing still counts as connected. */
+    const val CONNECTED_WINDOW_MS = 120_000L
     const val DEFAULT_NAME = "This PC"
 
     /**
@@ -165,6 +167,12 @@ object PhonePairRules {
         } else {
             pair
         }
+    }
+
+    /** True when this PC has been seen inside [CONNECTED_WINDOW_MS]. A never-seen PC is not connected. */
+    fun connectedNow(seenMs: Long, now: Long): Boolean {
+        if (seenMs <= 0) return false
+        return now - seenMs <= CONNECTED_WINDOW_MS
     }
 
     fun lastSeenLabel(seenMs: Long, now: Long): String {
