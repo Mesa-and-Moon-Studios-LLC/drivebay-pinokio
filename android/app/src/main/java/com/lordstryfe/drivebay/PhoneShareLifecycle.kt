@@ -10,6 +10,10 @@ object PhoneShareLifecycle {
     const val DISCOVERY_QUERY = "DRIVEBAY?"
     const val DISCOVERY_MAGIC = "DRIVEBAY1"
     const val PEER_HEADER = "X-Drivebay-Phone"
+    /** Peer id of the credential that just authenticated, when several PCs are paired. */
+    const val CLIENT_HEADER = "X-Drivebay-Client"
+    /** Hostname the PC sends so a new pairing can be named before the user renames it. */
+    const val PC_NAME_HEADER = "X-Drivebay-PC-Name"
     const val HEALTHY_POLL_MS = 15_000L
 
     /** First 16 hex chars of the token hash. Stable for one token, not reversible to it. */
@@ -21,6 +25,20 @@ object PhoneShareLifecycle {
     fun shouldResume(enabled: Boolean, tokenHash: String?, folderCount: Int, wholePhone: Boolean = false): Boolean {
         return enabled && peerId(tokenHash) != null && (wholePhone || folderCount > 0)
     }
+
+    /** Sharing stays up when any paired PC still has a token. Boot resume uses this and does not ask for the owner password. */
+    fun shouldResume(enabled: Boolean, pairs: List<PhonePair>, folderCount: Int, wholePhone: Boolean = false): Boolean {
+        return enabled && pairs.any { peerId(it.tokenHash) != null } && (wholePhone || folderCount > 0)
+    }
+
+    /** OPTIONS advertises every paired PC. The PC matches its own id inside the list. */
+    fun peerHeader(ids: Collection<String>): String =
+        ids.map { it.trim().lowercase() }.filter { it.matches(Regex("^[0-9a-f]{8,32}$")) }.distinct().joinToString(",")
+
+    /** One discovery datagram per PC. The PC parser accepts exactly three fields, so these are not combined. */
+    fun discoveryMessages(peerIds: Collection<String>, httpPort: Int): List<String> =
+        peerIds.map { it.trim().lowercase() }.filter { it.matches(Regex("^[0-9a-f]{8,32}$")) }.distinct()
+            .map { discoveryMessage(it, httpPort) }
 
     /** 1s, 2s, 4s, 8s, 16s, then 30s. */
     fun retryDelayMs(attempt: Int): Long {

@@ -21,9 +21,15 @@ class PhoneDavServer(
     private val bindHosts: List<String>,
     private val peerId: String? = null,
     codeState: PhoneShareCodeState? = null,
+    pairs: PhonePairDirectory? = null,
+    private val peerIds: (() -> List<String>)? = null,
     onCodeLocked: () -> Unit = {},
 ) {
-    private val gate = PhoneShareGate(tokenHash, codeState, onCodeLocked)
+    private val gate: DavAuthorizer = if (pairs != null) {
+        PhonePairGate(pairs, onCodeLocked = { _ -> onCodeLocked() }, onRenamed = onCodeLocked)
+    } else {
+        PhoneShareGate(tokenHash, codeState, onCodeLocked)
+    }
 
     private val running = AtomicBoolean(false)
     private val sockets = mutableListOf<ServerSocket>()
@@ -135,6 +141,8 @@ class PhoneDavServer(
                 }
                 if (off == length) buf else buf.copyOf(off)
             }
+            val livePeers = peerIds?.invoke().orEmpty().filter { it.isNotBlank() }.distinct()
+            val headerPeer = if (livePeers.isNotEmpty()) PhoneShareLifecycle.peerHeader(livePeers) else peerId
             val response = DavProtocol.handle(
                 DavRequest(
                     requestLine[0].uppercase(Locale.US),
@@ -145,7 +153,7 @@ class PhoneDavServer(
                 ),
                 store,
                 gate,
-                peerId,
+                headerPeer,
             )
             val status = "HTTP/1.1 ${response.status} ${response.reason}\r\n"
             val headerText = buildString {

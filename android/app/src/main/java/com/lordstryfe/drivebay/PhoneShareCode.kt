@@ -51,6 +51,19 @@ object PhoneShareCode {
         return MessageDigest.isEqual(derive(code, parts.salt, parts.iterations), parts.hash)
     }
 
+    /**
+     * Same check as [matches] for a secret that is not a 6-digit code, such as the owner password.
+     * A blank, huge, or multi-line secret still pays for one derive and then fails.
+     */
+    fun matchesAny(secret: String, record: String?): Boolean {
+        val parts = parse(record) ?: return false
+        if (secret.isEmpty() || secret.length > 200 || secret.any { it == '\n' || it == '\r' }) {
+            MessageDigest.isEqual(derive("000000", parts.salt, parts.iterations), parts.hash)
+            return false
+        }
+        return MessageDigest.isEqual(derive(secret, parts.salt, parts.iterations), parts.hash)
+    }
+
     /** The code is a LAN/Tailscale convenience only. The full token works from anywhere, as before. */
     fun allowedFrom(remote: String?): Boolean {
         if (remote.isNullOrBlank()) return false
@@ -107,13 +120,13 @@ class PhoneShareGate(
     private val tokenHash: String,
     private val codeState: PhoneShareCodeState? = null,
     private val onCodeLocked: () -> Unit = {},
-) {
+) : DavAuthorizer {
     private val lock = Any()
 
     /** After one good PBKDF2 check, later requests compare a fast salted digest instead. */
     @Volatile private var verified: Pair<String, ByteArray>? = null
 
-    fun authorized(header: String?, remote: String?): Boolean {
+    override fun authorized(header: String?, remote: String?): Boolean {
         val (user, secret) = PhoneShareAuth.parseBasic(header) ?: return false
         if (!user.equals(PhoneShareAuth.USER, ignoreCase = true)) return false
         if (PhoneShareAuth.looksLikeToken(secret)) return PhoneShareAuth.matches(secret, tokenHash)

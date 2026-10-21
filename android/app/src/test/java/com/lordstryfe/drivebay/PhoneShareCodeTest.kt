@@ -158,7 +158,7 @@ class PhoneShareCodeTest {
         assertTrue(creds.contains("putInt(KEY_CODE_FAILURES, 0)"))
         assertTrue(src.contains("prefs.edit().putInt(KEY_CODE_FAILURES, count).commit()"))
         val activity = File("src/main/java/com/lordstryfe/drivebay/MainActivity.kt").readText()
-        assertTrue(activity.contains("phoneShare.setCredentials(PhoneShareAuth.hash(token), PhoneShareCode.hash(code))"))
+        assertTrue(activity.contains("phoneShare.addPair(name, PhoneShareAuth.hash(token), PhoneShareCode.hash(code))"))
         assertFalse(activity.contains("putString(\"code\""))
     }
 }

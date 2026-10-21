@@ -44,6 +44,17 @@ data class DavResponse(
  * Small WebDAV handler. Windows, macOS, and Linux can mount a server that
  * answers these methods. LOCK is a token Windows asks for before it writes.
  */
+/** Basic-auth check used by the WebDAV handler. One token, or one credential per paired PC. */
+interface DavAuthorizer {
+    fun authorized(header: String?, remote: String?): Boolean
+
+    /** Hostname offered by this PC on the current request. Ignored unless the gate names pairings. */
+    fun rememberClientName(name: String?) {}
+
+    /** Peer id of the credential accepted on this thread, or null. */
+    fun acceptedPeer(): String? = null
+}
+
 object DavProtocol {
     private val httpDate: DateTimeFormatter =
         DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.US).withZone(ZoneOffset.UTC)
@@ -51,14 +62,20 @@ object DavProtocol {
     fun handle(request: DavRequest, store: DavStore, tokenHash: String, peerId: String? = null): DavResponse =
         handle(request, store, PhoneShareGate(tokenHash), peerId)
 
-    fun handle(request: DavRequest, store: DavStore, gate: PhoneShareGate, peerId: String? = null): DavResponse {
+    fun handle(request: DavRequest, store: DavStore, gate: DavAuthorizer, peerId: String? = null): DavResponse {
         val response = dispatch(request, store, gate)
-        if (peerId.isNullOrBlank()) return response
-        return response.copy(headers = response.headers + (PhoneShareLifecycle.PEER_HEADER to peerId))
+        val client = gate.acceptedPeer()?.takeIf { it.isNotBlank() }
+        if (peerId.isNullOrBlank() && client == null) return response
+        val extra = buildMap {
+            if (!peerId.isNullOrBlank()) put(PhoneShareLifecycle.PEER_HEADER, peerId)
+            if (client != null) put(PhoneShareLifecycle.CLIENT_HEADER, client)
+        }
+        return response.copy(headers = response.headers + extra)
     }
 
-    private fun dispatch(request: DavRequest, store: DavStore, gate: PhoneShareGate): DavResponse {
+    private fun dispatch(request: DavRequest, store: DavStore, gate: DavAuthorizer): DavResponse {
         val method = request.method.uppercase(Locale.US)
+        if (method != "OPTIONS") gate.rememberClientName(header(request, PhoneShareLifecycle.PC_NAME_HEADER))
         if (method != "OPTIONS" && !gate.authorized(header(request, "authorization"), request.remoteAddress)) {
             return text(401, "Unauthorized", mapOf("WWW-Authenticate" to "Basic realm=\"Drivebay\""), "Sign in required")
         }

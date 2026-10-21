@@ -37,6 +37,9 @@ internal static class PhoneMountLogic
     public const int DiscoveryPort = 8781;
     public const string DiscoveryQuery = "DRIVEBAY?";
     public const string PeerHeader = "X-Drivebay-Phone";
+    public const string ClientHeader = "X-Drivebay-Client";
+    public const string PcNameHeader = "X-Drivebay-PC-Name";
+    public const string GenericCredentialTarget = "Drivebay/PhoneShare";
     public const string Label = "Drivebay Phone";
     public const string User = "drivebay";
 
@@ -262,9 +265,58 @@ internal static class PhoneMountLogic
         return true;
     }
 
+    // One credential per paired PC. An older install keeps Drivebay/PhoneShare.
+    // The name the phone shows until the user renames the pairing. Blank if the machine name is unusable.
+    public static string CleanPcName(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "";
+        string name = raw.Replace("\r", " ").Replace("\n", " ").Trim();
+        if (name.Length > 40) name = name.Substring(0, 40).Trim();
+        return name;
+    }
+
+    public static string CredentialTarget(string peer)
+    {
+        if (string.IsNullOrEmpty(peer)) return GenericCredentialTarget;
+        string p = peer.Trim().ToLowerInvariant();
+        if (!Regex.IsMatch(p, "^[0-9a-f]{8,32}$")) return GenericCredentialTarget;
+        return GenericCredentialTarget + "/" + p;
+    }
+
+    // OPTIONS may list every paired PC. Empty expected matches any answer.
+    public static bool PeerHeaderMatches(string header, string expected)
+    {
+        if (string.IsNullOrEmpty(expected)) return true;
+        if (string.IsNullOrEmpty(header)) return false;
+        string[] parts = header.Split(new char[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (string part in parts)
+        {
+            if (string.Equals(part.Trim(), expected, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    // The peer id this PC should store. Prefer [expected] when the header lists it.
+    // Otherwise the first id, so a comma-separated list is not saved as the peer.
+    public static string MatchingPeer(string header, string expected)
+    {
+        if (string.IsNullOrEmpty(header)) return "";
+        string[] parts = header.Split(new char[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries);
+        string first = "";
+        foreach (string raw in parts)
+        {
+            string part = raw.Trim().ToLowerInvariant();
+            if (!Regex.IsMatch(part, "^[0-9a-f]{8,32}$")) continue;
+            if (first.Length == 0) first = part;
+            if (!string.IsNullOrEmpty(expected) && string.Equals(part, expected, StringComparison.OrdinalIgnoreCase)) return part;
+        }
+        if (!string.IsNullOrEmpty(expected)) return "";
+        return first;
+    }
+
     // Index of the phone that answered, or -1. With a saved peer id, ignore a
     // different phone. A saved host that answers without the header (older app)
-    // is still accepted.
+    // is still accepted. A header that lists several peers matches this PC's id.
     public static int PickCandidate(IList<string> hosts, IList<bool> answered, IList<string> peerIds, string expectedPeer, string savedHost)
     {
         if (hosts == null || answered == null || peerIds == null) return -1;
@@ -277,7 +329,7 @@ internal static class PhoneMountLogic
             if (!answered[i]) continue;
             string id = peerIds[i] ?? "";
             if (string.IsNullOrEmpty(expectedPeer)) return i;
-            if (string.Equals(id, expectedPeer, StringComparison.OrdinalIgnoreCase)) return i;
+            if (PeerHeaderMatches(id, expectedPeer)) return i;
             if (id.Length == 0 && !string.IsNullOrEmpty(savedHost) && string.Equals(hosts[i], savedHost, StringComparison.OrdinalIgnoreCase) && fallback < 0)
                 fallback = i;
         }

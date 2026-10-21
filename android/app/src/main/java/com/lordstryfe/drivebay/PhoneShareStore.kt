@@ -36,8 +36,9 @@ object PhoneShareNames {
     }
 }
 
-class PhoneShareStore(context: Context) : PhoneShareCodeState {
+class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirectory {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val pairLock = Any()
 
     fun enabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
 
@@ -62,7 +63,13 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState {
         edit.commit()
     }
 
-    fun codeLocked(): Boolean = codeRecord() != null && codeFailures() >= PhoneShareCode.MAX_FAILURES
+    fun codeLocked(): Boolean {
+        val list = pairs()
+        if (list.isNotEmpty() || prefs.contains(KEY_PAIRS)) {
+            return list.any { it.codeRecord != null && it.codeFailures >= PhoneShareCode.MAX_FAILURES }
+        }
+        return codeRecord() != null && codeFailures() >= PhoneShareCode.MAX_FAILURES
+    }
 
     /** New token: new code hash and a fresh strike count. The plain token and code are never stored. */
     fun setCredentials(tokenHash: String, codeRecord: String) {
@@ -73,7 +80,99 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState {
             .commit()
     }
 
-    fun tokenHash(): String? = prefs.getString(KEY_HASH, null)?.takeIf { it.length == 64 }
+    fun ownerRecord(): String? = prefs.getString(KEY_OWNER, null)?.takeIf { it.startsWith("pbkdf2-sha256$") }
+
+    fun setOwnerRecord(record: String) {
+        prefs.edit().putString(KEY_OWNER, record).commit()
+    }
+
+    /** Paired PCs. A single token from an older install is saved as the first entry the first time this is read. */
+    fun pairs(): List<PhonePair> = snapshot()
+
+    override fun snapshot(): List<PhonePair> = synchronized(pairLock) { loadPairs() }
+
+    override fun save(pairs: List<PhonePair>) {
+        synchronized(pairLock) { writePairs(pairs) }
+    }
+
+    override fun noteSeen(id: String, now: Long) {
+        synchronized(pairLock) {
+            val current = loadPairs()
+            if (current.none { it.id == id }) return
+            val next = PhonePairRules.touch(current, id, now)
+            if (next !== current) writePairs(next)
+        }
+    }
+
+    override fun recordCodeMiss() {
+        synchronized(pairLock) { writePairs(PhonePairRules.noteCodeMiss(loadPairs())) }
+    }
+
+    override fun noteHostName(id: String, hostName: String, now: Long): Boolean {
+        synchronized(pairLock) {
+            val next = PhonePairRules.applyHostName(loadPairs(), id, hostName, now) ?: return false
+            writePairs(next)
+            return true
+        }
+    }
+
+    fun rename(id: String, name: String): Boolean = synchronized(pairLock) {
+        val next = PhonePairRules.rename(loadPairs(), id, name) ?: return false
+        writePairs(next)
+        true
+    }
+
+    private fun loadPairs(): List<PhonePair> {
+        if (prefs.contains(KEY_PAIRS)) return PhonePairJson.decode(prefs.getString(KEY_PAIRS, null))
+        val legacy = legacyTokenHash() ?: return emptyList()
+        val migrated = PhonePairRules.migrate(emptyList(), legacy, prefs.getString(KEY_CODE, null), prefs.getInt(KEY_CODE_FAILURES, 0))
+        if (migrated.isNotEmpty()) writePairs(migrated)
+        return migrated
+    }
+
+    private fun writePairs(pairs: List<PhonePair>) {
+        val edit = prefs.edit().putString(KEY_PAIRS, PhonePairJson.encode(pairs))
+        val legacy = legacyTokenHash()
+        if (legacy != null && pairs.none { it.tokenHash == legacy }) {
+            edit.remove(KEY_HASH).remove(KEY_CODE).remove(KEY_CODE_FAILURES)
+        }
+        edit.commit()
+    }
+
+    /** Adds one PC. Hashes only: the caller passes SHA-256 of the token and PBKDF2 of the code. */
+    fun addPair(name: String, tokenHash: String, codeRecord: String): PhonePair = synchronized(pairLock) {
+        val stored = PhonePairRules.storedName(name)
+        val pair = PhonePair(
+            id = tokenHash,
+            name = stored,
+            tokenHash = tokenHash,
+            codeRecord = codeRecord.takeIf { it.startsWith("pbkdf2-sha256$") },
+            codeFailures = 0,
+            lastSeenMs = 0,
+            customName = stored.isNotEmpty(),
+        )
+        val next = PhonePairRules.append(loadPairs(), pair)
+        val edit = prefs.edit().putString(KEY_PAIRS, PhonePairJson.encode(next))
+        if (legacyTokenHash() == null) {
+            edit.putString(KEY_HASH, tokenHash).putString(KEY_CODE, codeRecord).putInt(KEY_CODE_FAILURES, 0)
+        }
+        edit.commit()
+        pair
+    }
+
+    /** Drops that PC's token. The next WebDAV request from it fails. */
+    fun revoke(id: String) {
+        synchronized(pairLock) { writePairs(PhonePairRules.revoke(loadPairs(), id)) }
+    }
+
+    fun tokenHash(): String? {
+        if (prefs.contains(KEY_PAIRS)) {
+            return PhonePairJson.decode(prefs.getString(KEY_PAIRS, null)).firstOrNull()?.tokenHash?.takeIf { it.length == 64 }
+        }
+        return legacyTokenHash()
+    }
+
+    private fun legacyTokenHash(): String? = prefs.getString(KEY_HASH, null)?.takeIf { it.length == 64 }
 
     fun setTokenHash(hash: String) {
         prefs.edit().putString(KEY_HASH, hash).apply()
@@ -129,6 +228,8 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState {
         private const val KEY_CODE = "code_hash"
         private const val KEY_CODE_FAILURES = "code_failures"
         private const val KEY_WHOLE_PHONE = "whole_phone"
+        private const val KEY_PAIRS = "pairs"
+        private const val KEY_OWNER = "owner_password"
     }
 }
 

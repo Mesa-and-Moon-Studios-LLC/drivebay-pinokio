@@ -12,6 +12,8 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.provider.DocumentsContract
 import android.provider.Settings
@@ -29,6 +31,7 @@ import android.webkit.WebViewClient
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -89,7 +92,9 @@ class MainActivity : AppCompatActivity() {
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private var uploadParent: String? = null
     private lateinit var shareBanner: TextView
+    private lateinit var pairedPcsBtn: MaterialButton
     private lateinit var phoneShareBox: LinearLayout
+    private var pairedDialog: AlertDialog? = null
     private val phoneShare by lazy { PhoneShareStore(this) }
     private var updatingShare = false
     /** Set while the All files access screen is open, so onResume can finish turning whole-phone mode on. */
@@ -202,6 +207,10 @@ class MainActivity : AppCompatActivity() {
         downloadsBtn = findViewById(R.id.downloadsBtn)
         downloadsFab = findViewById(R.id.downloadsFab)
         shareBanner = findViewById(R.id.shareBanner)
+        pairedPcsBtn = findViewById(R.id.pairedPcsBtn)
+        pairedPcsBtn.setOnClickListener { showPairedPcs() }
+        findViewById<MaterialButton>(R.id.ownerPasswordBtn).setOnClickListener { editOwnerPassword() }
+        findViewById<MaterialButton>(R.id.pairedPcsSettingsBtn).setOnClickListener { showPairedPcs() }
         phoneShareBox = findViewById(R.id.phoneShareBox)
         renderPhoneShare()
         if (CrashLog.hasUnseen(this)) {
@@ -391,6 +400,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         webView.onResume()
         runCatching { syncWholePhoneAccess() }
+        if (::phoneShareBox.isInitialized) renderPhoneShare()
         if (tailscalePanel.visibility == View.VISIBLE && isTailscaleInstalled()) {
             continueAfterTailscale()
         }
@@ -413,6 +423,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        pairedDialog?.dismiss()
+        pairedDialog = null
         (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
@@ -696,8 +708,16 @@ class MainActivity : AppCompatActivity() {
             downloadsAttention = DownloadsOrder.needsAttention(jobs)
             downloadsBtn.text = if (jobs.isEmpty()) getString(R.string.downloads) else getString(R.string.downloads_count, jobs.size)
             downloadsFab.visibility = if (webView.visibility == View.VISIBLE && downloadsAttention > 0) View.VISIBLE else View.GONE
-            shareBanner.visibility = if (webView.visibility == View.VISIBLE && phoneShare.enabled()) View.VISIBLE else View.GONE
+            syncShareChrome()
         }
+    }
+
+    /** Banner and Paired PCs stay with the file browser, and only while this phone is shared. */
+    private fun syncShareChrome() {
+        val show = webView.visibility == View.VISIBLE && phoneShare.enabled()
+        val visibility = if (show) View.VISIBLE else View.GONE
+        shareBanner.visibility = visibility
+        pairedPcsBtn.visibility = visibility
     }
 
     private fun showBrowser() {
@@ -706,7 +726,7 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.VISIBLE
         settingsFab.visibility = View.VISIBLE
         downloadsFab.visibility = if (downloadsAttention > 0) View.VISIBLE else View.GONE
-        shareBanner.visibility = if (phoneShare.enabled()) View.VISIBLE else View.GONE
+        syncShareChrome()
     }
 
     private fun checkForUpdates() {
@@ -741,8 +761,8 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.GONE
         settingsFab.visibility = View.GONE
         downloadsFab.visibility = View.GONE
-        shareBanner.visibility = View.GONE
         setupPanel.visibility = View.VISIBLE
+        syncShareChrome()
     }
 
     private fun showTailscale() {
@@ -750,8 +770,8 @@ class MainActivity : AppCompatActivity() {
         setupPanel.visibility = View.GONE
         settingsFab.visibility = View.GONE
         downloadsFab.visibility = View.GONE
-        shareBanner.visibility = View.GONE
         tailscalePanel.visibility = View.VISIBLE
+        syncShareChrome()
     }
 
     private val folderLauncher =
@@ -799,23 +819,32 @@ class MainActivity : AppCompatActivity() {
             isChecked = phoneShare.enabled()
             setOnCheckedChangeListener { _, checked ->
                 if (updatingShare) return@setOnCheckedChangeListener
-                if (checked && !phoneShare.hasShareSource()) {
-                    updatingShare = true
-                    isChecked = false
-                    updatingShare = false
+                if (!checked) {
+                    phoneShare.setEnabled(false)
+                    PhoneShareService.stop(this@MainActivity)
+                    renderPhoneShare()
+                    return@setOnCheckedChangeListener
+                }
+                updatingShare = true
+                isChecked = false
+                updatingShare = false
+                if (!phoneShare.hasShareSource()) {
                     Toast.makeText(this@MainActivity, R.string.phone_share_need_folder, Toast.LENGTH_LONG).show()
                     return@setOnCheckedChangeListener
                 }
-                if (checked && phoneShare.tokenHash() == null) {
-                    updatingShare = true
-                    isChecked = false
-                    updatingShare = false
-                    revealNewToken()
-                    return@setOnCheckedChangeListener
+                ensureOwner {
+                    if (phoneShare.pairs().isEmpty()) {
+                        pairPc {
+
+                            phoneShare.setEnabled(true)
+                            startPhoneShare()
+                        }
+                    } else {
+                        phoneShare.setEnabled(true)
+                        startPhoneShare()
+                        renderPhoneShare()
+                    }
                 }
-                phoneShare.setEnabled(checked)
-                if (checked) startPhoneShare() else PhoneShareService.stop(this@MainActivity)
-                renderPhoneShare()
             }
         }
         phoneShareBox.addView(toggle)
@@ -858,13 +887,6 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
-        val token = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-            text = getString(R.string.phone_share_token)
-            isAllCaps = false
-            setTextColor(0xFFE8EEF7.toInt())
-            setOnClickListener { revealNewToken() }
-        }
-        phoneShareBox.addView(token)
         val errorLog = MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
             text = getString(R.string.error_log_title)
             isAllCaps = false
@@ -897,14 +919,6 @@ class MainActivity : AppCompatActivity() {
             hosts.isEmpty() -> getString(R.string.phone_share_reconnecting) + "\n" + getString(R.string.phone_share_waiting)
             else -> getString(R.string.phone_share_address, hosts.joinToString("  ") { "http://$it:${PhoneShareService.PORT}/" })
         }
-        if (phoneShare.enabled() && phoneShare.codeLocked()) {
-            phoneShareBox.addView(TextView(this).apply {
-                text = getString(R.string.phone_share_code_locked)
-                setTextColor(0xFFFCA5A5.toInt())
-                textSize = 13f
-                setPadding(0, 12, 0, 0)
-            })
-        }
         phoneShareBox.addView(TextView(this).apply {
             text = status
             setTextColor(if (phoneShare.enabled()) 0xFFBBF7D0.toInt() else 0xFF94A3B8.toInt())
@@ -918,9 +932,87 @@ class MainActivity : AppCompatActivity() {
             hosts,
             PhoneShareService.PORT,
         )
-        if (webView.visibility == View.VISIBLE) {
-            shareBanner.visibility = if (phoneShare.enabled()) View.VISIBLE else View.GONE
+        syncShareChrome()
+    }
+
+    /** Named PCs, connected now or last seen. Add, rename, and revoke ask for the owner password. */
+    private fun showPairedPcs() {
+        if (isFinishing || isDestroyed) return
+        pairedDialog?.dismiss()
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, 0)
         }
+        val now = System.currentTimeMillis()
+        val paired = phoneShare.pairs()
+        if (paired.isEmpty()) {
+            body.addView(TextView(this).apply {
+                text = getString(R.string.phone_share_pairs_empty)
+                setTextColor(0xFF94A3B8.toInt())
+                textSize = 14f
+            })
+        }
+        paired.forEach { pair -> body.addView(pairRow(pair, now)) }
+        if (paired.any { it.codeRecord != null && it.codeFailures >= PhoneShareCode.MAX_FAILURES }) {
+            body.addView(TextView(this).apply {
+                text = getString(R.string.phone_share_code_locked)
+                setTextColor(0xFFFCA5A5.toInt())
+                textSize = 13f
+                setPadding(0, pad, 0, 0)
+            })
+        }
+        body.addView(MaterialButton(this).apply {
+            text = getString(R.string.phone_share_add)
+            isAllCaps = false
+            setOnClickListener { ensureOwner { pairPc { showPairedPcs() } } }
+        })
+        val scroll = ScrollView(this).apply { addView(body) }
+        pairedDialog = AlertDialog.Builder(this)
+            .setTitle(R.string.phone_share_pairs)
+            .setView(scroll)
+            .setNegativeButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun pairRow(pair: PhonePair, now: Long): LinearLayout {
+        val locked = pair.codeRecord != null && pair.codeFailures >= PhoneShareCode.MAX_FAILURES
+        val shown = pair.name.ifBlank { getString(R.string.phone_share_default_pc) }
+        val status = pairStatus(pair, now)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(TextView(this).apply {
+            text = if (locked) {
+                getString(R.string.phone_share_pair_row_locked, shown, status)
+            } else {
+                getString(R.string.phone_share_pair_row, shown, status)
+            }
+            setTextColor(if (locked) 0xFFFCA5A5.toInt() else 0xFFCBD5E1.toInt())
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        row.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.phone_share_rename)
+            isAllCaps = false
+            setTextColor(0xFFE8EEF7.toInt())
+            setOnClickListener { renamePair(pair) { showPairedPcs() } }
+        })
+        row.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.phone_share_revoke)
+            isAllCaps = false
+            setTextColor(0xFFFCA5A5.toInt())
+            setOnClickListener { confirmRevoke(pair) { showPairedPcs() } }
+        })
+        return row
+    }
+
+    private fun pairStatus(pair: PhonePair, now: Long): String {
+        if (PhonePairRules.connectedNow(pair.lastSeenMs, now)) return getString(R.string.phone_share_connected_now)
+        val seen = PhonePairRules.lastSeenLabel(pair.lastSeenMs, now)
+        if (pair.lastSeenMs <= 0) return seen
+        return getString(R.string.phone_share_last_seen, seen)
     }
 
     private fun openAllFilesSettings() {
@@ -968,24 +1060,165 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun revealNewToken() {
-        val token = PhoneShareAuth.generateToken()
-        val code = PhoneShareCode.generate()
-        // Only hashes are kept: SHA-256 of the token, salted PBKDF2 of the code. A new token
-        // replaces the old code and clears its lockout.
-        phoneShare.setCredentials(PhoneShareAuth.hash(token), PhoneShareCode.hash(code))
-        if (phoneShare.enabled()) startPhoneShare()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.phone_share_token)
-            .setMessage(getString(R.string.phone_share_token_once, code, token))
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                if (phoneShare.hasShareSource()) {
-                    phoneShare.setEnabled(true)
-                    startPhoneShare()
-                }
-                renderPhoneShare()
+    /** Settings: set the owner password, or change it after the current one matches. */
+    private fun editOwnerPassword() {
+        val record = phoneShare.ownerRecord()
+        if (record == null) {
+            promptSetOwner {
+                Toast.makeText(this, R.string.phone_share_owner_changed, Toast.LENGTH_SHORT).show()
             }
+            return
+        }
+        promptEnterOwner(record, getString(R.string.phone_share_owner_current)) {
+            promptSetOwner(R.string.phone_share_owner_change) {
+                Toast.makeText(this, R.string.phone_share_owner_changed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Set the owner password the first time, or ask for it. Sharing that is already on does not come through here. */
+    private fun ensureOwner(then: () -> Unit) {
+        val record = phoneShare.ownerRecord()
+        if (record == null) promptSetOwner(then = then) else promptEnterOwner(record, then = then)
+    }
+
+    private fun passwordField(): EditText = EditText(this).apply {
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        setPadding(pad, pad, pad, pad)
+    }
+
+    private fun promptSetOwner(title: Int = R.string.phone_share_owner_set, then: () -> Unit) {
+        val input = passwordField()
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(R.string.phone_share_owner_set_help)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val first = input.text?.toString()?.trim().orEmpty()
+                if (!PhoneOwnerPassword.acceptable(first)) {
+                    Toast.makeText(this, R.string.phone_share_owner_short, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                promptConfirmOwner(first, then)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun promptConfirmOwner(first: String, then: () -> Unit) {
+        val input = passwordField()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.phone_share_owner_confirm)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val second = input.text?.toString()?.trim().orEmpty()
+                if (second != first) {
+                    Toast.makeText(this, R.string.phone_share_owner_mismatch, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                phoneShare.setOwnerRecord(PhoneOwnerPassword.hash(first))
+                then()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun promptEnterOwner(record: String, message: String? = null, then: () -> Unit) {
+        val input = passwordField()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.phone_share_owner_enter)
+            .setMessage(message)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val typed = input.text?.toString()?.trim().orEmpty()
+                if (!PhoneOwnerPassword.matches(typed, record)) {
+                    Toast.makeText(this, R.string.phone_share_owner_wrong, Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                then()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun pairPc(after: (() -> Unit)? = null) {
+        val input = EditText(this).apply {
+            hint = getString(R.string.phone_share_name_hint)
+            val pad = (12 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.phone_share_pair)
+            .setMessage(R.string.phone_share_pair_name)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val name = input.text?.toString().orEmpty()
+                val token = PhoneShareAuth.generateToken()
+                val code = PhoneShareCode.generate()
+                // Only hashes are kept. Each PC is added. A blank name becomes that PC's hostname when it connects.
+                phoneShare.addPair(name, PhoneShareAuth.hash(token), PhoneShareCode.hash(code))
+                if (phoneShare.enabled()) startPhoneShare()
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.phone_share_pair)
+                    .setMessage(getString(R.string.phone_share_token_once, code, token))
+                    .setCancelable(false)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        renderPhoneShare()
+                        after?.invoke()
+                    }
+                    .show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun renamePair(pair: PhonePair, then: (() -> Unit)? = null) {
+        ensureOwner {
+            val input = EditText(this).apply {
+                setText(pair.name)
+                hint = getString(R.string.phone_share_name_hint)
+                val pad = (12 * resources.displayMetrics.density).toInt()
+                setPadding(pad, pad, pad, pad)
+            }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.phone_share_rename)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val typed = input.text?.toString().orEmpty()
+                    if (PhonePairRules.storedName(typed).isEmpty()) {
+                        Toast.makeText(this, R.string.phone_share_name_blank, Toast.LENGTH_LONG).show()
+                        return@setPositiveButton
+                    }
+                    phoneShare.rename(pair.id, typed)
+                    if (phoneShare.enabled()) startPhoneShare()
+                    renderPhoneShare()
+                    then?.invoke()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun confirmRevoke(pair: PhonePair, then: (() -> Unit)? = null) {
+        ensureOwner {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.phone_share_revoke)
+                .setMessage(getString(R.string.phone_share_revoke_confirm, pair.name.ifBlank { getString(R.string.phone_share_default_pc) }))
+                .setPositiveButton(R.string.phone_share_revoke) { _, _ ->
+                    phoneShare.revoke(pair.id)
+                    if (phoneShare.pairs().isEmpty()) {
+                        phoneShare.setEnabled(false)
+                        PhoneShareService.stop(this)
+                    } else if (phoneShare.enabled()) {
+                        startPhoneShare()
+                    }
+                    renderPhoneShare()
+                    then?.invoke()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
     }
 
     /**
