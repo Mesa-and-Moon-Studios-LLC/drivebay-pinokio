@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.7.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.37.0.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.36.7** — see [Changelog](#changelog) below.
+Current version: **3.37.0** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.36.7.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.37.0.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.7` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.37.0` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -130,6 +130,10 @@ To update, run `bash unix/install.sh` from a newer tarball. It keeps the account
 
 Signing and notarization stay off until `DRIVEBAY_CODESIGN_IDENTITY` and `DRIVEBAY_NOTARY_PROFILE` are set. `unix/sign-mac.sh` prints those steps and does not embed a key.
 
+## Link your machines
+
+Settings can sign this machine into a Mesa and Moon account (Google or Apple). That login is optional. The account lists your machines and how to reach them. It does not store files. See [docs/linked-machines.md](docs/linked-machines.md).
+
 ## Mount a phone as a drive
 
 The Android app can share folders you pick as a WebDAV drive on Tailscale or the local network. It is off until you turn it on. On Windows, the tray menu has **Connect my phone…**. Settings on this PC has the same form. See [docs/phone-as-drive.md](docs/phone-as-drive.md) for Windows, macOS, and Linux.
@@ -219,7 +223,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.7. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
+To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.37.0. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -227,7 +231,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.36.7. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.37.0. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -315,6 +319,12 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.37.0
+- Optional Mesa and Moon sign-in from Settings (Google and Apple). Drivebay still works with nobody signed in. The cloud stores connection info only. Your files never touch Mesa and Moon servers.
+- Settings shows My machines. Each other machine mounts as its own network drive. Shared folders start empty, and WebDAV on `/dav/` only exposes the folders you chose. Opening a machine needs a 6-digit code or an approval on that machine.
+- Android 3.37.0 (versionCode 33700) has the same sign-in, hidden switch, and shared-folder access. The phone lists a PC's folders in the app.
+- The Windows installer and the server report 3.37.0. `/api/health` returns `version` 3.37.0.
 
 ### 3.36.7
 - On Linux and macOS, Mount phone as drive picks the mount from the session. A desktop session with the native tool uses that tool and passes the 6-digit code or token without asking again: `gio` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up, and `mount_webdav` on a Mac that is not an SSH login. Otherwise Drivebay runs `rclone mount` with `--webdav-user drivebay`, an obscured password, `--vfs-cache-mode writes`, and `--daemon`. If rclone or FUSE is missing, the error says how to install them. Windows still uses `net use`. Unmount matches the method. The PC name is still sent with `PROPFIND` and the code is still saved in `phone-tokens.json`.

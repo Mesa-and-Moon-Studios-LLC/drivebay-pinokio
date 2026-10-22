@@ -724,7 +724,7 @@ function Read-DrivebayVersion([string]$Source) {
     $line = Get-Content -LiteralPath $file -TotalCount 1
     if ($line -match "(\d+\.\d+(\.\d+)?)") { return $Matches[1] }
   }
-  return "3.36.7"
+  return "3.37.0"
 }
 
 function Save-DrivebayAccount([string]$Root, [string]$SetupScript, [int]$Port, [string]$Mode, [string]$Version, [string]$UserName, [string]$Password) {

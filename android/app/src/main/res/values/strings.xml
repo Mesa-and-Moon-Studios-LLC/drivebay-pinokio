@@ -110,4 +110,17 @@
     <string name="error_log_share">Share</string>
     <string name="error_log_clear">Clear</string>
     <string name="error_log_new">Drivebay hit an error last time. Settings › Error log has the details.</string>
+    <string name="mesa_section">Mesa and Moon</string>
+    <string name="mesa_help">Optional. Drivebay works without an account. Your files never touch Mesa and Moon servers. Continue with Google or Apple, the same sign-in as the vault games.</string>
+    <string name="mesa_google">Continue with Google</string>
+    <string name="mesa_apple">Continue with Apple</string>
+    <string name="mesa_machines">My machines</string>
+    <string name="mesa_hidden">Hidden. Other machines on this login do not see this phone.</string>
+    <string name="mesa_signed_out">Not signed in. Drivebay still works.</string>
+    <string name="mesa_signed_in">Signed in as %1$s</string>
+    <string name="mesa_connect">Connect</string>
+    <string name="mesa_connect_public">Connect over the public internet</string>
+    <string name="mesa_code_hint">6-digit code from that machine</string>
+    <string name="folder_read_only">Read-only</string>
+    <string name="folder_read_write">Read-write</string>
 </resources>

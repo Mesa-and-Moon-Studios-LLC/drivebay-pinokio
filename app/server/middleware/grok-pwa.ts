@@ -59,10 +59,11 @@ export default async function grokPwaMiddleware(
   event: GrokPwaEvent,
   next: () => unknown | Promise<unknown>,
 ): Promise<unknown> {
+  const path = event.url.pathname;
+  if (path === "/dav" || path.startsWith("/dav/") || path.startsWith("/api/link/")) return next();
+
   const method = (event.req.method ?? "GET").toUpperCase();
   if (method !== "GET") return next();
-
-  const path = event.url.pathname;
   const urlWithQuery = path + event.url.search;
 
   if (path === "/__grok/manifest.webmanifest" || path === "/__grok/manifest.json") {

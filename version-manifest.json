@@ -1,8 +1,8 @@
 {
   "minimum": "3.36",
-  "latest": "3.36.7",
+  "latest": "3.37.0",
   "message": "This version of Drivebay is out of date. Install the latest release to keep using it.",
-  "androidVersionCode": 33405,
-  "androidVersionName": "3.34.5",
+  "androidVersionCode": 33700,
+  "androidVersionName": "3.37.0",
   "androidMinVersionCode": 33400
 }

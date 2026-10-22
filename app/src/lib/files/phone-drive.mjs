@@ -49,7 +49,7 @@ export function redact(text, secret) {
   return raw;
 }
 
-function cleanUrl(raw) {
+function cleanUrl(raw, allowPublic = false) {
   const text = String(raw ?? "").trim();
   if (!text) return null;
   let url;
@@ -59,9 +59,19 @@ function cleanUrl(raw) {
     return null;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  if (!isMountableHost(url.hostname)) return null;
+  if (!isMountableHost(url.hostname)) {
+    if (!allowPublic || !isNamedHost(url.hostname)) return null;
+  }
   if (!url.pathname || url.pathname === "") url.pathname = "/";
   return url;
+}
+
+/** A public hostname the user typed after opening a port. Not used unless allowPublic is set. */
+function isNamedHost(host) {
+  const value = String(host || "").trim();
+  if (!value || value.length > 253) return false;
+  if (/[\s/\\]/.test(value)) return false;
+  return true;
 }
 
 /** A 6-digit code or a token of at least 8 characters. Shorter values are refused. */
@@ -157,8 +167,10 @@ export function mountPlan({
   home,
   env = process.env,
   tools,
+  mountPoint: mountPointOverride,
+  allowPublic = false,
 } = {}) {
-  const parsed = cleanUrl(url);
+  const parsed = cleanUrl(url, allowPublic);
   if (!parsed) {
     return { ok: false, error: "Use the Tailscale or LAN address shown in the Drivebay phone app." };
   }
@@ -167,6 +179,9 @@ export function mountPlan({
   }
   const userName = String(user || "drivebay").trim() || "drivebay";
   const href = parsed.href.endsWith("/") ? parsed.href : `${parsed.href}/`;
+  const publicNote = allowPublic && !isMountableHost(parsed.hostname)
+    ? " This address is on the public internet because a port was opened on purpose."
+    : "";
   if (platform === "win32") {
     const drive = /^[A-Za-z]$/.test(String(letter || "")) ? String(letter).toUpperCase() : "Z";
     if (drive === "C") return { ok: false, error: "Pick a drive letter other than C." };
@@ -178,11 +193,11 @@ export function mountPlan({
       letter: drive,
       args: ["use", `${drive}:`, href, `/user:${userName}`, String(secret)],
       display: `net use ${drive}: ${href} /user:${userName} ***`,
-      note: "If Windows refuses the mount, start the WebClient service. HTTP Basic auth also needs BasicAuthLevel set to 2. See docs/phone-as-drive.md.",
+      note: `If Windows refuses the mount, start the WebClient service. HTTP Basic auth also needs BasicAuthLevel set to 2. See docs/phone-as-drive.md.${publicNote}`,
     };
   }
   const root = home || os.homedir();
-  const mountPoint = phoneMountPoint(root);
+  const mountPoint = mountPointOverride || phoneMountPoint(root);
   const available = tools || detectTools(platform);
   const desktop = hasDesktopSession(platform, env);
   if (platform === "darwin" && desktop && available.mount_webdav) {
@@ -198,7 +213,7 @@ export function mountPlan({
       display: `mkdir -p ${mountPoint} && mount_webdav http://${userName}:***@${parsed.host}/ ${mountPoint}`,
       mountPoint,
       createMountPoint: true,
-      note: "macOS mounts the phone with mount_webdav. The folder is ~/DrivebayPhone. The code is passed to mount_webdav and is not requested again.",
+      note: `macOS mounts the share with mount_webdav. The code is passed to mount_webdav and is not requested again.${publicNote}`,
     };
   }
   if (platform === "linux" && desktop && available.gio) {
@@ -210,17 +225,18 @@ export function mountPlan({
       file: "gio",
       args: ["mount", dav],
       display: `gio mount dav://${userName}:***@${parsed.host}${parsed.pathname}`,
-      note: "Linux mounts the phone with gio (gvfs) when a desktop session is available. The code is included so gio does not ask for it.",
+      note: `Linux mounts the share with gio (gvfs) when a desktop session is available. The code is included so gio does not ask for it.${publicNote}`,
     };
   }
   if (!available.rclone) {
     return { ok: false, error: RCLONE_MISSING };
   }
-  return rclonePlan({ platform, href, userName, secret, mountPoint });
+  const rclone = rclonePlan({ platform, href, userName, secret, mountPoint });
+  return publicNote ? { ...rclone, note: `${rclone.note}${publicNote}` } : rclone;
 }
 
-function davTarget(url, userName) {
-  const parsed = cleanUrl(url);
+function davTarget(url, userName, allowPublic = false) {
+  const parsed = cleanUrl(url, allowPublic);
   if (!parsed) return null;
   return `dav://${encodeURIComponent(userName)}@${parsed.host}${parsed.pathname}`;
 }
@@ -235,6 +251,7 @@ export function unmountPlan({
   home,
   env = process.env,
   tools,
+  allowPublic = false,
 } = {}) {
   const userName = String(user || "drivebay").trim() || "drivebay";
   let resolved = String(method || "");
@@ -261,7 +278,7 @@ export function unmountPlan({
   }
   const dir = mountPoint || phoneMountPoint(home);
   if (resolved === "gio") {
-    const dav = davTarget(url, userName);
+    const dav = davTarget(url, userName, allowPublic);
     if (!dav) return { ok: false, error: "Use the Tailscale or LAN address shown in the Drivebay phone app." };
     return {
       ok: true,
@@ -402,8 +419,8 @@ export function decodePhoneName(raw) {
 }
 
 /** Explorer's MountPoints2 key for a WebDAV drive, e.g. ##100.70.170.22@8780#DavWWWRoot. */
-export function mountPointsKey(url) {
-  const parsed = cleanUrl(url);
+export function mountPointsKey(url, allowPublic = false) {
+  const parsed = cleanUrl(url, allowPublic);
   if (!parsed) return null;
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
   const ssl = parsed.protocol === "https:" ? "@SSL" : "";
@@ -425,8 +442,8 @@ function runReg(args) {
 }
 
 /** Shows [label] for the mapped phone in File Explorer. Windows only; failure is ignored. */
-export async function setDriveLabel(url, label, platform = process.platform) {
-  const key = mountPointsKey(url);
+export async function setDriveLabel(url, label, platform = process.platform, allowPublic = false) {
+  const key = mountPointsKey(url, allowPublic);
   const name = pcName(label);
   if (platform !== "win32" || !key || !name) return false;
   return runReg(["add", `${MOUNT_POINTS}\\${key}`, "/v", "_LabelFromReg", "/t", "REG_SZ", "/d", name, "/f"]);

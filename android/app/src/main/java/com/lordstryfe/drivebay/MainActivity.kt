@@ -176,6 +176,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        MesaPanel.consume(this, intent)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         // Android 15+ (targetSdk 35+) always draws edge-to-edge. Opt in the supported way with dark
@@ -212,6 +218,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.ownerPasswordBtn).setOnClickListener { editOwnerPassword() }
         findViewById<MaterialButton>(R.id.pairedPcsSettingsBtn).setOnClickListener { showPairedPcs() }
         phoneShareBox = findViewById(R.id.phoneShareBox)
+        MesaPanel.bind(this)
+        MesaPanel.consume(this, intent)
         renderPhoneShare()
         if (CrashLog.hasUnseen(this)) {
             Toast.makeText(this, R.string.error_log_new, Toast.LENGTH_LONG).show()
@@ -796,7 +804,7 @@ class MainActivity : AppCompatActivity() {
         }
         val others = phoneShare.folders().filterNot { it.uri == uri.toString() }
         val name = PhoneShareNames.unique(folderName(uri), others.map { it.name })
-        phoneShare.setFolders(others + SharedFolder(uri.toString(), name))
+        phoneShare.setFolders(others + SharedFolder(uri.toString(), name, "ro"))
         renderPhoneShare()
         if (phoneShare.enabled()) startPhoneShare()
     }
@@ -902,11 +910,40 @@ class MainActivity : AppCompatActivity() {
                 setPadding(0, 8, 0, 0)
             })
         } else phoneShare.folders().forEach { folder ->
-            phoneShareBox.addView(TextView(this).apply {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this).apply {
                 text = folder.name
                 setTextColor(0xFFCBD5E1.toInt())
                 textSize = 14f
-                setPadding(0, 8, 0, 0)
+                setPadding(0, 8, 12, 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            row.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = getString(if (folder.access == "rw") R.string.folder_read_write else R.string.folder_read_only)
+                isAllCaps = false
+                setTextColor(0xFFE8EEF7.toInt())
+                setOnClickListener {
+                    val next = if (folder.access == "rw") "ro" else "rw"
+                    phoneShare.setFolderAccess(folder.name, next)
+                    if (phoneShare.enabled()) startPhoneShare()
+                    renderPhoneShare()
+                }
+            })
+            phoneShareBox.addView(row)
+        }
+        if (phoneShare.wholePhone() && PhoneShareService.allFilesAccess()) {
+            phoneShareBox.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = getString(if (phoneShare.wholeAccess() == "rw") R.string.folder_read_write else R.string.folder_read_only)
+                isAllCaps = false
+                setTextColor(0xFFE8EEF7.toInt())
+                setOnClickListener {
+                    phoneShare.setWholeAccess(if (phoneShare.wholeAccess() == "rw") "ro" else "rw")
+                    if (phoneShare.enabled()) startPhoneShare()
+                    renderPhoneShare()
+                }
             })
         }
         val hosts = when {

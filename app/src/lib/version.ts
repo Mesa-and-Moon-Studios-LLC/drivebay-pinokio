@@ -1,4 +1,4 @@
-export const APP_VERSION = "3.36.7";
+export const APP_VERSION = "3.37.0";
 export const FEATURE_REQUEST_URL =
   "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/issues/new?title=Feature%20request%3A%20&labels=enhancement";
 

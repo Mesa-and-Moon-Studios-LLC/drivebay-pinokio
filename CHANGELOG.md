@@ -2,6 +2,16 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.37.0
+- Optional Mesa and Moon sign-in from Settings (Google and Apple, same Firebase style as the vault games). Drivebay still works with nobody signed in. Each machine registers itself. The cloud stores connection info only: machine id, name, type, Tailscale or LAN address, port, public key, and last seen. Files, folder lists, passwords, phone codes, and pair tokens stay on the machine. There is no relay.
+- Settings shows My machines with online status and Connect. Tailscale is the path. A public address is used only after that machine turns on direct internet, and Connect shows the risk warning.
+- Shared folders start empty. Each folder is read-only or read-write. Hidden keeps a machine off the other machines' lists. WebDAV on `/dav/` enforces that list.
+- Opening another machine needs a 6-digit code or an approval on that machine. The pair token stays in a local file.
+- Other machines mount as their own network drive: Windows `net use` with a label, macOS `mount_webdav` or rclone, Linux `gio` or rclone using the 3.36.7 desktop check.
+- Android 3.37.0 (versionCode 33700) adds the same sign-in, hidden switch, per-folder access, and My machines list. The phone shows a PC's shared folders in the app. It does not create an OS drive letter.
+- The PHP and MySQL API is in `server/cloud-api/` with `schema.sql` and deploy notes. It is not deployed.
+- The Windows installer and the server report 3.37.0. `/api/health` returns `version` 3.37.0.
+
 ## 3.36.7
 - On Linux and macOS, Mount phone as drive picks the mount from the session. A desktop session with the native tool uses that tool and passes the 6-digit code or token without asking again: `gio` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up, and `mount_webdav` on a Mac that is not an SSH login. Otherwise Drivebay runs `rclone mount` with `--webdav-user drivebay`, an obscured password, `--vfs-cache-mode writes`, and `--daemon`. If rclone or FUSE is missing, the error says how to install them. Windows still uses `net use`. Unmount matches the method (`net use /delete`, `gio mount -u`, `umount`, or `fusermount -u`). The PC name is still sent with `PROPFIND` and the code is still saved in `phone-tokens.json`.
 - The Windows installer and the server report 3.36.7. `/api/health` returns `version` 3.36.7. Android stays 3.34.5 (versionCode 33405).

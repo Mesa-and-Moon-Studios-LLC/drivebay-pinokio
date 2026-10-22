@@ -12,6 +12,7 @@ import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } fro
 import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { PhoneDriveMount } from "@/components/settings/phone-drive";
+import { LinkedMachines } from "@/components/settings/linked-machines";
 import { DonateMenu } from "@/components/settings/donate-menu";
 import { SupportBanner } from "@/components/support-banner";
 import { HowToGuide } from "@/components/settings/how-to";
@@ -853,6 +854,8 @@ function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <LinkedMachines />
 
         <PhoneDriveMount />
 

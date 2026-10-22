@@ -210,7 +210,8 @@ class PhoneShareService : Service() {
     }
 
     private fun openStore(folders: List<SharedFolder>, wholePhone: Boolean): DavStore {
-        return if (wholePhone) {
+        val share = PhoneShareStore(this)
+        val inner: DavStore = if (wholePhone) {
             if (!hasAllFilesAccess()) throw AllFilesAccessException()
             val files = FilePhoneStore(Environment.getExternalStorageDirectory()) { hasAllFilesAccess() }
             if (!files.usable()) throw AllFilesAccessException()
@@ -218,10 +219,19 @@ class PhoneShareService : Service() {
         } else {
             DocumentPhoneStore(this, folders).also { if (it.rootCount() == 0) throw FolderAccessException() }
         }
+        return AccessDavStore(inner) { path ->
+            if (wholePhone) {
+                AccessDavStore.folderWritable(path) { share.wholeAccess() }
+            } else {
+                AccessDavStore.folderWritable(path) { name ->
+                    share.folders().firstOrNull { it.name == name }?.access ?: "ro"
+                }
+            }
+        }
     }
 
     private fun shareKey(wholePhone: Boolean, folders: List<SharedFolder>, hash: String): String =
-        "$wholePhone|$hash|" + folders.joinToString("|") { it.uri }
+        "$wholePhone|$hash|${PhoneShareStore(this).wholeAccess()}|" + folders.joinToString("|") { "${it.uri}:${it.access}" }
 
     private fun noteRetry() {
         if (stopping) return

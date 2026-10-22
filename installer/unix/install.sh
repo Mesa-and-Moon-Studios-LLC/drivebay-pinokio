@@ -16,9 +16,9 @@ SOURCE="${DRIVEBAY_SOURCE:-$SOURCE}"
 HOME_DIR="${DRIVEBAY_HOME:-$HOME/.local/share/drivebay}"
 BIN_DIR="${DRIVEBAY_BIN_DIR:-$HOME/.local/bin}"
 NODE_VERSION="$(tr -d '[:space:]' < "$SOURCE/node-version.txt" 2>/dev/null || tr -d '[:space:]' < "$SOURCE/installer/node-version.txt")"
-VERSION_LINE="$(head -n 1 "$SOURCE/VERSION.txt" 2>/dev/null || echo "Drivebay 3.36.7")"
+VERSION_LINE="$(head -n 1 "$SOURCE/VERSION.txt" 2>/dev/null || echo "Drivebay 3.37.0")"
 VERSION="$(printf '%s\n' "$VERSION_LINE" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n 1)"
-VERSION="${VERSION:-3.36.7}"
+VERSION="${VERSION:-3.37.0}"
 
 # No desktop session (SSH or a headless server): do not try to open a browser.
 if [[ "$(uname -s)" != "Darwin" && -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then

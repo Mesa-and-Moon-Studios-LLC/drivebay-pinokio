@@ -7,7 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-data class SharedFolder(val uri: String, val name: String)
+data class SharedFolder(val uri: String, val name: String, val access: String = "rw")
 
 /** Folder names for the tree URIs the system folder picker returns. Pure, so JVM tests cover it. */
 object PhoneShareNames {
@@ -197,7 +197,10 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
                     val obj = array.getJSONObject(i)
                     val uri = obj.optString("uri")
                     val name = obj.optString("name")
-                    if (uri.isNotBlank() && name.isNotBlank()) add(SharedFolder(uri, name))
+                    val access = obj.optString("access")
+                    if (uri.isNotBlank() && name.isNotBlank()) {
+                        add(SharedFolder(uri, name, if (access == "ro" || access == "rw") access else "rw"))
+                    }
                 }
             }
         } catch (_: Exception) {
@@ -207,7 +210,7 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
 
     fun setFolders(folders: List<SharedFolder>) {
         val array = JSONArray()
-        folders.forEach { array.put(JSONObject().put("uri", it.uri).put("name", it.name)) }
+        folders.forEach { array.put(JSONObject().put("uri", it.uri).put("name", it.name).put("access", it.access)) }
         prefs.edit().putString(KEY_FOLDERS, array.toString()).apply()
     }
 
@@ -230,6 +233,28 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
         private const val KEY_WHOLE_PHONE = "whole_phone"
         private const val KEY_PAIRS = "pairs"
         private const val KEY_OWNER = "owner_password"
+        private const val KEY_HIDDEN = "hidden"
+        private const val KEY_WHOLE_ACCESS = "whole_access"
+    }
+
+    fun hidden(): Boolean = prefs.getBoolean(KEY_HIDDEN, false)
+
+    fun setHidden(value: Boolean) {
+        prefs.edit().putBoolean(KEY_HIDDEN, value).commit()
+    }
+
+    /** Whole-phone mode stays read-write until the owner changes it. */
+    fun wholeAccess(): String = if (prefs.getString(KEY_WHOLE_ACCESS, "rw") == "ro") "ro" else "rw"
+
+    fun setWholeAccess(value: String) {
+        prefs.edit().putString(KEY_WHOLE_ACCESS, if (value == "ro") "ro" else "rw").commit()
+    }
+
+    fun setFolderAccess(name: String, access: String) {
+        val next = folders().map { folder ->
+            if (folder.name == name) folder.copy(access = if (access == "rw") "rw" else "ro") else folder
+        }
+        setFolders(next)
     }
 }
 
