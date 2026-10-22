@@ -147,7 +147,7 @@ export const howToSections = [
     blocks: [
       {
         kind: "p",
-        text: "To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.",
+        text: "To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.37.0. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.",
       },
       {
         kind: "p",
@@ -159,7 +159,7 @@ export const howToSections = [
       },
       {
         kind: "p",
-        text: "The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.2. In Pinokio, use Update.",
+        text: "The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.37.0. In Pinokio, use Update.",
       },
       {
         kind: "p",

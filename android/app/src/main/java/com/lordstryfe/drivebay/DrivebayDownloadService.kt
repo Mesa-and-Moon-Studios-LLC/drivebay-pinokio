@@ -223,7 +223,7 @@ class DrivebayDownloadService : Service() {
         val uri = MediaStoreSaver.save(this, partial, job.fileName, job.mime)
         partial.delete()
         repository.remove(job.id)
-        val mime = job.mime ?: "application/octet-stream"
+        val mime = DownloadOpen.mimeType(job.fileName, job.mime)
         notifier.complete(job, uri, mime)
         broadcastJobs()
         sendBroadcast(

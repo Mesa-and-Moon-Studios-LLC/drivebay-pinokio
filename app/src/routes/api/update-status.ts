@@ -1,38 +1,54 @@
 import { createFileRoute } from "@tanstack/react-router";
-import fs from "node:fs";
-import path from "node:path";
 import { APP_VERSION } from "@/lib/version";
-import { decideUpdate, fetchLatestManifest } from "@/lib/files/update-policy.mjs";
+import {
+  CHECK_INTERVAL_MS,
+  checkDesktopUpdate,
+  platformId,
+  writeUpdateStatus,
+} from "@/lib/files/update-policy.mjs";
 
-type StatusBody = ReturnType<typeof decideUpdate> & { version: string };
+type StatusBody = {
+  action?: string;
+  reason?: string;
+  latest?: string;
+  minimum?: string;
+  message?: string;
+  url?: string;
+  version?: string;
+  platform?: string;
+  fileName?: string;
+  downloadUrl?: string;
+  checkedAt?: number;
+};
 
 let cache: { at: number; body: StatusBody } | null = null;
 
 function ttl(body: StatusBody): number {
   if (body.reason === "unavailable") return 60_000;
-  return 6 * 60 * 60 * 1000;
+  return CHECK_INTERVAL_MS;
+}
+
+async function loadStatus(force: boolean): Promise<StatusBody> {
+  const versionText = `Drivebay ${APP_VERSION}`;
+  const home = process.env.DRIVEBAY_HOME;
+  const platform = platformId();
+  const body = home
+    ? await writeUpdateStatus(home, versionText, { force, platform })
+    : await checkDesktopUpdate(versionText, { force, platform });
+  return { ...body, version: body.version || APP_VERSION };
 }
 
 export const Route = createFileRoute("/api/update-status")({
   server: {
     handlers: {
-      GET: async () => {
+      GET: async ({ request }) => {
+        const force = new URL(request.url).searchParams.get("force") === "1";
         const now = Date.now();
-        if (cache && now - cache.at < ttl(cache.body)) {
+        if (!force && cache && now - cache.at < ttl(cache.body)) {
           return Response.json(cache.body);
         }
-        const manifest = await fetchLatestManifest();
-        const body: StatusBody = { ...decideUpdate(APP_VERSION, manifest), version: APP_VERSION };
+        const body = await loadStatus(force);
         cache = { at: now, body };
-        const home = process.env.DRIVEBAY_HOME;
-        if (home) {
-          try {
-            fs.mkdirSync(home, { recursive: true });
-            fs.writeFileSync(path.join(home, "update-status.json"), JSON.stringify(body));
-          } catch {
-            /* The tray can check again later. A failed write does not block Drivebay. */
-          }
-        }
         return Response.json(body);
       },
     },

@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isPortFree, readConfig, readJson, resolveListenPort, usernameToEmail } from "./lib.mjs";
-import { decideUpdate, fetchLatestManifest, readInstalledVersion } from "./update-policy.mjs";
+import { readInstalledVersion, writeUpdateStatus } from "./update-policy.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -285,10 +285,7 @@ function installedVersionText() {
 
 async function noteDesktopUpdate(home) {
   try {
-    const manifest = await fetchLatestManifest();
-    const decision = decideUpdate(installedVersionText(), manifest);
-    fs.mkdirSync(home, { recursive: true });
-    fs.writeFileSync(path.join(home, "update-status.json"), JSON.stringify({ ...decision, checkedAt: Date.now() }));
+    const decision = await writeUpdateStatus(home, installedVersionText());
     if (decision.action === "required") {
       log(home, `Update required. ${decision.message || "Install the latest Drivebay release."} ${decision.url || ""}`);
     }
@@ -384,6 +381,7 @@ async function main() {
     ...process.env,
     DRIVEBAY_STANDALONE: "true",
       DRIVEBAY_LAUNCHER: fileURLToPath(import.meta.url),
+      DRIVEBAY_PROGRAM: here,
       DRIVEBAY_HOME: home,
       DRIVEBAY_DATA_DIR: path.join(home, "data"),
       DRIVEBAY_PORT_FILE: path.join(home, "drivebay.port"),

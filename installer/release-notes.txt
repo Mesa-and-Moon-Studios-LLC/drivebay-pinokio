@@ -1,7 +1,11 @@
-Drivebay 3.36.2: Mac and Linux
+Drivebay 3.37.0: Mesa and Moon linked machines
 
-- New: Drivebay for macOS and Linux. Download the tarball for your computer (darwin-arm64 for Apple silicon Macs, darwin-x64 for Intel Macs, linux-x64 or linux-arm64), unpack it, and run: bash unix/install.sh
-  Setup asks for the mode, port, username, and password, then starts Drivebay at login (LaunchAgent on macOS, systemd user service on Linux). Remove it with: bash ~/.local/share/drivebay/program/uninstall.sh
-- macOS: the build is not signed yet. If macOS says it cannot be opened, run this once on the unpacked folder: xattr -dr com.apple.quarantine <folder>
-- New: Drivebay checks the latest release for updates and tells you when one is available. The Windows tray adds "Check for updates".
-- Windows works the same as 3.36.1, including "Connect my phone".
+- Settings can sign this machine into a Mesa and Moon account with Google or Apple. Sign-in is optional. Drivebay still works with nobody signed in.
+- The cloud stores connection info only: machine id, name, type, Tailscale or LAN address, port, public key, and last seen. Your files never touch Mesa and Moon servers. There is no relay.
+- My machines lists the other machines on that login, with online or offline, and Connect. Tailscale is the path. A public address is used only after that machine turns on direct internet, and Connect shows the risk warning.
+- Shared folders start empty. Each folder is read-only or read-write. Hidden keeps this machine off the other machines' lists. WebDAV on /dav/ enforces that list.
+- Opening another machine needs a 6-digit code or an approval on that machine. The pair token stays on this PC.
+- Each other machine mounts as its own network drive. Windows uses net use and an Explorer label. macOS uses mount_webdav or rclone. Linux uses gio or rclone, the same desktop check as 3.36.7.
+- Android 3.37.0 (versionCode 33700) has the same sign-in, hidden switch, and per-folder access. The phone lists a PC's shared folders in the app. It does not create an operating-system drive letter.
+- The PHP and MySQL API is in server/cloud-api/ with schema.sql and deploy notes. It is not deployed with this installer.
+- The Windows installer and the server report 3.37.0.

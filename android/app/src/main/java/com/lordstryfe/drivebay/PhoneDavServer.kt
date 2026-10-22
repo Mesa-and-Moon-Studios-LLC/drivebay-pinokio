@@ -1,6 +1,7 @@
 package com.lordstryfe.drivebay
 
 import java.io.ByteArrayOutputStream
+import java.net.BindException
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -10,25 +11,65 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Serves [DavProtocol] on the given local addresses only.
  * Callers pass Tailscale and LAN addresses, never a public one.
+ * One address failing does not stop the others. If none bind, [start] throws
+ * the first [BindException] (or a bind failure) so the service can log it and retry.
  */
 class PhoneDavServer(
     private val store: DavStore,
     private val tokenHash: String,
     private val port: Int,
     private val bindHosts: List<String>,
+    private val peerId: String? = null,
+    codeState: PhoneShareCodeState? = null,
+    pairs: PhonePairDirectory? = null,
+    private val peerIds: (() -> List<String>)? = null,
+    onCodeLocked: () -> Unit = {},
 ) {
+    private val gate: DavAuthorizer = if (pairs != null) {
+        PhonePairGate(pairs, onCodeLocked = { _ -> onCodeLocked() }, onRenamed = onCodeLocked)
+    } else {
+        PhoneShareGate(tokenHash, codeState, onCodeLocked)
+    }
+
     private val running = AtomicBoolean(false)
     private val sockets = mutableListOf<ServerSocket>()
 
     fun start() {
-        if (!running.compareAndSet(false, true)) return
+        if (!running.compareAndSet(false, true)) {
+            if (sockets.isEmpty()) throw BindException("No address to share on")
+            return
+        }
         val hosts = bindHosts.filter { PhoneShareNet.isPrivateOrTailscale(it) }.distinct()
         if (hosts.isEmpty()) {
             running.set(false)
-            return
+            throw BindException("No address to share on")
         }
+        var firstError: Exception? = null
         for (host in hosts) {
-            val server = ServerSocket()
+            val error = open(host)
+            if (error != null && firstError == null) firstError = error
+        }
+        if (sockets.isEmpty()) {
+            running.set(false)
+            throw firstError ?: BindException("No address to share on")
+        }
+    }
+
+    /** Bind addresses that came up after the server started, without dropping the ones already open. */
+    fun bindMore(extra: List<String>): Boolean {
+        if (!running.get()) return false
+        var added = false
+        for (host in extra.filter { PhoneShareNet.isPrivateOrTailscale(it) }.distinct()) {
+            if (boundHosts().any { it.equals(host, ignoreCase = true) }) continue
+            if (open(host) == null) added = true
+        }
+        return added
+    }
+
+    /** Null when the socket is listening. The bind exception otherwise. */
+    private fun open(host: String): Exception? {
+        val server = ServerSocket()
+        return try {
             server.reuseAddress = true
             server.bind(InetSocketAddress(host, port))
             sockets += server
@@ -39,18 +80,27 @@ class PhoneDavServer(
                     } catch (_: Exception) {
                         break
                     }
-                    Thread({ handle(client) }, "drivebay-phone-dav").apply { isDaemon = true }.start()
+                    Thread({ runCatching { handle(client) } }, "drivebay-phone-dav").apply { isDaemon = true }.start()
                 }
             }, "drivebay-phone-dav-accept").apply { isDaemon = true }.start()
+            null
+        } catch (e: Exception) {
+            runCatching { server.close() }
+            e
         }
     }
 
     fun port(): Int = sockets.firstOrNull()?.localPort ?: port
 
+    fun boundHosts(): List<String> = sockets.mapNotNull { socket ->
+        (socket.localSocketAddress as? InetSocketAddress)?.address?.hostAddress?.substringBefore('%')
+    }
+
     fun stop() {
         running.set(false)
-        sockets.forEach { runCatching { it.close() } }
+        val open = sockets.toList()
         sockets.clear()
+        open.forEach { runCatching { it.close() } }
     }
 
     private fun handle(socket: Socket) {
@@ -91,10 +141,19 @@ class PhoneDavServer(
                 }
                 if (off == length) buf else buf.copyOf(off)
             }
+            val livePeers = peerIds?.invoke().orEmpty().filter { it.isNotBlank() }.distinct()
+            val headerPeer = if (livePeers.isNotEmpty()) PhoneShareLifecycle.peerHeader(livePeers) else peerId
             val response = DavProtocol.handle(
-                DavRequest(requestLine[0].uppercase(Locale.US), requestLine[1], headers, body),
+                DavRequest(
+                    requestLine[0].uppercase(Locale.US),
+                    requestLine[1],
+                    headers,
+                    body,
+                    client.inetAddress?.hostAddress,
+                ),
                 store,
-                tokenHash,
+                gate,
+                headerPeer,
             )
             val status = "HTTP/1.1 ${response.status} ${response.reason}\r\n"
             val headerText = buildString {
