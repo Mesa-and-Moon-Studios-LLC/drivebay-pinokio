@@ -30,7 +30,7 @@ A refused token still stops the retries for that PC. Tap **Paired PCs**, then **
 
 ## On Windows
 
-The tray menu has **Mount phone as drive**. Settings on this PC has the same form. Enter the address from the phone and the token. The suggested drive letter is `Z:`. `C:` is refused.
+The tray menu has **Mount phone as drive**. Settings on this PC has the same form. Enter the address from the phone and the 6-digit code or the token. The suggested drive letter is `Z:`. `C:` is refused. Drive name in File Explorer is optional. Leave it blank and Drivebay uses the name the phone sends back. Forgetting the phone clears that name.
 
 The command is:
 
@@ -58,7 +58,7 @@ From the unpacked Drivebay folder:
 bash unix/mount-phone.sh http://100.x.x.x:8780/
 ```
 
-The script asks for the token and runs `mount_webdav`. The folder is `~/DrivebayPhone`.
+On a desktop session, when `mount_webdav` is available, Drivebay runs `mount_webdav` and passes the code in the address so macOS does not ask again. The folder is `~/DrivebayPhone`. An SSH or other headless session, or a Mac without `mount_webdav`, uses rclone instead (see below). The shell script still asks for the code once when you run it in a terminal and `DRIVEBAY_PHONE_SECRET` is not set.
 
 The Mac server build is unsigned. If Gatekeeper blocks it, right-click the folder and choose Open, or run:
 
@@ -74,7 +74,13 @@ xattr -dr com.apple.quarantine /path/to/the/unpacked/folder
 bash unix/mount-phone.sh http://100.x.x.x:8780/
 ```
 
-That runs `gio mount dav://drivebay@100.x.x.x:8780/`. `gio` asks for the token as the password. If `gio` is missing, install `gvfs` (the package that provides it).
+With a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`, plus a D-Bus session) and `gio` from gvfs, Drivebay runs `gio mount` and includes the code so gio does not ask for it. A headless session, or a machine without gio, uses rclone instead.
+
+```
+rclone mount :webdav:/ ~/DrivebayPhone --webdav-url http://100.x.x.x:8780/ --webdav-user drivebay --webdav-pass "$(rclone obscure CODE)" --vfs-cache-mode writes --daemon
+```
+
+Drivebay runs that itself. It does not open a prompt. If rclone or FUSE is missing, the error says how to install them (`rclone` and `fuse3` on Linux, `rclone` and `macfuse` on macOS). Unmount uses `gio mount -u` for a gio mount, `umount` for `mount_webdav` and for rclone on macOS, and `fusermount -u` (then `umount`) for rclone on Linux. Windows still uses `net use`, and unmount is `net use Z: /delete /y`.
 
 A `davfs2` mount is the other option:
 
@@ -86,4 +92,4 @@ Use username `drivebay` and the token as the password. Prefer a user mount so th
 
 ## If the mount command is missing
 
-The PC reports the error from `net`, `mount_webdav`, or `gio` and points back to this page. Any WebDAV client can also use the same address, username, and token. The phone does not open a second protocol for that case.
+The PC reports the error from `net`, `mount_webdav`, `gio`, or `rclone` and points back to this page. Any WebDAV client can also use the same address, username, and token. The phone does not open a second protocol for that case.

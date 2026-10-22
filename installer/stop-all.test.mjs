@@ -41,7 +41,7 @@ test("a saved drivebay.port is kept on a fresh install", () => {
 });
 
 test("release version has no test suffix", () => {
-  assert.match(nsi, /!define VERSION "3\.36\.4"/);
+  assert.match(nsi, /!define VERSION "3\.36\.7"/);
   const v = fs.readFileSync(path.join(here, "..", "app", "src", "lib", "version.ts"), "utf8");
-  assert.match(v, /APP_VERSION = "3\.36\.4"/);
+  assert.match(v, /APP_VERSION = "3\.36\.7"/);
 });

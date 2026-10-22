@@ -77,7 +77,7 @@ test("the repo manifest matches the server version and is not fetched from main"
   const text = fs.readFileSync(path.join(root, "version-manifest.json"), "utf8");
   const manifest = parseManifest(text);
   const installed = readInstalledVersion(fs.readFileSync(path.join(root, "VERSION.txt"), "utf8"));
-  assert.equal(installed, "3.36.4");
+  assert.equal(installed, "3.36.7");
   assert.equal(manifest.latest, installed);
   assert.equal(decideUpdate(installed, manifest).action, "none");
   const policy = fs.readFileSync(path.join(root, "app/src/lib/files/update-policy.mjs"), "utf8");

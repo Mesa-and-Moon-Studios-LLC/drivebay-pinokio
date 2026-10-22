@@ -1,7 +1,7 @@
-Drivebay 3.36.4: one-click desktop update
+Drivebay 3.36.7: phone mount on Linux and Mac
 
-- Windows, Mac, and Linux servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates.
-- Windows shows Update available in the tray and on the page. One click downloads the installer and runs it silently, then restarts the server. The account, port, and settings stay. A version below the published minimum still must update.
-- Mac and Linux show Update available on the page. Update downloads the matching tarball, replaces the program files, and restarts the service. Config stays.
-- If the check cannot reach GitHub, Drivebay keeps running.
-- Android app 3.34.5 (versionCode 33405). Play installs show Update available. Sideloaded installs check GitHub for a newer APK. The Windows installer and the server report 3.36.4.
+- Settings → Mount phone as drive accepts the 6-digit code or the token, saves it in phone-tokens.json, and tells the phone this PC's name.
+- An optional drive name is shown in File Explorer. A blank name uses the name the phone sends back.
+- Linux and macOS use gio or mount_webdav on a desktop session, and rclone when that session or tool is missing. Nothing asks for the code again. Unmount follows the same method.
+- A small support banner can be hidden, and Settings can show it again.
+- The Windows installer and the server report 3.36.7. Android stays 3.34.5 (versionCode 33405).

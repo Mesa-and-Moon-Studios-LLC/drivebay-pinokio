@@ -13,6 +13,7 @@ import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { PhoneDriveMount } from "@/components/settings/phone-drive";
 import { DonateMenu } from "@/components/settings/donate-menu";
+import { SupportBanner } from "@/components/support-banner";
 import { HowToGuide } from "@/components/settings/how-to";
 import { UPDATE_STATUS_EVENT } from "@/components/update-notice";
 import { Button } from "@/components/ui/button";
@@ -375,6 +376,7 @@ function SettingsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
+      <SupportBanner />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         {onThisPc ? null : (
           <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>

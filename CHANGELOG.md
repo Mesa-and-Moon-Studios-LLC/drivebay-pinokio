@@ -2,6 +2,18 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.36.7
+- On Linux and macOS, Mount phone as drive picks the mount from the session. A desktop session with the native tool uses that tool and passes the 6-digit code or token without asking again: `gio` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up, and `mount_webdav` on a Mac that is not an SSH login. Otherwise Drivebay runs `rclone mount` with `--webdav-user drivebay`, an obscured password, `--vfs-cache-mode writes`, and `--daemon`. If rclone or FUSE is missing, the error says how to install them. Windows still uses `net use`. Unmount matches the method (`net use /delete`, `gio mount -u`, `umount`, or `fusermount -u`). The PC name is still sent with `PROPFIND` and the code is still saved in `phone-tokens.json`.
+- The Windows installer and the server report 3.36.7. `/api/health` returns `version` 3.36.7. Android stays 3.34.5 (versionCode 33405).
+
+## 3.36.6
+- Settings can name the mounted phone in File Explorer. Leave it blank and Drivebay uses the name the phone sends back on `X-Drivebay-Phone-Name`. The name is stored as the Explorer `_LabelFromReg` value. Forgetting the phone clears that label. A dismissable support banner sits on the file browser and on Settings, with Ko-fi and PayPal. Settings can show the banner again after it is closed.
+- The Windows installer and the server report 3.36.6. `/api/health` returns `version` 3.36.6. Android stays 3.34.5 (versionCode 33405).
+
+## 3.36.5
+- Settings → Mount phone as drive accepts the phone's 6-digit code or the longer token. Either one is the WebDAV password for user `drivebay`. The address still has to be a Tailscale, LAN, or loopback address. The code is saved in `phone-tokens.json` on this PC.
+- The Windows installer and the server report 3.36.5. `/api/health` returns `version` 3.36.5. Android stays 3.34.5 (versionCode 33405).
+
 ## 3.36.4
 - Desktop servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates. The page says Update available when a newer release is published.
 - On Windows, Update downloads the setup exe and runs it silently. The installer keeps the account, port, and settings, then restarts the server. The tray shows Update available and a notification. A version below `minimum` in version-manifest.json still must update. If the check cannot reach GitHub, Drivebay keeps running.
