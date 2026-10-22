@@ -1,7 +1,7 @@
-Drivebay 3.36.2: Mac and Linux
+Drivebay 3.36.7: phone mount on Linux and Mac
 
-- New: Drivebay for macOS and Linux. Download the tarball for your computer (darwin-arm64 for Apple silicon Macs, darwin-x64 for Intel Macs, linux-x64 or linux-arm64), unpack it, and run: bash unix/install.sh
-  Setup asks for the mode, port, username, and password, then starts Drivebay at login (LaunchAgent on macOS, systemd user service on Linux). Remove it with: bash ~/.local/share/drivebay/program/uninstall.sh
-- macOS: the build is not signed yet. If macOS says it cannot be opened, run this once on the unpacked folder: xattr -dr com.apple.quarantine <folder>
-- New: Drivebay checks the latest release for updates and tells you when one is available. The Windows tray adds "Check for updates".
-- Windows works the same as 3.36.1, including "Connect my phone".
+- Settings → Mount phone as drive accepts the 6-digit code or the token, saves it in phone-tokens.json, and tells the phone this PC's name.
+- An optional drive name is shown in File Explorer. A blank name uses the name the phone sends back.
+- Linux and macOS use gio or mount_webdav on a desktop session, and rclone when that session or tool is missing. Nothing asks for the code again. Unmount follows the same method.
+- A small support banner can be hidden, and Settings can show it again.
+- The Windows installer and the server report 3.36.7. Android stays 3.34.5 (versionCode 33405).

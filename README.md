@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.2.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.36.7.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.36.2** — see [Changelog](#changelog) below.
+Current version: **3.36.7** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.36.2.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.36.7.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.36.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.36.7` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -219,7 +219,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update, run the install command again. Drivebay stops, the program files are replaced, and the account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.2. Once a release is published, an older Drivebay must update. The check reads version-manifest.json on the latest GitHub release. If that file cannot be read, Drivebay keeps running.
+To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.36.7. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -227,7 +227,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again. The finish page says Drivebay updated to 3.36.2. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.36.7. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -315,6 +315,32 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.36.7
+- On Linux and macOS, Mount phone as drive picks the mount from the session. A desktop session with the native tool uses that tool and passes the 6-digit code or token without asking again: `gio` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up, and `mount_webdav` on a Mac that is not an SSH login. Otherwise Drivebay runs `rclone mount` with `--webdav-user drivebay`, an obscured password, `--vfs-cache-mode writes`, and `--daemon`. If rclone or FUSE is missing, the error says how to install them. Windows still uses `net use`. Unmount matches the method. The PC name is still sent with `PROPFIND` and the code is still saved in `phone-tokens.json`.
+- The Windows installer and the server report 3.36.7. `/api/health` returns `version` 3.36.7. Android stays 3.34.5 (versionCode 33405).
+
+### 3.36.6
+- Settings can name the mounted phone in File Explorer. Leave it blank and Drivebay uses the name the phone sends back on `X-Drivebay-Phone-Name`. Forgetting the phone clears that label. A dismissable support banner sits on the file browser and on Settings, with Ko-fi and PayPal. Settings can show the banner again after it is closed.
+- The Windows installer and the server report 3.36.6. `/api/health` returns `version` 3.36.6. Android stays 3.34.5 (versionCode 33405).
+
+### 3.36.5
+- Settings → Mount phone as drive accepts the phone's 6-digit code or the longer token. Either one is the WebDAV password for user `drivebay`. The address still has to be a Tailscale, LAN, or loopback address. The code is saved in `phone-tokens.json` on this PC.
+- The Windows installer and the server report 3.36.5. `/api/health` returns `version` 3.36.5. Android stays 3.34.5 (versionCode 33405).
+
+### 3.36.4
+- Desktop servers check the latest GitHub release at most once every 12 hours. Settings has Check for updates. The page says Update available when a newer release is published.
+- On Windows, Update downloads `Drivebay-Setup-3.36.4.exe` and runs it silently. The installer keeps the account, port, and settings, then restarts the server. The tray shows Update available and a notification. A version below `minimum` in version-manifest.json still must update. If the check cannot reach GitHub, Drivebay keeps running.
+- On macOS and Linux, Update downloads the matching `drivebay-server-*.tar.gz`, replaces the program files, and restarts the service. Config stays.
+- The Windows installer and the server report 3.36.4. `/api/health` returns `version` 3.36.4. Android stays 3.34.5 (versionCode 33405).
+- Phone as a drive can pair more than one PC. Pairing adds a PC and keeps the ones already paired. The phone asks for an owner password (stored as a hash) before sharing is turned on or a PC is paired, renamed, or revoked. Each PC gets its own 6-digit code and token. Name a pairing when you add it, or leave the name blank and the phone uses that PC's hostname. Rename it later. The name is shown in the paired list and in the phone notification. Several PCs can use the share at the same time. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC. The PC stores that phone's token for itself and still reconnects with the saved pairing. On the share screen, Paired PCs sits under the banner and lists each PC as connected now or last seen, with rename, revoke, and Add PC (a new 6-digit code). Settings has a Phone-as-drive section with Owner password (the current password is required to change it) and Paired PCs.
+
+### 3.36.3
+- Android: the green "This phone is shared as a drive" banner sits above the file browser, under the status bar, so the toolbar and the first file row are visible and the list scrolls.
+- Android: Open on a finished download opens the file in another app. The file is a FileProvider link with read permission. If no app can open it, a toast says so.
+- Phone as a drive reconnects after the phone app or the PC tray is closed or restarted. The phone keeps the token hash and folders and starts the share again (including after reboot). The PC keeps the token in Credential Manager and the last address, retries with backoff, and looks up the phone's current Tailscale or LAN address. The banner and the tray say Reconnecting... or Connected. A new token is only needed when the phone refuses the saved one.
+- Android app 3.34.5 (versionCode 33405). This includes the 3.34.1 crash fix, the 3.34.2 6-digit code, the 3.34.3 whole-phone storage option, and the 3.34.4 banner, reconnect, and Open fixes. The Windows installer and the server report 3.36.3. `/api/health` returns `version` 3.36.3.
+- Android: Update available. A Play install checks Google Play on launch and when you return to the app, at most once every 12 hours. Update starts a flexible download, or an immediate one when the Play release priority is 4 or 5. When the download finishes, the app asks you to restart. An install that did not come from Play checks the latest GitHub release for an APK with a higher versionCode, using version-manifest.json when that release includes Android version fields, then downloads the APK and opens the package installer. Settings has Check for updates, which checks immediately.
 
 ### 3.36.2
 - macOS and Linux installers ship on the release: `drivebay-server-linux-x64.tar.gz`, `drivebay-server-linux-arm64.tar.gz`, `drivebay-server-darwin-arm64.tar.gz`, `drivebay-server-darwin-x64.tar.gz`, and `version-manifest.json`. Unpack and run `bash unix/install.sh`. The Mac build is unsigned.

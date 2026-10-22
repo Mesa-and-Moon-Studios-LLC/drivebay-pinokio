@@ -46,6 +46,9 @@ internal static class Program
     static ToolStripMenuItem restartItem;
     static ToolStripMenuItem startupItem;
     static ToolStripMenuItem phoneItem;
+    static ToolStripMenuItem updateAvailableItem;
+    static bool updateBalloonShown;
+    static int applyRunning;
     static PhoneForm phoneForm;
 
     [STAThread]
@@ -268,10 +271,14 @@ internal static class Program
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(phoneItem);
         menu.Items.Add(new ToolStripSeparator());
+        updateAvailableItem = new ToolStripMenuItem("Update available");
+        updateAvailableItem.Visible = false;
+        updateAvailableItem.Click += delegate { ApplyUpdate(); };
         ToolStripMenuItem updateItem = new ToolStripMenuItem("Check for updates");
         updateItem.Click += delegate { CheckForUpdates(true); };
         menu.Items.Add(logsItem);
         menu.Items.Add(startupItem);
+        menu.Items.Add(updateAvailableItem);
         menu.Items.Add(updateItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(resetItem);
@@ -281,6 +288,7 @@ internal static class Program
             startupItem.Checked = ReadStartWithWindows();
             RefreshMenu();
             RefreshPhoneItem();
+            RefreshUpdateItem();
         };
         RefreshMenu();
         RefreshPhoneItem();
@@ -527,6 +535,99 @@ internal static class Program
         return false;
     }
 
+    static string ReadUpdateField(string raw, string name)
+    {
+        Match match = Regex.Match(raw, "\"" + name + "\"\\s*:\\s*\"([^\"]*)\"");
+        if (!match.Success) return "";
+        return match.Groups[1].Value.Replace("\\/", "/");
+    }
+
+    static void ReadUpdateStatus(out string action, out string message, out string url, out string downloadUrl)
+    {
+        action = "";
+        message = "";
+        url = "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest";
+        downloadUrl = "";
+        string raw = File.ReadAllText(Path.Combine(HomeDir(), "update-status.json"));
+        Match actionMatch = Regex.Match(raw, "\"action\"\\s*:\\s*\"(required|optional|none)\"");
+        if (actionMatch.Success) action = actionMatch.Groups[1].Value;
+        message = ReadUpdateField(raw, "message");
+        string found = ReadUpdateField(raw, "url");
+        if (found.Length > 0) url = found;
+        downloadUrl = ReadUpdateField(raw, "downloadUrl");
+    }
+
+    static void RefreshUpdateItem()
+    {
+        if (updateAvailableItem == null) return;
+        string action = "";
+        try
+        {
+            string ignoredMessage;
+            string ignoredUrl;
+            string ignoredDownload;
+            ReadUpdateStatus(out action, out ignoredMessage, out ignoredUrl, out ignoredDownload);
+        }
+        catch
+        {
+            action = "";
+        }
+        updateAvailableItem.Visible = action == "required" || action == "optional";
+    }
+
+    static void ShowUpdateBalloon(string text)
+    {
+        if (notifyIcon == null) return;
+        notifyIcon.BalloonTipTitle = "Drivebay";
+        notifyIcon.BalloonTipText = text;
+        notifyIcon.ShowBalloonTip(8000);
+    }
+
+    static void OpenReleasePage(string url)
+    {
+        try { Process.Start(url); }
+        catch { }
+    }
+
+    static void ApplyUpdate()
+    {
+        if (Interlocked.CompareExchange(ref applyRunning, 1, 0) != 0) return;
+        ShowUpdateBalloon("Downloading the update. Drivebay will restart when it finishes.");
+        Thread thread = new Thread(delegate()
+        {
+            try
+            {
+                string node = Path.Combine(InstallDir(), "runtime", "node.exe");
+                string script = Path.Combine(InstallDir(), "update-apply.mjs");
+                if (!File.Exists(node) || !File.Exists(script))
+                {
+                    OpenReleasePage("https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest");
+                    return;
+                }
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = node;
+                info.Arguments = "\"" + script + "\"";
+                info.UseShellExecute = false;
+                info.CreateNoWindow = true;
+                info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
+                info.EnvironmentVariables["DRIVEBAY_PROGRAM"] = InstallDir();
+                info.EnvironmentVariables["DRIVEBAY_VERSION_FILE"] = Path.Combine(InstallDir(), "VERSION.txt");
+                info.EnvironmentVariables["DRIVEBAY_UPDATE_FORCE"] = "1";
+                Process process = Process.Start(info);
+                if (process != null) process.WaitForExit(10 * 60 * 1000);
+            }
+            catch
+            {
+            }
+            finally
+            {
+                Interlocked.Exchange(ref applyRunning, 0);
+            }
+        });
+        thread.IsBackground = false;
+        thread.Start();
+    }
+
     static void CheckForUpdates(bool interactive)
     {
         string node = Path.Combine(InstallDir(), "runtime", "node.exe");
@@ -542,6 +643,7 @@ internal static class Program
                 info.CreateNoWindow = true;
                 info.EnvironmentVariables["DRIVEBAY_HOME"] = HomeDir();
                 info.EnvironmentVariables["DRIVEBAY_VERSION_FILE"] = Path.Combine(InstallDir(), "VERSION.txt");
+                if (interactive) info.EnvironmentVariables["DRIVEBAY_UPDATE_FORCE"] = "1";
                 Process process = Process.Start(info);
                 if (!process.WaitForExit(20000)) process.Kill();
             }
@@ -553,35 +655,54 @@ internal static class Program
         }
         string action = "";
         string message = "";
-        string url = "https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest";
+        string url = "";
+        string downloadUrl = "";
         try
         {
-            string raw = File.ReadAllText(Path.Combine(HomeDir(), "update-status.json"));
-            Match actionMatch = Regex.Match(raw, "\"action\"\\s*:\\s*\"(required|optional|none)\"");
-            if (actionMatch.Success) action = actionMatch.Groups[1].Value;
-            Match messageMatch = Regex.Match(raw, "\"message\"\\s*:\\s*\"([^\"]*)\"");
-            if (messageMatch.Success) message = messageMatch.Groups[1].Value;
-            Match urlMatch = Regex.Match(raw, "\"url\"\\s*:\\s*\"([^\"]*)\"");
-            if (urlMatch.Success && urlMatch.Groups[1].Value.Length > 0) url = urlMatch.Groups[1].Value.Replace("\\/", "/");
+            ReadUpdateStatus(out action, out message, out url, out downloadUrl);
         }
         catch
         {
             if (interactive) MessageBox.Show("Drivebay could not reach GitHub. It will keep running.", "Drivebay");
             return;
         }
+        RefreshUpdateItem();
         if (action == "required")
         {
-            MessageBox.Show(message.Length == 0 ? "This version of Drivebay is out of date. Install the latest release to keep using it." : message, "Drivebay update required");
-            try { Process.Start(url); } catch { }
+            DialogResult result = MessageBox.Show(
+                message.Length == 0 ? "This version of Drivebay is out of date. Install the latest release to keep using it." : message,
+                "Drivebay update required",
+                MessageBoxButtons.OK);
+            if (result == DialogResult.OK)
+            {
+                if (downloadUrl.Length > 0) ApplyUpdate();
+                else OpenReleasePage(url);
+            }
             return;
         }
         if (action == "optional" && interactive)
         {
-            MessageBox.Show("A newer Drivebay release is available.", "Drivebay");
-            try { Process.Start(url); } catch { }
+            DialogResult result = MessageBox.Show(
+                "Update available. Drivebay will download and install it.",
+                "Drivebay",
+                MessageBoxButtons.OKCancel);
+            if (result == DialogResult.OK)
+            {
+                if (downloadUrl.Length > 0) ApplyUpdate();
+                else OpenReleasePage(url);
+            }
             return;
         }
-        if (interactive && action != "required")
+        if (action == "optional")
+        {
+            if (!updateBalloonShown)
+            {
+                updateBalloonShown = true;
+                ShowUpdateBalloon("Update available");
+            }
+            return;
+        }
+        if (interactive)
         {
             MessageBox.Show("Drivebay is up to date.", "Drivebay");
         }

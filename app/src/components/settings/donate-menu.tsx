@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { donateLinks } from "@/lib/donate.mjs";
+import { setSupportBannerDismissed, useSupportBannerDismissed } from "@/components/support-banner";
 import { Button } from "@/components/ui/button";
 
 export function DonateMenu() {
@@ -7,6 +8,7 @@ export function DonateMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const bannerHidden = useSupportBannerDismissed();
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +67,15 @@ export function DonateMenu() {
             </div>
           ) : null}
         </div>
+        {bannerHidden ? (
+          <button
+            type="button"
+            className="mt-3 text-xs text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+            onClick={() => setSupportBannerDismissed(false)}
+          >
+            Show the support banner again
+          </button>
+        ) : null}
       </div>
     </section>
   );
