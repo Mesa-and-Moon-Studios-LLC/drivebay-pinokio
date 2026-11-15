@@ -39,8 +39,9 @@ internal static class PhoneMountLogic
     public const string PeerHeader = "X-Drivebay-Phone";
     public const string ClientHeader = "X-Drivebay-Client";
     public const string PcNameHeader = "X-Drivebay-PC-Name";
+    public const string PhoneNameHeader = "X-Drivebay-Phone-Name";
     public const string GenericCredentialTarget = "Drivebay/PhoneShare";
-    public const string Label = "Drivebay Phone";
+    public const string Label = "Phone";
     public const string User = "drivebay";
 
     public static string StatusText(PhoneStatus s)
@@ -272,6 +273,22 @@ internal static class PhoneMountLogic
         if (string.IsNullOrEmpty(raw)) return "";
         string name = raw.Replace("\r", " ").Replace("\n", " ").Trim();
         if (name.Length > 40) name = name.Substring(0, 40).Trim();
+        return name;
+    }
+
+    // Explorer label. The drive letter is not part of it.
+    // ShowDriveLettersFirst is a setting for every drive, so this does not set it.
+    public static string VolumeLabel(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "";
+        string name = raw;
+        try { name = Uri.UnescapeDataString(raw.Replace("+", "%20")); }
+        catch { name = raw; }
+        char[] bad = new char[] { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
+        foreach (char c in bad) name = name.Replace(c.ToString(), "");
+        name = name.Replace("\r", " ").Replace("\n", " ").Trim();
+        while (name.Contains("  ")) name = name.Replace("  ", " ");
+        if (name.Length > 32) name = name.Substring(0, 32).Trim();
         return name;
     }
 

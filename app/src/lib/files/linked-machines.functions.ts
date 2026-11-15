@@ -167,10 +167,14 @@ async function mountSaved(home: string, machineId: string, token: string, machin
   const machines = await import("./linked-machines.mjs");
   const drive = await import("./phone-drive.mjs");
   const store = await import("./linked-store.mjs");
-  const plan = machines.linkedMountPlan({ machine, secret: token, letter, home });
+  const records = store.loadLinkedTokens(home);
+  const taken = Object.entries(records)
+    .filter(([id]) => id !== machineId)
+    .map(([, row]) => (row as { label?: string })?.label || "")
+    .filter(Boolean);
+  const plan = machines.linkedMountPlan({ machine, secret: token, letter, home, takenLabels: taken });
   if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount" };
   const result = await drive.runMount(plan);
-  const records = store.loadLinkedTokens(home);
   records[machineId] = {
     token,
     url: plan.url,
@@ -184,10 +188,11 @@ async function mountSaved(home: string, machineId: string, token: string, machin
   if (result.code === 0 && plan.volumeLabel) {
     await drive.setDriveLabel(plan.url, plan.volumeLabel, process.platform, plan.risk === true);
   }
+  const shown = plan.userFacing || plan.volumeLabel || "that machine";
   return {
     ok: result.code === 0,
-    message: drive.redact(result.output, token),
-    display: plan.display,
+    message: result.code === 0 ? `Mounted ${shown}.` : drive.redact(result.output, token),
+    display: shown,
   };
 }
 

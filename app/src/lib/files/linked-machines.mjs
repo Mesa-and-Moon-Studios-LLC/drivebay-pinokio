@@ -7,7 +7,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { isTailnetAddress } from "./tailnet.mjs";
-import { mountPlan, unmountPlan } from "./phone-drive.mjs";
+import { mountPlan, unmountPlan, volumeLabel } from "./phone-drive.mjs";
 
 export const CLOUD_KEYS = [
   "machineId",
@@ -200,8 +200,9 @@ export function safeMountName(name, machineId = "") {
   return suffix ? `${stem} ${suffix}`.trim() : stem;
 }
 
-export function linkedMountPoint(home, name, machineId) {
-  return path.join(home || "", "Drivebay", safeMountName(name, machineId));
+export function linkedMountPoint(home, label) {
+  const folder = String(label || "Machine").replace(/[\\/]/g, "").trim() || "Machine";
+  return path.join(home || "", "Drivebay", folder);
 }
 
 export function linkedMountPlan({
@@ -212,6 +213,7 @@ export function linkedMountPlan({
   platform = process.platform,
   env,
   tools,
+  takenLabels = [],
 } = {}) {
   const target = connectionUrl(machine);
   if (!target.url) return { ok: false, error: "That machine has no Tailscale or LAN address." };
@@ -219,8 +221,12 @@ export function linkedMountPlan({
     return { ok: false, error: DIRECT_INTERNET_WARNING };
   }
   const clean = sanitizeRegistration(machine);
-  const label = clean.ok ? clean.machine.displayName : "Drivebay";
-  const mountPoint = platform === "win32" ? "" : linkedMountPoint(home, label, clean.ok ? clean.machine.machineId : "");
+  const rawName = clean.ok ? clean.machine.displayName : "Machine";
+  const label = volumeLabel(rawName, {
+    taken: takenLabels,
+    id: clean.ok ? clean.machine.machineId : "",
+  }) || "Machine";
+  const mountPoint = platform === "win32" ? "" : linkedMountPoint(home, label);
   const plan = mountPlan({
     platform,
     url: target.url,
@@ -232,9 +238,10 @@ export function linkedMountPlan({
     mountPoint: mountPoint || undefined,
     allowPublic: target.risk,
     user: "drivebay",
+    volumeName: label,
   });
   if (!plan.ok) return plan;
-  return { ...plan, volumeLabel: label, via: target.via, risk: target.risk, url: target.url };
+  return { ...plan, volumeLabel: label, userFacing: label, via: target.via, risk: target.risk, url: target.url };
 }
 
 export function linkedUnmountPlan(saved, options = {}) {

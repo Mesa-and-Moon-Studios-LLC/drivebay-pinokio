@@ -130,28 +130,33 @@ function phoneMountPoint(home) {
   return path.join(home || os.homedir(), "DrivebayPhone");
 }
 
-function rclonePlan({ platform, href, userName, secret, mountPoint }) {
+function rclonePlan({ platform, href, userName, secret, mountPoint, volumeName }) {
+  const args = [
+    "mount",
+    ":webdav:/",
+    mountPoint,
+    "--webdav-url",
+    href,
+    "--webdav-user",
+    userName,
+    "--webdav-pass",
+    "\u0000webdav-pass",
+    "--vfs-cache-mode",
+    "writes",
+    "--daemon",
+  ];
+  if (volumeName) args.push("--volname", volumeName);
+  const vol = volumeName ? ` --volname ${volumeName}` : "";
   return {
     ok: true,
     platform,
     method: "rclone",
     file: "rclone",
-    args: [
-      "mount",
-      ":webdav:/",
-      mountPoint,
-      "--webdav-url",
-      href,
-      "--webdav-user",
-      userName,
-      "--webdav-pass",
-      "\u0000webdav-pass",
-      "--vfs-cache-mode",
-      "writes",
-      "--daemon",
-    ],
-    display: `rclone mount :webdav:/ ${mountPoint} --webdav-url ${href} --webdav-user ${userName} --webdav-pass *** --vfs-cache-mode writes --daemon`,
+    args,
+    display: `rclone mount :webdav:/ ${mountPoint} --webdav-url ${href} --webdav-user ${userName} --webdav-pass *** --vfs-cache-mode writes --daemon${vol}`,
     mountPoint,
+    volumeName: volumeName || "",
+    userFacing: volumeName || "",
     createMountPoint: true,
     obscureSecret: String(secret),
     note: RCLONE_FAIL_NOTE,
@@ -169,6 +174,7 @@ export function mountPlan({
   tools,
   mountPoint: mountPointOverride,
   allowPublic = false,
+  volumeName = "",
 } = {}) {
   const parsed = cleanUrl(url, allowPublic);
   if (!parsed) {
@@ -179,6 +185,7 @@ export function mountPlan({
   }
   const userName = String(user || "drivebay").trim() || "drivebay";
   const href = parsed.href.endsWith("/") ? parsed.href : `${parsed.href}/`;
+  const named = volumeLabel(volumeName);
   const publicNote = allowPublic && !isMountableHost(parsed.hostname)
     ? " This address is on the public internet because a port was opened on purpose."
     : "";
@@ -191,29 +198,35 @@ export function mountPlan({
       method: "net",
       file: "net",
       letter: drive,
+      volumeName: named,
+      userFacing: named,
       args: ["use", `${drive}:`, href, `/user:${userName}`, String(secret)],
       display: `net use ${drive}: ${href} /user:${userName} ***`,
-      note: `If Windows refuses the mount, start the WebClient service. HTTP Basic auth also needs BasicAuthLevel set to 2. See docs/phone-as-drive.md.${publicNote}`,
+      note: `If Windows refuses the mount, start the WebClient service. HTTP Basic auth also needs BasicAuthLevel set to 2. See docs/phone-as-drive.md. Explorer shows the computer name. The letter stays internal.${publicNote}`,
     };
   }
   const root = home || os.homedir();
-  const mountPoint = mountPointOverride || phoneMountPoint(root);
+  const mountPoint = mountPointOverride || (named ? path.join(root, "Drivebay", named) : phoneMountPoint(root));
   const available = tools || detectTools(platform);
   const desktop = hasDesktopSession(platform, env);
   if (platform === "darwin" && desktop && available.mount_webdav) {
     const withUser = new URL(href);
     withUser.username = userName;
     withUser.password = String(secret);
+    const webdavArgs = named ? ["-v", named, withUser.href, mountPoint] : [withUser.href, mountPoint];
+    const volumeFlag = named ? `-v ${named} ` : "";
     return {
       ok: true,
       platform,
       method: "mount_webdav",
       file: "mount_webdav",
-      args: [withUser.href, mountPoint],
-      display: `mkdir -p ${mountPoint} && mount_webdav http://${userName}:***@${parsed.host}/ ${mountPoint}`,
+      args: webdavArgs,
+      display: `mkdir -p ${mountPoint} && mount_webdav ${volumeFlag}http://${userName}:***@${parsed.host}/ ${mountPoint}`,
       mountPoint,
+      volumeName: named,
+      userFacing: named,
       createMountPoint: true,
-      note: `macOS mounts the share with mount_webdav. The code is passed to mount_webdav and is not requested again.${publicNote}`,
+      note: `macOS mounts the share with mount_webdav. The volume name is the computer name. The code is passed to mount_webdav and is not requested again.${publicNote}`,
     };
   }
   if (platform === "linux" && desktop && available.gio) {
@@ -225,13 +238,15 @@ export function mountPlan({
       file: "gio",
       args: ["mount", dav],
       display: `gio mount dav://${userName}:***@${parsed.host}${parsed.pathname}`,
-      note: `Linux mounts the share with gio (gvfs) when a desktop session is available. The code is included so gio does not ask for it.${publicNote}`,
+      volumeName: named,
+      userFacing: named,
+      note: `Linux mounts the share with gio (gvfs) when a desktop session is available. The file manager name is the computer name from the WebDAV display name. The code is included so gio does not ask for it.${publicNote}`,
     };
   }
   if (!available.rclone) {
     return { ok: false, error: RCLONE_MISSING };
   }
-  const rclone = rclonePlan({ platform, href, userName, secret, mountPoint });
+  const rclone = rclonePlan({ platform, href, userName, secret, mountPoint, volumeName: named });
   return publicNote ? { ...rclone, note: `${rclone.note}${publicNote}` } : rclone;
 }
 
@@ -399,6 +414,36 @@ export function pcName(name = os.hostname()) {
     .trim()
     .slice(0, 40)
     .trim();
+}
+
+/**
+ * Short volume name from a computer or phone display name.
+ * The name is kept as-is until another mount already uses it, then a number is added.
+ * The Windows drive letter is not part of this string.
+ */
+export function volumeLabel(name, { taken = [], id = "" } = {}) {
+  const cleaned = String(name ?? "")
+    .replace(/[\u0000-\u001f]/g, " ")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return "";
+  const stem = cleaned.slice(0, 32).trim();
+  const used = new Set(
+    (taken || [])
+      .map((item) => String(item || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  if (!used.has(stem.toLowerCase())) return stem;
+  for (let n = 2; n < 100; n += 1) {
+    const suffix = ` ${n}`;
+    const room = Math.max(1, 32 - suffix.length);
+    const next = `${stem.slice(0, room).trim()}${suffix}`;
+    if (!used.has(next.toLowerCase())) return next;
+  }
+  const tail = String(id || "").replace(/[^A-Za-z0-9]/g, "").slice(-4) || "2";
+  const suffix = ` ${tail}`;
+  return `${stem.slice(0, Math.max(1, 32 - suffix.length)).trim()}${suffix}`.slice(0, 32).trim();
 }
 
 let lastPhoneName = "";

@@ -4,7 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
+import android.text.InputType
+import android.view.View
 import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -33,6 +36,8 @@ object MesaPanel {
         val status = activity.findViewById<TextView>(R.id.mesaStatus)
         val google = activity.findViewById<MaterialButton>(R.id.mesaGoogle)
         val apple = activity.findViewById<MaterialButton>(R.id.mesaApple)
+        val email = activity.findViewById<MaterialButton>(R.id.mesaEmail)
+        val signOut = activity.findViewById<MaterialButton>(R.id.mesaSignOut)
         val machines = activity.findViewById<MaterialButton>(R.id.mesaMachines)
         val hidden = activity.findViewById<CheckBox>(R.id.mesaHidden)
         val share = PhoneShareStore(activity)
@@ -44,6 +49,12 @@ object MesaPanel {
         refresh(activity, status)
         google.setOnClickListener { start(activity, "google") }
         apple.setOnClickListener { start(activity, "apple") }
+        email.setOnClickListener { emailDialog(activity) }
+        signOut.setOnClickListener {
+            clearSession(activity)
+            refresh(activity, status)
+            toast(activity, "Signed out of Mesa and Moon")
+        }
         machines.setOnClickListener { showMachines(activity) }
     }
 
@@ -238,10 +249,98 @@ object MesaPanel {
 
     private fun refresh(activity: Activity, status: TextView) {
         val session = loadSession(activity)
-        status.text = if (session == null) {
+        val signedIn = session != null
+        status.text = if (!signedIn) {
             activity.getString(R.string.mesa_signed_out)
         } else {
-            activity.getString(R.string.mesa_signed_in, session.second)
+            activity.getString(R.string.mesa_signed_in, session?.second)
+        }
+        val show = if (signedIn) View.GONE else View.VISIBLE
+        activity.findViewById<View>(R.id.mesaGoogle).visibility = show
+        activity.findViewById<View>(R.id.mesaApple).visibility = show
+        activity.findViewById<View>(R.id.mesaEmail).visibility = show
+        activity.findViewById<View>(R.id.mesaSignOut).visibility = if (signedIn) View.VISIBLE else View.GONE
+    }
+
+    private fun clearSession(activity: Activity) {
+        CredentialVault(activity).forget("mesa-refresh")
+        activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE).edit()
+            .remove("idToken")
+            .remove("email")
+            .apply()
+    }
+
+    private fun emailDialog(activity: Activity) {
+        val config = loadConfig(activity)
+        if (config == null || !config.ready) {
+            toast(activity, "Add mesa-firebase.json on this phone. Drivebay keeps working without it.")
+            return
+        }
+        val email = EditText(activity).apply {
+            hint = "Email"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        }
+        val password = EditText(activity).apply {
+            hint = "Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        val box = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(email)
+            addView(password)
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle(R.string.mesa_email_title)
+            .setMessage("The password is not saved on this phone. If this email already belongs to Google or Apple, use that button.")
+            .setView(box)
+            .setPositiveButton("Sign in") { _, _ ->
+                val typed = password.text?.toString().orEmpty()
+                password.setText("")
+                runEmail(activity, config, "signIn", email.text?.toString().orEmpty(), typed)
+            }
+            .setNegativeButton("Create account") { _, _ ->
+                val typed = password.text?.toString().orEmpty()
+                password.setText("")
+                runEmail(activity, config, "signUp", email.text?.toString().orEmpty(), typed)
+            }
+            .setNeutralButton("Reset password") { _, _ ->
+                password.setText("")
+                runEmail(activity, config, "reset", email.text?.toString().orEmpty(), "")
+            }
+            .show()
+    }
+
+    private fun runEmail(activity: Activity, config: MesaCloud.Config, action: String, email: String, password: String) {
+        thread(name = "mesa-email") {
+            val text = postAny(MesaCloud.emailAuthUrl(config, action), MesaCloud.emailAuthBody(action, email, password))
+            val json = text?.let { runCatching { JSONObject(it) }.getOrNull() }
+            val error = json?.optJSONObject("error")?.optString("message").orEmpty()
+            activity.runOnUiThread {
+                if (action == "reset") {
+                    toast(activity, "If this email can receive mail from Mesa and Moon, a reset link is on its way.")
+                    return@runOnUiThread
+                }
+                if (json == null || error.isNotBlank()) {
+                    if (action == "signUp" && error.contains("EMAIL_EXISTS")) {
+                        toast(activity, MesaCloud.providerConflictMessage(emptyList()))
+                    } else if (error.contains("WEAK_PASSWORD")) {
+                        toast(activity, "Use a password of at least 8 characters.")
+                    } else {
+                        toast(activity, "That email or password was not accepted.")
+                    }
+                    return@runOnUiThread
+                }
+                val session = MesaCloud.emailSession(json)
+                if (session == null) {
+                    toast(activity, "Mesa and Moon did not accept that sign-in.")
+                } else {
+                    saveSession(activity, session)
+                    register(activity)
+                    refresh(activity, activity.findViewById(R.id.mesaStatus))
+                    toast(activity, "Signed in to Mesa and Moon")
+                }
+            }
         }
     }
 
@@ -319,6 +418,25 @@ object MesaPanel {
     private fun fetchMachines(config: MesaCloud.Config, idToken: String, self: String): JSONArray? {
         val text = get(config.cloudApi + "/machines.php?self=" + self, idToken) ?: return null
         return runCatching { JSONObject(text).optJSONArray("machines") ?: JSONArray() }.getOrNull()
+    }
+
+    private fun postAny(url: String, body: String): String? {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 8000
+            readTimeout = 8000
+        }
+        return try {
+            connection.outputStream.use { it.write(body.toByteArray()) }
+            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader()?.readText()
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun post(url: String, body: String, bearer: String?): String? {

@@ -7,10 +7,12 @@ The API stores connection info only: machine id, display name, type (`pc`, `mac`
 ## 1. Firebase
 
 1. Open the same Firebase project the Mesa and Moon vault games use, or create a Drivebay app in that project.
-2. Enable Google and Apple sign-in.
-3. Add authorized domains for the addresses Drivebay will redirect to. Each machine's settings page is `http://127.0.0.1:<port>/settings`. Google and Apple also need that redirect. The Android app uses `drivebay://mesa`.
-4. Copy the web config into `mesa-firebase.json` on each Drivebay machine (see the example in this folder). Put it in the Drivebay data directory (`DRIVEBAY_HOME` or `DRIVEBAY_DATA_DIR`). Do not commit it.
-5. Copy the Firebase project id into `config.php` on the server.
+2. Enable Google, Apple, and Email/Password. In Authentication → Sign-in method, turn on Email/Password. Leave Email link (passwordless) off. Drivebay uses a password plus the reset email.
+3. Authorized domains: add `localhost` and `127.0.0.1` if they are not already there. Google and Apple redirect to `http://127.0.0.1:<port>/settings`. The Android app uses `drivebay://mesa`. Email/password does not use that redirect. It posts to Identity Toolkit from the settings page.
+4. Password reset: Authentication → Templates → Password reset. Leave the action URL on the default Firebase handler (`https://<project>.firebaseapp.com/__/auth/action`) unless you already host a custom handler. The sender name can say Mesa and Moon. Drivebay calls `accounts:sendOobCode` with `PASSWORD_RESET`. It does not add a new config key for the template.
+5. One account per email stays on (Firebase default). Drivebay does not link a password onto a Google or Apple user. If the email already exists, the person uses that button. Do not turn off email enumeration protection for this. The reset email still says the link is on its way even when Firebase hides whether the address exists.
+6. Copy the web config into `mesa-firebase.json` on each Drivebay machine (see the example in this folder). Put it in the Drivebay data directory (`DRIVEBAY_HOME` or `DRIVEBAY_DATA_DIR`). Fill `apiKey`, `authDomain`, `projectId`, `googleClientId`, `appleClientId`, and `cloudApi`. `authEmulator` stays empty. It is only for a loopback Identity Toolkit emulator during development. Do not commit `mesa-firebase.json`.
+7. Copy the Firebase project id into `config.php` on the server. The PHP check accepts ID tokens whose `firebase.sign_in_provider` is `password`, `google.com`, or `apple.com`. No new server key is required for email.
 
 ## 2. MySQL
 

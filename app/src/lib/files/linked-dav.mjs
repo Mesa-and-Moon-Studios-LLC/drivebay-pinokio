@@ -154,6 +154,7 @@ export function handleDav({
   prefix = "/dav",
   remoteIsPrivate = true,
   directInternet = false,
+  displayName = "Drivebay",
 }) {
   const verb = String(method || "GET").toUpperCase();
   const allow = "OPTIONS, PROPFIND, GET, HEAD, PUT, DELETE, MKCOL, MOVE, LOCK, UNLOCK";
@@ -186,7 +187,7 @@ export function handleDav({
     if (where.share.access !== "rw") return text(403, "That folder is read-only.");
   }
 
-  if (verb === "PROPFIND") return propfind(prefix, normalized, parts, where, depth);
+  if (verb === "PROPFIND") return propfind(prefix, normalized, parts, where, depth, displayName);
   if (verb === "GET" || verb === "HEAD") return readFile(where, verb === "HEAD");
   if (verb === "PUT") return putFile(where, body);
   if (verb === "DELETE") return deletePath(where);
@@ -208,9 +209,10 @@ function nodeInfo(real, name, href) {
   };
 }
 
-function propfind(prefix, shares, parts, where, depth) {
+function propfind(prefix, shares, parts, where, depth, displayName = "Drivebay") {
   if (where.kind === "root") {
-    const self = { name: "Drivebay", href: `${prefix}/`, directory: true, size: 0, mtimeMs: Date.now() };
+    const rootName = String(displayName || "Drivebay").replace(/[\r\n\0]/g, " ").trim().slice(0, 80) || "Drivebay";
+    const self = { name: rootName, href: `${prefix}/`, directory: true, size: 0, mtimeMs: Date.now() };
     const nodes = [self];
     if (depth !== "0") {
       for (const folder of shares.folders) {

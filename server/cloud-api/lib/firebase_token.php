@@ -91,5 +91,33 @@ function drivebay_verify_firebase_jwt($jwt, $projectId) {
     if (!is_string($sub) || $sub === '') {
         return null;
     }
+    // Google, Apple, and email/password ID tokens share this issuer.
+    // "password" is the email provider. Do not drop it.
+    if (!drivebay_firebase_provider_allowed($payload)) {
+        return null;
+    }
     return $payload;
+}
+
+/** @return string firebase.sign_in_provider, or "" when the claim is absent. */
+function drivebay_firebase_sign_in_provider($payload) {
+    if (!is_array($payload)) {
+        return '';
+    }
+    $firebase = isset($payload['firebase']) && is_array($payload['firebase']) ? $payload['firebase'] : array();
+    $provider = isset($firebase['sign_in_provider']) ? (string) $firebase['sign_in_provider'] : '';
+    return $provider;
+}
+
+/**
+ * Email/password, Google, and Apple are the Mesa and Moon account.
+ * A missing provider claim still belongs to this project.
+ * Other providers are refused until they are added here.
+ */
+function drivebay_firebase_provider_allowed($payload) {
+    $provider = drivebay_firebase_sign_in_provider($payload);
+    if ($provider === '') {
+        return true;
+    }
+    return in_array($provider, array('password', 'google.com', 'apple.com'), true);
 }

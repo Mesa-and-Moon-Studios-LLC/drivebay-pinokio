@@ -54,4 +54,25 @@ class MesaCloudTest {
         assertEquals("100.80.1.1", tailscale)
         assertEquals("192.168.0.5", lan)
     }
+
+    @Test fun emailUsesTheSameProjectAndDoesNotKeepThePassword() {
+        val config = MesaCloud.parseConfig(
+            """{"apiKey":"key","authDomain":"mesa.firebaseapp.com","projectId":"mesa","cloudApi":"https://mesaandmoon.com/drivebay/api","authEmulator":"https://evil.example"}"""
+        )!!
+        assertTrue(config.ready)
+        assertEquals("", config.authEmulator)
+        assertTrue(MesaCloud.emailAuthUrl(config, "signIn").startsWith("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword"))
+        val local = MesaCloud.parseConfig(
+            """{"apiKey":"key","projectId":"mesa","cloudApi":"http://127.0.0.1:9","authEmulator":"http://127.0.0.1:9099"}"""
+        )!!
+        assertTrue(MesaCloud.emailAuthUrl(local, "signUp").startsWith("http://127.0.0.1:9099/identitytoolkit.googleapis.com/"))
+        val body = MesaCloud.emailAuthBody("signIn", "Ada@Example.com", "correct horse")
+        assertTrue(body.contains("ada@example.com"))
+        val session = MesaCloud.emailSession(org.json.JSONObject(body).put("idToken", "id").put("refreshToken", "refresh"))
+        assertEquals("id", session?.first)
+        assertEquals("refresh", session?.third)
+        assertFalse(session.toString().contains("correct horse") && session?.second == "correct horse")
+        assertTrue(MesaCloud.providerConflictMessage(listOf("google.com")).contains("Google"))
+        assertEquals("Phone%20Name", PhoneShareLifecycle.phoneNameHeader("Phone Name"))
+    }
 }

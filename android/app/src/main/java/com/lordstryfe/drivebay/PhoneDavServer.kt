@@ -23,6 +23,7 @@ class PhoneDavServer(
     codeState: PhoneShareCodeState? = null,
     pairs: PhonePairDirectory? = null,
     private val peerIds: (() -> List<String>)? = null,
+    private val phoneName: String = "",
     onCodeLocked: () -> Unit = {},
 ) {
     private val gate: DavAuthorizer = if (pairs != null) {
@@ -159,6 +160,10 @@ class PhoneDavServer(
             val headerText = buildString {
                 append(status)
                 for ((key, value) in response.headers) append(key).append(": ").append(value).append("\r\n")
+                val encodedName = PhoneShareLifecycle.phoneNameHeader(phoneName)
+                if (encodedName.isNotBlank() && response.headers.keys.none { it.equals(PhoneShareLifecycle.PHONE_NAME_HEADER, true) }) {
+                    append(PhoneShareLifecycle.PHONE_NAME_HEADER).append(": ").append(encodedName).append("\r\n")
+                }
                 if (response.headers.keys.none { it.equals("Content-Length", true) }) {
                     append("Content-Length: ").append(response.body.size).append("\r\n")
                 }

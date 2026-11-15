@@ -15,7 +15,6 @@ import { Label } from "@/components/ui/label";
 export function PhoneDriveMount() {
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
-  const [letter, setLetter] = useState("Z");
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
@@ -38,7 +37,7 @@ export function PhoneDriveMount() {
     setBusy(true);
     try {
       const next = await mountPhoneDrive({
-        data: { url: url.trim(), secret: secret.trim(), letter: letter.trim(), label: label.trim() },
+        data: { url: url.trim(), secret: secret.trim(), label: label.trim() },
       });
       setResult(next.message);
       if (next.ok) {
@@ -58,7 +57,7 @@ export function PhoneDriveMount() {
   async function remount(key: string) {
     setBusy(true);
     try {
-      const next = await remountPhoneDrive({ data: { key, letter: letter.trim() } });
+      const next = await remountPhoneDrive({ data: { key } });
       setResult(next.message);
       if (next.ok) toast.success("Phone mounted");
       else toast.error(next.message);
@@ -132,11 +131,7 @@ export function PhoneDriveMount() {
           />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="phone-letter">Windows drive letter</Label>
-          <Input id="phone-letter" value={letter} onChange={(e) => setLetter(e.target.value)} className="w-20" />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="phone-label">Drive name in File Explorer (optional)</Label>
+          <Label htmlFor="phone-label">Drive name (optional)</Label>
           <Input
             id="phone-label"
             value={label}
@@ -145,6 +140,10 @@ export function PhoneDriveMount() {
             onChange={(e) => setLabel(e.target.value)}
             autoComplete="off"
           />
+          <p className="text-xs text-fg-muted">
+            The drive is named from the phone. Leave this blank and Drivebay uses the name the phone sends. Windows
+            still picks a letter for itself. That letter is not shown here.
+          </p>
         </div>
         {phones.length > 0 ? (
           <div className="space-y-2">

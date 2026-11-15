@@ -295,7 +295,9 @@ test("the phone share stays off until the app turns it on", () => {
   assert.match(docs, /xattr -dr com\.apple\.quarantine/);
   const ui = fs.readFileSync(path.join(root, "app/src/components/settings/phone-drive.tsx"), "utf8");
   assert.match(ui, /6-digit code or token/);
-  assert.match(ui, /Drive name in File Explorer/);
+  assert.match(ui, /Drive name \(optional\)/);
+  assert.match(ui, /Uses the phone's name/);
+  assert.equal(ui.includes("Windows drive letter"), false);
   assert.match(ui, /Unmount/);
   const fn = fs.readFileSync(path.join(root, "app/src/lib/files/phone-drive.functions.ts"), "utf8");
   assert.match(fn, /X-Drivebay-PC-Name|announcePc/);

@@ -4,5 +4,6 @@
   "projectId": "",
   "googleClientId": "",
   "appleClientId": "",
-  "cloudApi": "https://mesaandmoon.com/drivebay/api"
+  "cloudApi": "https://mesaandmoon.com/drivebay/api",
+  "authEmulator": ""
 }

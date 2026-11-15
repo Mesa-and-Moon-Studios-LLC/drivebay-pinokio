@@ -30,10 +30,10 @@ object MesaCloud {
         val googleClientId: String,
         val appleClientId: String,
         val cloudApi: String,
+        val authEmulator: String = "",
     ) {
         val ready: Boolean
-            get() = apiKey.isNotBlank() && projectId.isNotBlank() && cloudApi.isNotBlank() &&
-                (googleClientId.isNotBlank() || appleClientId.isNotBlank())
+            get() = apiKey.isNotBlank() && projectId.isNotBlank() && cloudApi.isNotBlank()
     }
 
     fun parseConfig(text: String): Config? {
@@ -46,6 +46,7 @@ object MesaCloud {
                 googleClientId = json.optString("googleClientId").trim(),
                 appleClientId = json.optString("appleClientId").trim(),
                 cloudApi = json.optString("cloudApi").trim().trimEnd('/'),
+                authEmulator = loopbackEmulator(json.optString("authEmulator")),
             )
         } catch (_: Exception) {
             null
@@ -154,6 +155,71 @@ object MesaCloud {
     fun shareNames(xml: String): List<String> {
         val names = Regex("<d:displayname>([^<]*)</d:displayname>").findAll(xml).map { it.groupValues[1] }.toList()
         return if (names.size <= 1) emptyList() else names.drop(1)
+    }
+
+    fun loopbackEmulator(value: String?): String {
+        val text = value?.trim()?.trimEnd('/').orEmpty()
+        if (text.isEmpty()) return ""
+        val uri = runCatching { java.net.URI(text) }.getOrNull() ?: return ""
+        val host = uri.host?.lowercase(Locale.US) ?: return ""
+        if (uri.scheme != "http" && uri.scheme != "https") return ""
+        if (host != "127.0.0.1" && host != "localhost" && host != "::1") return ""
+        val port = if (uri.port > 0) ":${uri.port}" else ""
+        return "${uri.scheme}://$host$port"
+    }
+
+    fun emailAuthUrl(config: Config, action: String): String {
+        val method = when (action) {
+            "signIn" -> "signInWithPassword"
+            "signUp" -> "signUp"
+            "reset" -> "sendOobCode"
+            else -> "createAuthUri"
+        }
+        val root = if (config.authEmulator.isNotBlank()) {
+            config.authEmulator + "/identitytoolkit.googleapis.com"
+        } else {
+            "https://identitytoolkit.googleapis.com"
+        }
+        return "$root/v1/accounts:$method?key=" + enc(config.apiKey)
+    }
+
+    fun emailAuthBody(action: String, email: String, password: String): String {
+        val address = email.trim().lowercase(Locale.US)
+        val body = JSONObject()
+        if (action == "reset") {
+            body.put("requestType", "PASSWORD_RESET")
+            body.put("email", address)
+            return body.toString()
+        }
+        if (action == "lookup") {
+            body.put("identifier", address)
+            body.put("continueUri", "http://127.0.0.1")
+            return body.toString()
+        }
+        body.put("email", address)
+        body.put("password", password)
+        body.put("returnSecureToken", true)
+        return body.toString()
+    }
+
+    fun providerConflictMessage(methods: List<String>): String {
+        if (methods.contains("password") && !methods.contains("google.com") && !methods.contains("apple.com")) {
+            return "That email already has a password. Sign in with it."
+        }
+        val names = mutableListOf<String>()
+        if (methods.contains("google.com")) names.add("Google")
+        if (methods.contains("apple.com")) names.add("Apple")
+        if (names.isNotEmpty()) {
+            return "That email already belongs to a Mesa and Moon account signed in with ${names.joinToString(" and ")}. Use that button. Drivebay does not add a password onto that login, so it stays one account."
+        }
+        return "That email already has a Mesa and Moon account. If you signed in with Google or Apple, use that button. Drivebay does not add a password onto that login, so it stays one account."
+    }
+
+    fun emailSession(json: JSONObject): Triple<String, String, String>? {
+        val token = json.optString("idToken")
+        val refresh = json.optString("refreshToken")
+        if (token.isBlank() || refresh.isBlank()) return null
+        return Triple(token, json.optString("email"), refresh)
     }
 
     fun idpBody(providerId: String, idToken: String, requestUri: String): String {

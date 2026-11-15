@@ -189,6 +189,7 @@ internal sealed class PhoneSettings
     public char Letter = '\0';        // the letter we mapped
     public char PreferredLetter = 'P';
     public string PeerId = "";        // X-Drivebay-Phone, not the token
+    public string PhoneName = "";     // name shown for the drive; the letter stays internal
 
     static string FilePath()
     {
@@ -215,6 +216,7 @@ internal sealed class PhoneSettings
                 else if (k == "letter" && v.Length == 1) s.Letter = char.ToUpperInvariant(v[0]);
                 else if (k == "preferred" && v.Length == 1) s.PreferredLetter = char.ToUpperInvariant(v[0]);
                 else if (k == "peer" && v.Length >= 8 && v.Length <= 32) s.PeerId = v.ToLowerInvariant();
+                else if (k == "name") s.PhoneName = PhoneMountLogic.VolumeLabel(v);
             }
         }
         catch
@@ -237,7 +239,8 @@ internal sealed class PhoneSettings
                 "manual=" + ManualAddress,
                 "letter=" + (Letter == '\0' ? "" : Letter.ToString()),
                 "preferred=" + PreferredLetter,
-                "peer=" + (PeerId ?? "")
+                "peer=" + (PeerId ?? ""),
+                "name=" + (PhoneName ?? "")
             });
         }
         catch
@@ -428,7 +431,7 @@ internal static class PhoneMount
         DropSession(current, Settings.Host, Settings.Port);
         char letter = PhoneMountLogic.PickLetter(UsedLetters(current), Settings.PreferredLetter, current);
         if (letter == '\0') { Log("map: no free drive letter"); return AuthResult.Unreachable; }
-        SetLabel(Settings.Host, Settings.Port);
+        SetLabel(Settings.Host, Settings.Port, Settings.PhoneName);
         NETRESOURCE nr = new NETRESOURCE();
         nr.dwType = RESOURCETYPE_DISK;
         nr.lpLocalName = letter + ":";
@@ -728,6 +731,8 @@ internal static class PhoneMount
                 string client = res.Headers[PhoneMountLogic.ClientHeader];
                 string matched = PhoneMountLogic.MatchingPeer(client, "");
                 if (matched.Length > 0) seenPeer = matched;
+                string phone = PhoneMountLogic.VolumeLabel(res.Headers[PhoneMountLogic.PhoneNameHeader]);
+                if (phone.Length > 0) Settings.PhoneName = phone;
                 return PhoneMountLogic.Classify((int)res.StatusCode);
             }
         }
@@ -799,13 +804,17 @@ internal static class PhoneMount
         }
     }
 
-    static void SetLabel(string host, int port)
+    static void SetLabel(string host, int port, string phoneName)
     {
         try
         {
+            // _LabelFromReg is the name Explorer shows before the letter, for this drive only.
+            // ShowDriveLettersFirst hides letters for every drive, including C:, so it is not set.
+            string label = PhoneMountLogic.VolumeLabel(phoneName);
+            if (label.Length == 0) label = PhoneMountLogic.Label;
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MountPoints2\\" + PhoneMountLogic.MountPointsKey(host, port)))
             {
-                k.SetValue("_LabelFromReg", PhoneMountLogic.Label, RegistryValueKind.String);
+                k.SetValue("_LabelFromReg", label, RegistryValueKind.String);
             }
         }
         catch
@@ -823,7 +832,6 @@ internal sealed class PhoneForm : Form
     LinkLabel advancedLink;
     Panel advanced;
     TextBox address;
-    ComboBox letter;
 
     public PhoneForm(Icon icon)
     {
@@ -875,14 +883,7 @@ internal sealed class PhoneForm : Form
         Label al = new Label(); al.Text = "Phone address (blank = find it automatically)"; al.SetBounds(0, 0, 408, 22);
         address = new TextBox(); address.SetBounds(0, 24, 260, 28);
         address.Text = PhoneMount.Settings.ManualAddress;
-        Label ll = new Label(); ll.Text = "Drive"; ll.SetBounds(276, 0, 120, 22);
-        letter = new ComboBox(); letter.DropDownStyle = ComboBoxStyle.DropDownList; letter.SetBounds(276, 24, 120, 28);
-        letter.Items.Add("Automatic");
-        for (char c = 'D'; c <= 'Z'; c++) letter.Items.Add(c + ":");
-        letter.SelectedIndex = 0;
-        if (PhoneMount.Settings.PreferredLetter != 'P' && PhoneMount.Settings.PreferredLetter >= 'D')
-            letter.SelectedItem = PhoneMount.Settings.PreferredLetter + ":";
-        advanced.Controls.Add(al); advanced.Controls.Add(address); advanced.Controls.Add(ll); advanced.Controls.Add(letter);
+        advanced.Controls.Add(al); advanced.Controls.Add(address);
 
         Controls.Add(help); Controls.Add(code); Controls.Add(connect); Controls.Add(status);
         Controls.Add(disconnect); Controls.Add(advancedLink); Controls.Add(advanced);
@@ -897,8 +898,9 @@ internal sealed class PhoneForm : Form
     void ShowStatus(PhoneStatus s)
     {
         string text = PhoneMountLogic.StatusText(s);
-        if ((s == PhoneStatus.Connected || s == PhoneStatus.Reconnecting) && PhoneMount.Settings.Letter != '\0')
-            text = PhoneMountLogic.StatusText(s) + " (" + PhoneMount.Settings.Letter + ": Drivebay Phone)";
+        string phone = PhoneMountLogic.VolumeLabel(PhoneMount.Settings.PhoneName);
+        if ((s == PhoneStatus.Connected || s == PhoneStatus.Reconnecting) && phone.Length > 0)
+            text = PhoneMountLogic.StatusText(s) + " · " + phone;
         status.Text = text;
         status.ForeColor = s == PhoneStatus.Connected ? Color.ForestGreen : (s == PhoneStatus.CodeExpired ? Color.Firebrick : (s == PhoneStatus.Reconnecting ? Color.DarkGoldenrod : SystemColors.ControlText));
         disconnect.Enabled = PhoneMount.Settings.Enabled || PhoneMount.Settings.Letter != '\0';
@@ -921,7 +923,9 @@ internal sealed class PhoneForm : Form
             status.ForeColor = Color.Firebrick;
             return;
         }
-        char pref = letter.SelectedIndex <= 0 ? 'P' : ((string)letter.SelectedItem)[0];
+        char pref = PhoneMount.Settings.PreferredLetter >= 'D' && PhoneMount.Settings.PreferredLetter <= 'Z'
+            ? PhoneMount.Settings.PreferredLetter
+            : 'P';
         connect.Enabled = false;
         status.Text = "Connecting...";
         status.ForeColor = SystemColors.ControlText;

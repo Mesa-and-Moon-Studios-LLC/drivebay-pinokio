@@ -175,6 +175,12 @@ class PhoneShareService : Service() {
                 shareStore,
                 shareStore,
                 { shareStore.pairs().mapNotNull { PhoneShareLifecycle.peerId(it.tokenHash) } },
+                phoneName = listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL)
+                    .map { it?.trim().orEmpty() }
+                    .filter { it.isNotEmpty() && !it.equals("unknown", true) }
+                    .distinct()
+                    .joinToString(" ")
+                    .ifBlank { "Phone" },
             ) {
                 val listening = server?.boundHosts().orEmpty()
                 onMain {

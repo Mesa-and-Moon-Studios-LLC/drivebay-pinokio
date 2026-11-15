@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -31,8 +33,21 @@ import {
   verifyPairToken,
   visibleMachines,
 } from "../app/src/lib/files/linked-machines.mjs";
-import { appleAuthorizeUrl, googleAuthorizeUrl, idpPostBody, readIdTokenFragment } from "../app/src/lib/files/mesa-signin.mjs";
-import { loadPairState, saveShares, writePrivate } from "../app/src/lib/files/linked-store.mjs";
+import {
+  appleAuthorizeUrl,
+  emailAuthBody,
+  emailAuthError,
+  emailAuthUrl,
+  emailSession,
+  googleAuthorizeUrl,
+  idpPostBody,
+  passwordOk,
+  providerConflictMessage,
+  readIdTokenFragment,
+} from "../app/src/lib/files/mesa-signin.mjs";
+import { verifyEmulatorIdToken } from "../app/src/lib/files/linked-cloud.mjs";
+import { loadFirebaseConfig, loadPairState, publicLinks, saveAccount, saveShares, writePrivate } from "../app/src/lib/files/linked-store.mjs";
+import { volumeLabel } from "../app/src/lib/files/phone-drive.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -173,6 +188,8 @@ test("mount plans name the drive and follow the 3.36.7 desktop or rclone split",
   assert.equal(windows.ok, true);
   assert.match(windows.display, /net use P:/);
   assert.equal(windows.volumeLabel, "Office");
+  assert.equal(windows.userFacing, "Office");
+  assert.equal(/[A-Z]:/.test(windows.userFacing), false);
   assert.equal(windows.display.includes(secret), false);
 
   const mac = linkedMountPlan({
@@ -184,8 +201,10 @@ test("mount plans name the drive and follow the 3.36.7 desktop or rclone split",
     tools: { gio: false, mount_webdav: true, rclone: true },
   });
   assert.equal(mac.method, "mount_webdav");
-  assert.match(mac.mountPoint, /Drivebay/);
-  assert.equal(mac.mountPoint.endsWith("DrivebayPhone"), false);
+  assert.equal(mac.mountPoint, path.join("/tmp/drivebay-home", "Drivebay", "Office"));
+  assert.equal(mac.args[0], "-v");
+  assert.equal(mac.args[1], "Office");
+  assert.equal(mac.userFacing, "Office");
 
   const headless = linkedMountPlan({
     machine: base,
@@ -196,6 +215,9 @@ test("mount plans name the drive and follow the 3.36.7 desktop or rclone split",
     tools: { gio: true, mount_webdav: false, rclone: true },
   });
   assert.equal(headless.method, "rclone");
+  assert.equal(headless.mountPoint, path.join("/tmp/drivebay-home", "Drivebay", "Office"));
+  assert.ok(headless.args.includes("--volname"));
+  assert.equal(headless.userFacing, "Office");
 
   const desktop = linkedMountPlan({
     machine: base,
@@ -206,6 +228,28 @@ test("mount plans name the drive and follow the 3.36.7 desktop or rclone split",
     tools: { gio: true, mount_webdav: false, rclone: true },
   });
   assert.equal(desktop.method, "gio");
+  assert.equal(desktop.userFacing, "Office");
+
+  const named = { ...base, displayName: "Aaron's Mac Mini" };
+  const firstName = linkedMountPlan({
+    machine: named,
+    secret,
+    platform: "win32",
+    home: "/tmp/drivebay-home",
+  });
+  assert.equal(firstName.volumeLabel, "Aaron's Mac Mini");
+  const secondName = linkedMountPlan({
+    machine: { ...named, machineId: "machine-office-2" },
+    secret,
+    platform: "darwin",
+    home: "/tmp/drivebay-home",
+    env: {},
+    tools: { gio: false, mount_webdav: true, rclone: true },
+    takenLabels: ["Aaron's Mac Mini"],
+  });
+  assert.equal(secondName.volumeLabel, "Aaron's Mac Mini 2");
+  assert.equal(secondName.mountPoint.endsWith("Aaron's Mac Mini 2"), true);
+  assert.equal(volumeLabel("Aaron's Mac Mini"), "Aaron's Mac Mini");
 });
 
 test("WebDAV exposes only the chosen folders and honors read-only", () => {
@@ -351,6 +395,8 @@ test("sign-in URLs match Google and Apple and the docs name the cloud rules", ()
   assert.match(docs, /mount_webdav/);
   assert.match(docs, /rclone/);
   assert.match(docs, /gio/);
+  assert.match(docs, /ShowDriveLettersFirst/);
+  assert.match(docs, /does not add a password/i);
   const schema = fs.readFileSync(path.join(root, "server/cloud-api/schema.sql"), "utf8");
   for (const column of ["machine_id", "display_name", "machine_type", "tailscale_host", "lan_address", "public_key", "last_seen"]) {
     assert.match(schema, new RegExp(column));
@@ -362,7 +408,12 @@ test("sign-in URLs match Google and Apple and the docs name the cloud rules", ()
   const ui = fs.readFileSync(path.join(root, "app/src/components/settings/linked-machines.tsx"), "utf8");
   assert.match(ui, /Continue with Google/);
   assert.match(ui, /Continue with Apple/);
+  assert.match(ui, /Create account/);
+  assert.match(ui, /Email me a reset link/);
   assert.match(ui, /My machines/);
+  const phoneUi = fs.readFileSync(path.join(root, "app/src/components/settings/phone-drive.tsx"), "utf8");
+  assert.equal(phoneUi.includes("Windows drive letter"), false);
+  assert.equal(phoneUi.includes("phone-letter"), false);
   assert.match(ui, /Read-only/);
   assert.equal(isSpaDocument("/dav", "text/html", "GET"), false);
   assert.equal(isSpaDocument("/api/link/whoami", "text/html", "GET"), false);
@@ -383,4 +434,119 @@ test("approval helper does not return the token to the settings page", () => {
   const result = approveLocalRequest(home, "req-ui", 2);
   assert.equal(result.ok, true);
   assert.equal(result.token, undefined);
+});
+
+test("email sign-in stores the Firebase tokens and not the password", async () => {
+  const password = "correct horse battery";
+  assert.equal(passwordOk(password), true);
+  assert.equal(passwordOk("short"), false);
+  assert.match(providerConflictMessage(["google.com"]), /Google/);
+  assert.match(providerConflictMessage(["apple.com"]), /Apple/);
+  assert.match(providerConflictMessage(["password"]), /Sign in with it/);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-email-"));
+  writePrivate(path.join(home, "mesa-firebase.json"), {
+    apiKey: "demo-key",
+    authDomain: "demo.firebaseapp.com",
+    projectId: "mesa-demo",
+    cloudApi: "http://127.0.0.1:9/api",
+    authEmulator: "http://127.0.0.1:9099",
+  });
+  const config = loadFirebaseConfig(home);
+  assert.equal(config.ready, true);
+  assert.equal(config.authEmulator, "http://127.0.0.1:9099");
+  const remote = loadFirebaseConfig(home);
+  writePrivate(path.join(home, "mesa-firebase.json"), { ...JSON.parse(fs.readFileSync(path.join(home, "mesa-firebase.json"), "utf8")), authEmulator: "https://evil.example" });
+  assert.equal(loadFirebaseConfig(home).authEmulator, "");
+
+  const server = http.createServer((req, res) => {
+    let raw = "";
+    req.on("data", (chunk) => {
+      raw += chunk;
+    });
+    req.on("end", () => {
+      const body = JSON.parse(raw || "{}");
+      if (Object.prototype.hasOwnProperty.call(body, "password")) assert.equal(body.password, password);
+      const payload = { sub: "uid-email-1", aud: "mesa-demo", email: body.email, exp: Math.floor(Date.now() / 1000) + 3600 };
+      const idToken = `${Buffer.from("{}").toString("base64url")}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.sig`;
+      res.setHeader("content-type", "application/json");
+      if (req.url.includes("sendOobCode")) {
+        res.end(JSON.stringify({ email: body.email }));
+        return;
+      }
+      if (req.url.includes("signUp") && body.email === "taken@example.com") {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: { message: "EMAIL_EXISTS" } }));
+        return;
+      }
+      res.end(JSON.stringify({ idToken, refreshToken: "refresh-email-1", expiresIn: "3600", email: body.email, localId: "uid-email-1" }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const emulatorConfig = { ...remote, authEmulator: `http://127.0.0.1:${port}`, apiKey: "demo-key", projectId: "mesa-demo" };
+  try {
+    const signIn = await fetch(emailAuthUrl(emulatorConfig, "signIn"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(emailAuthBody("signIn", { email: "ada@example.com", password })),
+    });
+    const signed = await signIn.json();
+    const session = emailSession(signed);
+    assert.ok(session);
+    assert.equal(session.refreshToken, "refresh-email-1");
+    assert.equal(JSON.stringify(session).includes(password), false);
+    const verified = verifyEmulatorIdToken(session.idToken, emulatorConfig);
+    assert.equal(verified.uid, "uid-email-1");
+    assert.equal(verified.email, "ada@example.com");
+    saveAccount(home, {
+      uid: verified.uid,
+      email: verified.email,
+      displayName: "",
+      idToken: session.idToken,
+      refreshToken: session.refreshToken,
+      expiresAt: Date.now() + session.expiresIn * 1000,
+    });
+    const stored = fs.readFileSync(path.join(home, "mesa-account.json"), "utf8");
+    assert.equal(stored.includes(password), false);
+    assert.match(stored, /uid-email-1/);
+    assert.match(stored, /refresh-email-1/);
+    const links = publicLinks({ "machine-office-1": { letter: "P", label: "Office", token: "dbp_secret", url: "http://127.0.0.1/" } });
+    assert.equal(links[0].letter, undefined);
+    assert.equal(JSON.stringify(links).includes("dbp_secret"), false);
+    const reset = await fetch(emailAuthUrl(emulatorConfig, "reset"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(emailAuthBody("reset", { email: "ada@example.com" })),
+    });
+    assert.equal(reset.status, 200);
+    assert.match(emailAuthError("reset", {}).message, /reset link/i);
+    const taken = await fetch(emailAuthUrl(emulatorConfig, "signUp"), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(emailAuthBody("signUp", { email: "taken@example.com", password })),
+    });
+    const takenBody = await taken.json();
+    assert.equal(emailAuthError("signUp", takenBody).code, "exists");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("the PHP token check accepts an email provider and refuses an anonymous one", () => {
+  const php = spawnSync("php", ["-r", `
+    require ${JSON.stringify(path.join(root, "server/cloud-api/lib/firebase_token.php"))};
+    $email = array("firebase" => array("sign_in_provider" => "password"));
+    $google = array("firebase" => array("sign_in_provider" => "google.com"));
+    $apple = array("firebase" => array("sign_in_provider" => "apple.com"));
+    $anon = array("firebase" => array("sign_in_provider" => "anonymous"));
+    $missing = array("sub" => "abc");
+    echo drivebay_firebase_provider_allowed($email) ? "email " : "no-email ";
+    echo drivebay_firebase_provider_allowed($google) ? "google " : "no-google ";
+    echo drivebay_firebase_provider_allowed($apple) ? "apple " : "no-apple ";
+    echo drivebay_firebase_provider_allowed($anon) ? "anon " : "no-anon ";
+    echo drivebay_firebase_provider_allowed($missing) ? "missing" : "no-missing";
+  `], { encoding: "utf8" });
+  if (php.error && php.error.code === "ENOENT") return;
+  assert.equal(php.status, 0, php.stderr);
+  assert.equal(php.stdout.trim(), "email google apple no-anon missing");
 });

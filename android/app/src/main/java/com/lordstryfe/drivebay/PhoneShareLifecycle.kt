@@ -14,6 +14,8 @@ object PhoneShareLifecycle {
     const val CLIENT_HEADER = "X-Drivebay-Client"
     /** Hostname the PC sends so a new pairing can be named before the user renames it. */
     const val PC_NAME_HEADER = "X-Drivebay-PC-Name"
+    /** The phone's own name, percent-encoded, so a PC can label the mounted drive. */
+    const val PHONE_NAME_HEADER = "X-Drivebay-Phone-Name"
     const val HEALTHY_POLL_MS = 15_000L
 
     /** First 16 hex chars of the token hash. Stable for one token, not reversible to it. */
@@ -32,6 +34,12 @@ object PhoneShareLifecycle {
     }
 
     /** OPTIONS advertises every paired PC. The PC matches its own id inside the list. */
+    fun phoneNameHeader(name: String?): String {
+        val cleaned = name?.replace("\r", " ")?.replace("\n", " ")?.trim().orEmpty()
+        if (cleaned.isEmpty()) return ""
+        return java.net.URLEncoder.encode(cleaned.take(40), "UTF-8").replace("+", "%20")
+    }
+
     fun peerHeader(ids: Collection<String>): String =
         ids.map { it.trim().lowercase() }.filter { it.matches(Regex("^[0-9a-f]{8,32}$")) }.distinct().joinToString(",")
 

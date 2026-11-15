@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { freshPairState, normalizeShares } from "./linked-machines.mjs";
+import { loopbackEmulator } from "./mesa-signin.mjs";
 
 export function machineHome(env = process.env) {
   const home = String(env.DRIVEBAY_HOME || env.DRIVEBAY_DATA_DIR || "").trim();
@@ -56,23 +57,25 @@ export function loadFirebaseConfig(home) {
     googleClientId: String(parsed.googleClientId || "").trim(),
     appleClientId: String(parsed.appleClientId || "").trim(),
     cloudApi: String(parsed.cloudApi || "").trim().replace(/\/$/, ""),
+    authEmulator: loopbackEmulator(parsed.authEmulator),
   };
   if (!config.apiKey || !config.projectId || !config.cloudApi) return { ...config, ready: false };
-  if (!config.googleClientId && !config.appleClientId) return { ...config, ready: false };
   return { ...config, ready: true };
 }
 
 export function publicFirebaseConfig(config) {
-  if (!config) return { ready: false, google: false, apple: false, authDomain: "" };
+  if (!config) return { ready: false, google: false, apple: false, email: false, authDomain: "" };
   return {
     ready: config.ready === true,
     google: Boolean(config.googleClientId),
     apple: Boolean(config.appleClientId),
+    email: config.ready === true,
     authDomain: config.authDomain || "",
     projectId: config.projectId || "",
     apiKey: config.apiKey || "",
     googleClientId: config.googleClientId || "",
     appleClientId: config.appleClientId || "",
+    authEmulator: config.authEmulator || "",
   };
 }
 
@@ -158,7 +161,6 @@ export function publicLinks(records) {
     machineId,
     url: row?.url ? String(row.url) : "",
     label: row?.label ? String(row.label) : "",
-    letter: row?.letter ? String(row.letter) : "",
     via: row?.via ? String(row.via) : "",
     paired: Boolean(row?.token),
   }));

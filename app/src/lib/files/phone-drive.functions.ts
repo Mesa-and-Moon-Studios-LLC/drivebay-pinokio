@@ -16,25 +16,38 @@ export const mountPhoneDrive = createServerFn({ method: "POST" })
     const host = await import("./host-request.server");
     host.assertPcAdmin();
     const drive = await import("./phone-drive.mjs");
+    const home = process.env.DRIVEBAY_HOME;
+    const existing = home ? drive.loadPhoneTokens(home) : {};
+    const key = drive.phoneKey(data.url) || "";
+    const taken = Object.entries(existing)
+      .filter(([id]) => id !== key)
+      .map(([, row]) => row?.label)
+      .filter(Boolean);
+    let raw = drive.pcName(data.label || "");
+    if (!raw) {
+      await drive.announcePc(data.url, data.secret, drive.pcName());
+      raw = drive.announcedPhoneName();
+    }
+    const label = drive.volumeLabel(raw || "Phone", { taken, id: key });
     const plan = drive.mountPlan({
       platform: process.platform,
       url: data.url,
       secret: data.secret,
       letter: data.letter || "Z",
       user: "drivebay",
+      volumeName: label,
     });
     if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount", display: "" };
     const result = await drive.runMount(plan);
     if (result.code === 0) {
       await drive.announcePc(data.url, data.secret, drive.pcName());
-      const label = drive.pcName(data.label || "") || drive.announcedPhoneName();
-      if (label) await drive.setDriveLabel(data.url, label);
-      const home = process.env.DRIVEBAY_HOME;
+      const shown = drive.volumeLabel(drive.pcName(data.label || "") || drive.announcedPhoneName() || label, { taken, id: key });
+      await drive.setDriveLabel(data.url, shown);
       if (home) {
         const records = drive.rememberPhoneToken(drive.loadPhoneTokens(home), {
           url: data.url,
           secret: data.secret,
-          label: drive.pcName(data.label || ""),
+          label: shown,
           method: plan.method,
           letter: plan.letter || data.letter || "Z",
           mountPoint: plan.mountPoint || "",
@@ -42,11 +55,12 @@ export const mountPhoneDrive = createServerFn({ method: "POST" })
         });
         drive.savePhoneTokens(home, records);
       }
+      return { ok: true as const, message: `Mounted ${shown}.`, display: shown };
     }
     return {
-      ok: result.code === 0,
+      ok: false as const,
       message: drive.redact(result.output, data.secret),
-      display: plan.display,
+      display: label,
     };
   });
 
@@ -69,25 +83,35 @@ export const remountPhoneDrive = createServerFn({ method: "POST" })
     const records = drive.loadPhoneTokens(process.env.DRIVEBAY_HOME);
     const row = records[data.key];
     if (!row?.secret || !row.url) return { ok: false as const, message: "That phone is not saved on this PC.", display: "" };
+    const taken = Object.entries(records)
+      .filter(([id]) => id !== data.key)
+      .map(([, item]) => item?.label)
+      .filter(Boolean);
+    let raw = drive.pcName(row.label || "");
+    if (!raw) {
+      await drive.announcePc(row.url, row.secret, drive.pcName());
+      raw = drive.announcedPhoneName();
+    }
+    const label = drive.volumeLabel(raw || "Phone", { taken, id: data.key });
     const plan = drive.mountPlan({
       platform: process.platform,
       url: row.url,
       secret: row.secret,
       letter: data.letter || row.letter || "Z",
       user: "drivebay",
+      volumeName: label,
     });
     if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount", display: "" };
     const result = await drive.runMount(plan);
     if (result.code === 0) {
       await drive.announcePc(row.url, row.secret, drive.pcName());
-      const label = drive.pcName(row.label || "") || drive.announcedPhoneName();
-      if (label) await drive.setDriveLabel(row.url, label);
+      await drive.setDriveLabel(row.url, label);
     }
     const recordsNext = drive.rememberPhoneToken(records, {
       url: row.url,
       secret: row.secret,
       peer: row.peer,
-      label: row.label,
+      label: row.label || label,
       method: plan.method,
       letter: plan.letter || data.letter || row.letter || "Z",
       mountPoint: plan.mountPoint || row.mountPoint || "",
@@ -96,8 +120,8 @@ export const remountPhoneDrive = createServerFn({ method: "POST" })
     if (result.code === 0 && process.env.DRIVEBAY_HOME) drive.savePhoneTokens(process.env.DRIVEBAY_HOME, recordsNext);
     return {
       ok: result.code === 0,
-      message: drive.redact(result.output, row.secret),
-      display: plan.display,
+      message: result.code === 0 ? `Mounted ${label}.` : drive.redact(result.output, row.secret),
+      display: label,
     };
   });
 

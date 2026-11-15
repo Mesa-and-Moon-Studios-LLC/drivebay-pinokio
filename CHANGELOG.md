@@ -2,6 +2,13 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.37.1
+- Settings can sign in with email and a password, next to Continue with Google and Continue with Apple. Create account, sign in, sign out, and the password reset email use Firebase email/password. The password is not stored. Drivebay stores the Firebase ID token and refresh token the same way it stores Google and Apple. An email that already belongs to Google or Apple is not given a second user and is not given a password from this screen. Drivebay tells you to use that button, so it stays one Mesa and Moon account and the same machine list.
+- A mounted machine or phone is named from that computer's display name, such as Aaron's Mac Mini. The name stays short. A second machine with the same name gets a number. Windows still chooses a drive letter for net use. Drivebay does not show the letter. Explorer shows the computer name in `_LabelFromReg`. macOS uses that name with `mount_webdav -v` or rclone `--volname`, in `~/Drivebay/<name>`. Linux gio shows the WebDAV display name, which is the computer name. rclone uses the same folder name.
+- Windows cannot hide the letter on one drive. `ShowDriveLettersFirst` is a setting for every drive, including C:, so Drivebay does not change it. Explorer shows the computer name and then the letter in parentheses.
+- Android 3.37.1 (versionCode 33701) adds email sign-in and sign out. The phone sends its name on `X-Drivebay-Phone-Name` so the PC can label the drive. Phone-as-drive from 3.36.6 and 3.36.7 is otherwise unchanged.
+- The Windows installer, the macOS disk image, and the Linux archive report 3.37.1. `/api/health` returns `version` 3.37.1. The PHP API is still not deployed.
+
 ## 3.37.0
 - Optional Mesa and Moon sign-in from Settings (Google and Apple, same Firebase style as the vault games). Drivebay still works with nobody signed in. Each machine registers itself. The cloud stores connection info only: machine id, name, type, Tailscale or LAN address, port, public key, and last seen. Files, folder lists, passwords, phone codes, and pair tokens stay on the machine. There is no relay.
 - Settings shows My machines with online status and Connect. Tailscale is the path. A public address is used only after that machine turns on direct internet, and Connect shows the risk warning.

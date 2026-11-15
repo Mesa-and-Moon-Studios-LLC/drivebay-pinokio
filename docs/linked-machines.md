@@ -6,7 +6,9 @@ The cloud stores connection info only: machine id, display name, type (`pc`, `ma
 
 ## Sign in
 
-On this PC, open Settings. **Continue with Google** and **Continue with Apple** use the same Firebase sign-in as the Mesa and Moon vault games. The buttons need `mesa-firebase.json` in the Drivebay data directory. Until that file exists they do not send a token, and Drivebay keeps working.
+On this PC, open Settings. **Continue with Google**, **Continue with Apple**, and email with a password use the same Firebase account as the Mesa and Moon vault games. The buttons need `mesa-firebase.json` in the Drivebay data directory. Until that file exists they do not send a token, and Drivebay keeps working.
+
+Email can create an account, sign in, sign out, and send a password reset email. The password goes to Firebase and is not written on this machine. Drivebay stores the Firebase ID token and refresh token in `mesa-account.json`, the same file Google and Apple use. An email that already belongs to Google or Apple is not a second account. Drivebay does not add a password onto that login. It tells you to use the Google or Apple button, so My machines, registration, the hidden flag, and shared folders stay on that one uid.
 
 Signing in registers this machine. It repeats about once a minute while Drivebay is running so the others can see it as online (last seen within two minutes).
 
@@ -28,13 +30,13 @@ Phones still use the phone-as-drive code as the WebDAV password. Desktop machine
 
 ## Mounts
 
-Each other machine becomes its own network drive, named with that machine's display name.
+Each other machine becomes its own network drive. The name the person sees is that computer's display name, for example Aaron's Mac Mini. It is kept short. If two machines share a name, the second becomes Aaron's Mac Mini 2. A phone uses the name it sends on `X-Drivebay-Phone-Name`, unless you typed a drive name. Drivebay does not show a drive letter in Settings or the tray.
 
-- Windows: `net use` on its own drive letter, with the Explorer label `_LabelFromReg`. The first machine uses P. The next machine uses the next free letter. C is never used.
-- macOS: `mount_webdav` when this is a desktop session and `mount_webdav` is installed. Otherwise `rclone mount`.
-- Linux: `gio mount` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up. Otherwise `rclone mount`, same as phone-as-drive in 3.36.7.
+- Windows: `net use` still needs a letter. The first linked machine uses P. The next machine uses the next free letter. C is never used. The letter is not shown in Drivebay. Explorer shows the computer name from `_LabelFromReg` on that drive's MountPoints2 key. Explorer also draws the letter in parentheses, as in Aaron's Mac Mini (P:). `ShowDriveLettersFirst` can hide letters, but it hides them for every drive on the PC, including C:. Drivebay does not set it. There is no per-drive switch that removes the letter from Explorer.
+- macOS: `mount_webdav -v` uses the computer name when this is a desktop session and `mount_webdav` is installed. Otherwise `rclone mount --volname` uses that name. The folder is `~/Drivebay/<computer name>`.
+- Linux: `gio mount` when `DISPLAY` or `WAYLAND_DISPLAY` is set and a D-Bus session is up. The file manager name is the WebDAV display name, which is the computer name. Otherwise `rclone mount --volname`, same desktop check as phone-as-drive in 3.36.7, and the folder is `~/Drivebay/<computer name>`.
 
-The folder on macOS and Linux is `~/Drivebay/<machine name>`.
+Phone-as-drive from 3.36.6 and 3.36.7 is unchanged aside from this name. The code or token is still the WebDAV password, and a blank drive name still uses the name the phone sends.
 
 ## Phones
 

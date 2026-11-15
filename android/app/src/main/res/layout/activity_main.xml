@@ -287,6 +287,27 @@
                     android:textColor="#E8EEF7" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mesaEmail"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/mesa_email"
+                    android:textAllCaps="false"
+                    android:textColor="#E8EEF7" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/mesaSignOut"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/mesa_sign_out"
+                    android:textAllCaps="false"
+                    android:textColor="#E8EEF7"
+                    android:visibility="gone" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/mesaMachines"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent"

@@ -57,6 +57,7 @@ export async function handleLinkedHttp({
   const knownPeer = String(remoteAddress || "").trim();
   if (pathname === "/dav" || pathname.startsWith("/dav/")) {
     const shares = loadShares(home);
+    const identity = loadIdentity(home);
     return handleDav({
       method: verb,
       urlPath: pathname,
@@ -67,6 +68,7 @@ export async function handleLinkedHttp({
       // A missing socket address still needs a pair token. A known public address does not.
       remoteIsPrivate: !knownPeer || privatePeer(knownPeer),
       directInternet: shares.directInternet === true,
+      displayName: identity?.displayName || "Drivebay",
     });
   }
   if (!pathname.startsWith("/api/link/")) return null;

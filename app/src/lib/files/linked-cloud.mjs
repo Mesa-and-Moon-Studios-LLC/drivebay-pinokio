@@ -22,8 +22,36 @@ import {
   saveAccount,
   saveIdentity,
 } from "./linked-store.mjs";
+import { loopbackEmulator, secureTokenUrl } from "./mesa-signin.mjs";
+
+function decodeJwtPayload(idToken) {
+  const parts = String(idToken || "").split(".");
+  if (parts.length < 2) return null;
+  try {
+    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const payload = JSON.parse(json);
+    return payload && typeof payload === "object" ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Emulator tokens are not signed by Google. Only a loopback emulator may skip that check. */
+export function verifyEmulatorIdToken(idToken, config) {
+  if (!loopbackEmulator(config?.authEmulator)) return null;
+  const payload = decodeJwtPayload(idToken);
+  if (!payload) return null;
+  if (String(payload.aud || "") !== String(config.projectId || "")) return null;
+  const uid = String(payload.sub || payload.user_id || "");
+  if (!uid) return null;
+  if (payload.exp && Number(payload.exp) < Date.now() / 1000) return null;
+  return { uid, email: String(payload.email || ""), displayName: String(payload.name || "") };
+}
 
 export async function verifyFirebaseIdToken(idToken, config, fetchImpl = fetch) {
+  const local = verifyEmulatorIdToken(idToken, config);
+  if (local) return local;
   const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
   const res = await fetchImpl(url);
   if (!res.ok) return null;
@@ -37,7 +65,7 @@ export async function verifyFirebaseIdToken(idToken, config, fetchImpl = fetch) 
 
 export async function refreshFirebase(config, refreshToken, fetchImpl = fetch) {
   const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken });
-  const res = await fetchImpl(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(config.apiKey)}`, {
+  const res = await fetchImpl(secureTokenUrl(config), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,

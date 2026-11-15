@@ -15,7 +15,19 @@ import {
   saveMesaSession,
   signOutMesa,
 } from "@/lib/files/linked-machines.functions";
-import { appleAuthorizeUrl, googleAuthorizeUrl, idpPostBody, readIdTokenFragment } from "@/lib/files/mesa-signin.mjs";
+import {
+  appleAuthorizeUrl,
+  cleanEmail,
+  emailAuthBody,
+  emailAuthError,
+  emailAuthUrl,
+  emailSession,
+  googleAuthorizeUrl,
+  idpPostBody,
+  passwordOk,
+  providerConflictMessage,
+  readIdTokenFragment,
+} from "@/lib/files/mesa-signin.mjs";
 
 type ShareRow = { path: string; access: "ro" | "rw"; name?: string };
 type MachineRow = {
@@ -34,9 +46,11 @@ type Status = {
     ready: boolean;
     google: boolean;
     apple: boolean;
+    email?: boolean;
     apiKey?: string;
     googleClientId?: string;
     appleClientId?: string;
+    authEmulator?: string;
   };
   shares: { hidden: boolean; directInternet: boolean; publicHost: string; folders: ShareRow[] };
   pairs: { pending: { id: string; name: string }[] };
@@ -58,6 +72,8 @@ export function LinkedMachines() {
   const [folderAccess, setFolderAccess] = useState<"ro" | "rw">("ro");
   const [code, setCode] = useState("");
   const [pairCode, setPairCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
@@ -146,6 +162,68 @@ export function LinkedMachines() {
     }
   }
 
+  async function submitEmail(action: "signIn" | "signUp" | "reset") {
+    if (!status?.config.ready || !status.config.apiKey) {
+      toast.error("Add mesa-firebase.json on this machine. Drivebay keeps working without it.");
+      return;
+    }
+    const address = cleanEmail(email);
+    if (!address.includes("@")) {
+      toast.error("Enter the email for this Mesa and Moon account.");
+      return;
+    }
+    if (action !== "reset" && !passwordOk(password)) {
+      toast.error("Use a password of at least 8 characters.");
+      setPassword("");
+      return;
+    }
+    setBusy(true);
+    const typed = password;
+    setPassword("");
+    try {
+      const res = await fetch(emailAuthUrl(status.config, action), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(emailAuthBody(action, { email: address, password: typed, continueUri: window.location.origin })),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (action === "reset") {
+        toast.success(emailAuthError("reset", body).message);
+        return;
+      }
+      if (!res.ok) {
+        if (action === "signUp" && String(body?.error?.message || "").includes("EMAIL_EXISTS")) {
+          const lookup = await fetch(emailAuthUrl(status.config, "lookup"), {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(emailAuthBody("lookup", { email: address, continueUri: window.location.origin })),
+          });
+          const info = await lookup.json().catch(() => ({}));
+          const methods = info.signinMethods || info.allProviders || [];
+          toast.error(providerConflictMessage(methods));
+          return;
+        }
+        toast.error(emailAuthError(action, body).message);
+        return;
+      }
+      const session = emailSession(body);
+      if (!session) {
+        toast.error("Mesa and Moon did not accept that sign-in.");
+        return;
+      }
+      const saved = await saveMesaSession({
+        data: { idToken: session.idToken, refreshToken: session.refreshToken, expiresIn: session.expiresIn },
+      });
+      if (!saved.ok) toast.error(saved.message);
+      else toast.success("Signed in to Mesa and Moon");
+      await refresh();
+    } catch {
+      toast.error("Mesa and Moon did not accept that sign-in.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function startProvider(provider: "google" | "apple") {
     if (!status?.config.ready) {
       toast.error("Add mesa-firebase.json on this machine. Drivebay keeps working without it.");
@@ -197,7 +275,7 @@ export function LinkedMachines() {
     setBusy(true);
     try {
       const result = await connectLinkedMachine({
-        data: { machineId: machine.machineId, code: code.trim(), letter: "P", acceptRisk },
+        data: { machineId: machine.machineId, code: code.trim(), acceptRisk },
       });
       if ("needsRisk" in result && result.needsRisk) {
         toast.error(result.message);
@@ -269,6 +347,44 @@ export function LinkedMachines() {
             >
               Continue with Apple
             </button>
+            <form
+              className="space-y-2 rounded-md border border-border p-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitEmail("signIn");
+              }}
+            >
+              <p className="text-sm font-medium text-fg">Email</p>
+              <Input
+                type="email"
+                autoComplete="username"
+                value={email}
+                placeholder="you@example.com"
+                onChange={(event) => setEmail(event.target.value)}
+              />
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                placeholder="Password"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" size="sm" disabled={busy}>
+                  Sign in
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("signUp")}>
+                  Create account
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("reset")}>
+                  Email me a reset link
+                </Button>
+              </div>
+              <p className="text-xs text-fg-muted">
+                The password is sent to Mesa and Moon sign-in and is not saved on this machine. If this email already
+                belongs to Google or Apple, use that button. It stays one account.
+              </p>
+            </form>
             {status && !status.config.ready ? (
               <p className="text-xs text-fg-muted">
                 Sign-in needs mesa-firebase.json on this machine. Until then these buttons explain what is missing, and
@@ -442,7 +558,7 @@ export function LinkedMachines() {
                       disabled={busy}
                       onClick={() =>
                         void connectLinkedMachine({
-                          data: { machineId: machine.machineId, askApproval: true, letter: "P" },
+                          data: { machineId: machine.machineId, askApproval: true },
                         }).then((result) => {
                           if (result.ok) toast.success(result.message);
                           else toast.error(result.message);
