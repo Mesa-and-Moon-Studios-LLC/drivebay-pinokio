@@ -114,7 +114,7 @@ test("each phone keeps its own token and the browser copy omits it", () => {
   const loaded = loadPhoneTokens(home);
   assert.equal(tokenForPhone(loaded, "http://192.168.1.9:8780/"), second);
   const mode = fs.statSync(path.join(home, "phone-tokens.json")).mode & 0o777;
-  assert.equal(mode, 0o600);
+  if (process.platform !== "win32") assert.equal(mode, 0o600);
 });
 
 test("a 6-digit code is accepted and a shorter secret is refused", () => {
