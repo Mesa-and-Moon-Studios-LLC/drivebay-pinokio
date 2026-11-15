@@ -1,0 +1,7 @@
+# Keep secrets and libraries off the web.
+<Files "config.php">
+  Require all denied
+</Files>
+<FilesMatch "\.(sql|md|example\.php|example\.json)$">
+  Require all denied
+</FilesMatch>

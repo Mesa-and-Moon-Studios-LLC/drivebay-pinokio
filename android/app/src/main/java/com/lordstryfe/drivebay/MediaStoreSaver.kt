@@ -17,7 +17,9 @@ object MediaStoreSaver {
 
     fun save(context: Context, temp: File, displayName: String, mime: String?): Uri {
         val safe = DownloadNames.safeFileName(displayName)
-        val type = mime?.substringBefore(';')?.trim().takeUnless { it.isNullOrBlank() } ?: guessMime(safe)
+        val type = DownloadOpen.mimeType(safe, mime).let { typed ->
+            if (typed != DownloadOpen.OCTET) typed else guessMime(safe)
+        }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             saveMediaStore(context, temp, safe, type)
         } else {

@@ -12,8 +12,11 @@ import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } fro
 import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { PhoneDriveMount } from "@/components/settings/phone-drive";
+import { LinkedMachines } from "@/components/settings/linked-machines";
 import { DonateMenu } from "@/components/settings/donate-menu";
+import { SupportBanner } from "@/components/support-banner";
 import { HowToGuide } from "@/components/settings/how-to";
+import { UPDATE_STATUS_EVENT } from "@/components/update-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +29,7 @@ function SettingsPage() {
   const [style, setStyle] = useState<"random" | "static">("static");
   const [port, setPort] = useState("8765");
   const [dataDir, setDataDir] = useState("");
+  const [updateNote, setUpdateNote] = useState("");
   const [serverLock, setServerLock] = useState<{
     allowPortChangeFromUi: boolean;
     allowDelete: boolean;
@@ -159,6 +163,20 @@ function SettingsPage() {
 
   const onThisPc = settingsOnThisPc(window.location.hostname);
   const canEditLock = serverLock?.canEdit === true;
+
+  async function checkForUpdates() {
+    setUpdateNote("Checking for updates…");
+    try {
+      const res = await fetch("/api/update-status?force=1");
+      const body = await res.json();
+      window.dispatchEvent(new CustomEvent(UPDATE_STATUS_EVENT, { detail: body }));
+      if (body?.action === "required" || body?.action === "optional") setUpdateNote("Update available.");
+      else if (body?.reason === "unavailable") setUpdateNote("Drivebay could not reach GitHub.");
+      else setUpdateNote("Drivebay is up to date.");
+    } catch {
+      setUpdateNote("Drivebay could not reach GitHub.");
+    }
+  }
 
   const ownerName = user.displayName || emailToUsername(user.primaryEmail);
 
@@ -359,6 +377,7 @@ function SettingsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
+      <SupportBanner />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         {onThisPc ? null : (
           <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>
@@ -836,6 +855,8 @@ function SettingsPage() {
           </div>
         </section>
 
+        <LinkedMachines />
+
         <PhoneDriveMount />
 
         <ApiTokens />
@@ -848,6 +869,14 @@ function SettingsPage() {
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">About</p>
           <div className="rounded-md border border-border bg-bg-elevated p-4">
             <p className="text-sm text-fg">Drivebay {APP_VERSION}</p>
+            {onThisPc ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <Button type="button" variant="outline" size="sm" onClick={() => void checkForUpdates()}>
+                  Check for updates
+                </Button>
+                {updateNote ? <span className="text-xs text-fg-muted">{updateNote}</span> : null}
+              </div>
+            ) : null}
             <p className="mt-1 text-xs text-fg-muted">
               Password-locked file browser for this machine. Feature ideas go to GitHub so they stay in one place.
             </p>

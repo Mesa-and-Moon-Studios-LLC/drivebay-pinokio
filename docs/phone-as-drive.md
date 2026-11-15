@@ -8,16 +8,29 @@ The phone binds only to private and Tailscale addresses. It does not listen on a
 
 1. Install Drivebay 3.34.0 or newer.
 2. Open the app settings (the gear on the connect screen).
-3. Under **Share this phone as a drive**, choose the folders to share. Android scoped storage keeps the choice as a document tree. Drivebay does not get access to folders you did not pick.
-4. Tap **New token** and copy the token. Creating a new token replaces the old one.
-5. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`.
-6. Leave the phone on the same Tailscale network, or on the same LAN, as the PC. Turn the switch off to stop sharing.
+3. Under **Phone-as-drive**, choose the folders to share. Android scoped storage keeps the choice as a document tree. Drivebay does not get access to folders you did not pick.
+4. Tap **Owner password** to set it. It stays on the phone as a hash and is required to start sharing or to pair and revoke PCs. It is not the password the PC uses. To change it, enter the current password, then the new one twice.
+5. Tap **Paired PCs**, then **Add PC**. Type a name such as Work PC or Home PC, or leave it blank to use that PC's hostname when it connects. Each PC gets its own 6-digit code and token, shown once. Pairing adds a PC and keeps the others. The same list is on the share screen, under the banner. Rename or revoke a PC from that list. Revoke drops that PC immediately. A phone that already had one token keeps it as the first paired PC until that PC connects and supplies its hostname.
+6. Turn the switch on. A banner and a notification say **This phone is shared as a drive**, and they show an address such as `http://100.x.x.x:8780/`. Several paired PCs can be connected at the same time. The list shows **Connected now** while a PC is using the share, otherwise when it was last seen.
+7. Leave the phone on the same Tailscale network, or on the same LAN, as the PC. Turn the switch off to stop sharing. The paired PCs stay in the list.
+
+The green banner is its own row under the status bar, above the New folder / Upload / Rename / Delete toolbar. **Paired PCs** sits under that banner. The file list starts below that, so the first row is visible and scrolls.
 
 Port **8780** is the WebDAV port. Drivebay's own file server stays on its usual port (8765 unless you changed it).
 
+## If the phone or the PC restarts
+
+The token hash, the folders, and the on/off switch stay on the phone. The token stays in Windows Credential Manager, and the last address stays in `%LOCALAPPDATA%\Drivebay\phone-mount.txt`. You do not enter the token again.
+
+The phone starts the share again when the app process starts, including after a reboot, and keeps it in a foreground service when you leave the app. The banner says **Reconnecting...** until Tailscale or Wi-Fi is back, then **Connected** and the current address.
+
+The PC tray checks again every 30 seconds, backing off to 5 minutes while the phone is away. It tries the saved address, then online Tailscale Android peers, then a reply on the LAN (UDP port 8781). A phone that moved to a new private address is mounted again. The tray menu and Connect my phone say **Reconnecting...** or **Connected**.
+
+A refused token still stops the retries for that PC. Tap **Paired PCs**, then **Add PC**, and paste that PC's new token once. Other paired PCs keep their own tokens. On this PC, Settings remembers a token per phone and can remount it without showing the token again. The Windows tray still keeps its token in Credential Manager, one target per paired phone.
+
 ## On Windows
 
-The tray menu has **Mount phone as drive**. Settings on this PC has the same form. Enter the address from the phone and the token. The suggested drive letter is `Z:`. `C:` is refused.
+The tray menu has **Mount phone as drive**. Settings on this PC has the same form. Enter the address from the phone and the 6-digit code or the token. The suggested drive letter is `Z:`. `C:` is refused. Drive name in File Explorer is optional. Leave it blank and Drivebay uses the name the phone sends back. Forgetting the phone clears that name.
 
 The command is:
 
@@ -45,7 +58,7 @@ From the unpacked Drivebay folder:
 bash unix/mount-phone.sh http://100.x.x.x:8780/
 ```
 
-The script asks for the token and runs `mount_webdav`. The folder is `~/DrivebayPhone`.
+On a desktop session, when `mount_webdav` is available, Drivebay runs `mount_webdav` and passes the code in the address so macOS does not ask again. The folder is `~/DrivebayPhone`. An SSH or other headless session, or a Mac without `mount_webdav`, uses rclone instead (see below). The shell script still asks for the code once when you run it in a terminal and `DRIVEBAY_PHONE_SECRET` is not set.
 
 The Mac server build is unsigned. If Gatekeeper blocks it, right-click the folder and choose Open, or run:
 
@@ -61,7 +74,13 @@ xattr -dr com.apple.quarantine /path/to/the/unpacked/folder
 bash unix/mount-phone.sh http://100.x.x.x:8780/
 ```
 
-That runs `gio mount dav://drivebay@100.x.x.x:8780/`. `gio` asks for the token as the password. If `gio` is missing, install `gvfs` (the package that provides it).
+With a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`, plus a D-Bus session) and `gio` from gvfs, Drivebay runs `gio mount` and includes the code so gio does not ask for it. A headless session, or a machine without gio, uses rclone instead.
+
+```
+rclone mount :webdav:/ ~/DrivebayPhone --webdav-url http://100.x.x.x:8780/ --webdav-user drivebay --webdav-pass "$(rclone obscure CODE)" --vfs-cache-mode writes --daemon
+```
+
+Drivebay runs that itself. It does not open a prompt. If rclone or FUSE is missing, the error says how to install them (`rclone` and `fuse3` on Linux, `rclone` and `macfuse` on macOS). Unmount uses `gio mount -u` for a gio mount, `umount` for `mount_webdav` and for rclone on macOS, and `fusermount -u` (then `umount`) for rclone on Linux. Windows still uses `net use`, and unmount is `net use Z: /delete /y`.
 
 A `davfs2` mount is the other option:
 
@@ -73,4 +92,4 @@ Use username `drivebay` and the token as the password. Prefer a user mount so th
 
 ## If the mount command is missing
 
-The PC reports the error from `net`, `mount_webdav`, or `gio` and points back to this page. Any WebDAV client can also use the same address, username, and token. The phone does not open a second protocol for that case.
+The PC reports the error from `net`, `mount_webdav`, `gio`, or `rclone` and points back to this page. Any WebDAV client can also use the same address, username, and token. The phone does not open a second protocol for that case.

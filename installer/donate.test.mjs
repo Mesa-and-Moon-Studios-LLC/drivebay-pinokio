@@ -38,6 +38,16 @@ test("the settings Donate button is a menu and stays hidden while every URL is b
   assert.match(menu, /\{link\.label\}/);
   const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
   assert.match(settings, /<DonateMenu \/>/);
+  assert.match(settings, /<SupportBanner \/>/);
+  const banner = fs.readFileSync(path.join(root, "app/src/components/support-banner.tsx"), "utf8");
+  assert.match(banner, /Enjoying Drivebay\?/);
+  assert.match(banner, /drivebay\.supportBanner\.dismissed/);
+  assert.match(banner, /Hide support banner/);
+  assert.match(banner, /Ko-fi/);
+  assert.match(banner, /PayPal/);
+  assert.match(menu, /Show the support banner again/);
+  const home = fs.readFileSync(path.join(root, "app/src/routes/index.tsx"), "utf8");
+  assert.match(home, /<SupportBanner \/>/);
 });
 
 test("FUNDING.yml and the README keep the donate placeholders commented", () => {

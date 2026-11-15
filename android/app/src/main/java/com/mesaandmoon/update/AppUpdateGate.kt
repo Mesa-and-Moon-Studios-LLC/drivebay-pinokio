@@ -1,6 +1,7 @@
 package com.mesaandmoon.update
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -19,12 +20,15 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
+import com.lordstryfe.drivebay.update.UpdateCheckResult
+import com.lordstryfe.drivebay.update.UpdateVersions
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
@@ -46,11 +50,12 @@ import java.net.URL
  * One line in the launcher activity's onCreate:
  *     AppUpdateGate.attach(this, "https://example.mesaandmoon.com/app-version.json")
  *
- * On every resume it asks Google Play whether a newer build exists. Only when Play says yes does it read
- * the version file from our server and decide (see [UpdatePolicy]):
- *  - required: full-screen "Update required" screen + Play IMMEDIATE flow. Backing out keeps the app blocked.
- *  - optional: small dismissible banner; "Update" runs the Play FLEXIBLE flow, then "Restart" installs it.
- * Sideloaded / debug installs, offline, or an unreadable file: does nothing (fail open).
+ * On launch and on every resume it asks Google Play whether a newer build exists, at most once
+ * every 12 hours (an in-progress download is still observed). When Play says yes:
+ *  - version.json below the minimum: full-screen "Update required" + Play IMMEDIATE flow.
+ *  - Play update priority 4 or 5: "Update available" dialog; Update runs the IMMEDIATE flow.
+ *  - otherwise: "Update available" banner; Update runs the FLEXIBLE flow, then Restart installs it.
+ * Sideloaded installs are handled by SideloadUpdatePrompt. Offline or an unreadable file fails open.
  */
 class AppUpdateGate private constructor(
     private val activity: ComponentActivity,
@@ -75,6 +80,7 @@ class AppUpdateGate private constructor(
     private var blockerText: TextView? = null
     private var banner: View? = null
     private var backBlock: OnBackPressedCallback? = null
+    private var immediateDialog: Dialog? = null
 
     private val installListener = InstallStateUpdatedListener { state ->
         if (state.installStatus() == InstallStatus.DOWNLOADED) showRestartBanner()
@@ -82,51 +88,88 @@ class AppUpdateGate private constructor(
 
     init {
         activity.lifecycle.addObserver(this)
+        // Launch. The following onResume is throttled if this check is still running or just finished.
+        if (enabled) check(autoPrompt = true)
     }
 
     override fun onResume(owner: LifecycleOwner) {
         if (enabled) check(autoPrompt = true)
     }
 
+    /** Settings. Ignores the 12 hour throttle. Returns false when a check is already running. */
+    fun checkNow(report: (UpdateCheckResult) -> Unit): Boolean {
+        if (!enabled || checking) return false
+        check(autoPrompt = true, force = true, report = report)
+        return true
+    }
+
     override fun onDestroy(owner: LifecycleOwner) {
+        immediateDialog?.dismiss()
+        immediateDialog = null
         if (listenerRegistered) {
             runCatching { manager.unregisterListener(installListener) }
             listenerRegistered = false
         }
     }
 
-    private fun check(autoPrompt: Boolean) {
+    private fun check(autoPrompt: Boolean, force: Boolean = false, report: ((UpdateCheckResult) -> Unit)? = null) {
         if (checking) return
+        val inFlight = prefs.getBoolean(KEY_IN_FLIGHT, false)
+        val due = UpdateVersions.shouldCheck(prefs.getLong(KEY_LAST_CHECK, 0L), System.currentTimeMillis(), force)
+        if (!due && !inFlight) return
         checking = true
         activity.lifecycleScope.launch {
             try {
-                val info = runCatching { manager.requestAppUpdateInfo() }.getOrNull() ?: return@launch
+                val info = runCatching { manager.requestAppUpdateInfo() }.getOrNull()
+                if (due || force) prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply()
+                if (info == null) {
+                    report?.invoke(UpdateCheckResult.FAILED)
+                    return@launch
+                }
+                if (activity.isDestroyed) return@launch
                 if (info.installStatus() == InstallStatus.DOWNLOADED) {
                     showRestartBanner()
+                    report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
+                    return@launch
+                }
+                if (info.installStatus() == InstallStatus.DOWNLOADING || info.installStatus() == InstallStatus.PENDING) {
+                    prefs.edit().putBoolean(KEY_IN_FLIGHT, true).apply()
+                    report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
                     return@launch
                 }
                 // An IMMEDIATE update was started earlier and the user left the app: resume it.
                 if (info.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS) {
+                    prefs.edit().putBoolean(KEY_IN_FLIGHT, true).apply()
                     showBlocker(prefs.getString(KEY_LAST_MESSAGE, null))
                     startFlow(info, AppUpdateType.IMMEDIATE)
+                    report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
                     return@launch
                 }
                 val playHasUpdate = info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE
                 if (!playHasUpdate) {
+                    prefs.edit().putBoolean(KEY_IN_FLIGHT, false).apply()
                     hideBlocker()
+                    hideBanner()
+                    report?.invoke(UpdateCheckResult.UP_TO_DATE)
                     return@launch
                 }
                 val config = withContext(Dispatchers.IO) { fetchConfig() }
-                when (
-                    UpdatePolicy.decide(
-                        installed, config, playHasUpdate,
-                        info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE),
-                        info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE),
-                    )
-                ) {
-                    UpdateAction.REQUIRED -> {
+                val policy = UpdatePolicy.decide(
+                    installed, config, playHasUpdate,
+                    info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE),
+                    info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE),
+                )
+                val flow = UpdateVersions.choosePlayFlow(
+                    updateAvailable = true,
+                    priority = info.updatePriority(),
+                    immediateAllowed = info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE),
+                    flexibleAllowed = info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE),
+                )
+                when {
+                    policy == UpdateAction.REQUIRED -> {
                         prefs.edit().putString(KEY_LAST_MESSAGE, config?.message).apply()
                         hideBanner()
+                        hideImmediateDialog()
                         showBlocker(config?.message)
                         if (autoPrompt && skipNextAutoPrompt) {
                             skipNextAutoPrompt = false // just backed out: show the screen, prompt again next time
@@ -134,13 +177,25 @@ class AppUpdateGate private constructor(
                             skipNextAutoPrompt = false
                             startFlow(info, AppUpdateType.IMMEDIATE)
                         }
+                        report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
                     }
-                    UpdateAction.OPTIONAL -> {
+                    flow == UpdateVersions.PlayFlow.IMMEDIATE -> {
                         hideBlocker()
-                        val vc = info.availableVersionCode().toLong()
-                        if (prefs.getLong(KEY_DISMISSED, -1L) != vc) showOptionalBanner(info, vc)
+                        hideBanner()
+                        showImmediatePrompt(info)
+                        report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
                     }
-                    UpdateAction.NONE -> hideBlocker()
+                    flow == UpdateVersions.PlayFlow.FLEXIBLE -> {
+                        hideBlocker()
+                        hideImmediateDialog()
+                        val vc = info.availableVersionCode().toLong()
+                        if (force || prefs.getLong(KEY_DISMISSED, -1L) != vc) showOptionalBanner(info, vc)
+                        report?.invoke(UpdateCheckResult.UPDATE_AVAILABLE)
+                    }
+                    else -> {
+                        hideBlocker()
+                        report?.invoke(UpdateCheckResult.UP_TO_DATE)
+                    }
                 }
             } finally {
                 checking = false
@@ -152,7 +207,36 @@ class AppUpdateGate private constructor(
         val ok = runCatching {
             manager.startUpdateFlowForResult(info, launcher, AppUpdateOptions.newBuilder(type).build())
         }.getOrDefault(false)
-        if (ok) pendingFlow = type
+        if (ok) {
+            pendingFlow = type
+            prefs.edit().putBoolean(KEY_IN_FLIGHT, true).apply()
+        }
+    }
+
+    private fun showImmediatePrompt(info: AppUpdateInfo) {
+        if (immediateDialog?.isShowing == true) return
+        immediateDialog = AlertDialog.Builder(activity)
+            .setTitle(UpdateVersions.PROMPT_TITLE)
+            .setMessage("A new version of ${appName()} is ready.")
+            .setPositiveButton(UpdateVersions.PROMPT_ACTION) { _, _ ->
+                ensureListener()
+                startFlow(info, AppUpdateType.IMMEDIATE)
+            }
+            .setNegativeButton("Later", null)
+            .setOnDismissListener { immediateDialog = null }
+            .show()
+    }
+
+    private fun hideImmediateDialog() {
+        immediateDialog?.dismiss()
+        immediateDialog = null
+    }
+
+    private fun ensureListener() {
+        if (!listenerRegistered) {
+            manager.registerListener(installListener)
+            listenerRegistered = true
+        }
     }
 
     private fun onFlowResult(resultCode: Int) {
@@ -161,13 +245,17 @@ class AppUpdateGate private constructor(
         if (type == AppUpdateType.IMMEDIATE) {
             // Play restarts the app itself after a successful install. Anything else = user backed out or it failed:
             // stay blocked; the next return to the app prompts again, and "Update now" retries at once.
-            if (resultCode != Activity.RESULT_OK) skipNextAutoPrompt = true
+            if (resultCode != Activity.RESULT_OK) {
+                skipNextAutoPrompt = true
+                if (blocker == null) prefs.edit().putBoolean(KEY_IN_FLIGHT, false).apply()
+            }
         } else if (type == AppUpdateType.FLEXIBLE) {
             if (resultCode == Activity.RESULT_OK) {
                 hideBanner()
             } else {
                 rememberDismiss()
                 hideBanner()
+                prefs.edit().putBoolean(KEY_IN_FLIGHT, false).apply()
             }
         }
     }
@@ -347,11 +435,8 @@ class AppUpdateGate private constructor(
     private fun showOptionalBanner(info: AppUpdateInfo, versionCode: Long) {
         if (banner != null) return
         prefs.edit().putLong(KEY_OFFERED, versionCode).apply()
-        showBanner("A new version of ${appName()} is ready.", "Update", {
-            if (!listenerRegistered) {
-                manager.registerListener(installListener)
-                listenerRegistered = true
-            }
+        showBanner(UpdateVersions.PROMPT_TITLE, UpdateVersions.PROMPT_ACTION, {
+            ensureListener()
             startFlow(info, AppUpdateType.FLEXIBLE)
             hideBanner()
         }, dismissible = true)
@@ -359,7 +444,10 @@ class AppUpdateGate private constructor(
 
     private fun showRestartBanner() {
         hideBlocker()
-        showBanner("Update downloaded.", "Restart", { manager.completeUpdate() }, dismissible = false)
+        hideImmediateDialog()
+        showBanner(UpdateVersions.RESTART_MESSAGE, UpdateVersions.RESTART_ACTION, {
+            manager.completeUpdate()
+        }, dismissible = false)
     }
 
     companion object {
@@ -367,6 +455,8 @@ class AppUpdateGate private constructor(
         private const val KEY_DISMISSED = "dismissed_version_code"
         private const val KEY_OFFERED = "offered_version_code"
         private const val KEY_LAST_MESSAGE = "last_required_message"
+        private const val KEY_LAST_CHECK = "last_check_at"
+        private const val KEY_IN_FLIGHT = "update_in_flight"
 
         /** Call once from the launcher activity's onCreate (after super.onCreate). */
         @JvmStatic

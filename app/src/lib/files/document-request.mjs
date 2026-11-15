@@ -54,6 +54,8 @@ export function isStaticAssetPath(pathname) {
 export function isSpaDocument(pathname, accept, method) {
   const verb = String(method || "GET").toUpperCase();
   if (verb !== "GET" && verb !== "HEAD") return false;
+  const path = normalizePath(pathname);
+  if (path === "/dav" || path.startsWith("/dav/") || path.startsWith("/api/link/")) return false;
   if (wantsJsonError(pathname, accept)) return false;
   if (isStaticAssetPath(pathname)) return false;
   return true;

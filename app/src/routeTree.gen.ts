@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ApiDownloadRouteImport } from './routes/api/download'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiUpdateApplyRouteImport } from './routes/api/update-apply'
 import { Route as ApiUpdateStatusRouteImport } from './routes/api/update-status'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -44,6 +45,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUpdateApplyRoute = ApiUpdateApplyRouteImport.update({
+  id: '/api/update-apply',
+  path: '/api/update-apply',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUpdateStatusRoute = ApiUpdateStatusRouteImport.update({
   id: '/api/update-status',
   path: '/api/update-status',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-apply': typeof ApiUpdateApplyRoute
   '/api/update-status': typeof ApiUpdateStatusRoute
   '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-apply': typeof ApiUpdateApplyRoute
   '/api/update-status': typeof ApiUpdateStatusRoute
   '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/api/download': typeof ApiDownloadRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/update-apply': typeof ApiUpdateApplyRoute
   '/api/update-status': typeof ApiUpdateStatusRoute
   '/api/upload': typeof ApiUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-apply'
     | '/api/update-status'
     | '/api/upload'
     | '/api/auth/$'
@@ -118,6 +128,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-apply'
     | '/api/update-status'
     | '/api/upload'
     | '/api/auth/$'
@@ -129,6 +140,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/download'
     | '/api/health'
+    | '/api/update-apply'
     | '/api/update-status'
     | '/api/upload'
     | '/api/auth/$'
@@ -141,6 +153,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   ApiDownloadRoute: typeof ApiDownloadRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiUpdateApplyRoute: typeof ApiUpdateApplyRoute
   ApiUpdateStatusRoute: typeof ApiUpdateStatusRoute
   ApiUploadRoute: typeof ApiUploadRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/update-apply': {
+      id: '/api/update-apply'
+      path: '/api/update-apply'
+      fullPath: '/api/update-apply'
+      preLoaderRoute: typeof ApiUpdateApplyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/update-status': {
       id: '/api/update-status'
       path: '/api/update-status'
@@ -221,6 +241,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   ApiDownloadRoute: ApiDownloadRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiUpdateApplyRoute: ApiUpdateApplyRoute,
   ApiUpdateStatusRoute: ApiUpdateStatusRoute,
   ApiUploadRoute: ApiUploadRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
