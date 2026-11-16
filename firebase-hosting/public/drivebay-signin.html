@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Drivebay · Mesa and Moon sign-in</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0a0a0b; color: #f1f1f3;
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: min(92vw, 420px); padding: 28px; border: 1px solid rgb(241 241 243 / .12); border-radius: 12px; background: #121214; }
+  h1 { font-size: 17px; margin: 0 0 8px; }
+  p { margin: 8px 0; color: #b9b9c2; }
+  .btn { display: block; margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #d7dbe3; color: #0a0a0b;
+         text-align: center; text-decoration: none; font-weight: 600; }
+  .btn[hidden], .alt[hidden] { display: none; }
+  .alt { display: block; margin-top: 10px; text-align: center; color: #9a9aa3; font-size: 13px; }
+  .err { color: #ff8f8f; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Signing in to Mesa and Moon…</h1>
+  <p id="msg">One moment.</p>
+  <a id="back" class="btn" hidden href="#">Return to Drivebay</a>
+  <a id="alt" class="alt" hidden href="#">Not opening? Try this link</a>
+</main>
+<script type="module">
+/*
+ * Drivebay sign-in bridge.
+ * Google and Apple only accept https return addresses, so Drivebay opens this page on the
+ * project's own Firebase domain. Firebase runs the Google or Apple sign-in through
+ * https://<project>.firebaseapp.com/__/auth/handler, then this page hands the Firebase session
+ * back to the app that asked: the Android app (intent with the Drivebay package) or the Drivebay
+ * settings page on this computer (127.0.0.1 / localhost only). Nothing is stored on this site.
+ */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, OAuthProvider, signInWithRedirect, getRedirectResult, signOut,
+  browserSessionPersistence, setPersistence,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+
+const ANDROID_PACKAGE = "com.mesaandmoon.drivebay";
+const KEY = "drivebay-signin-request";
+const $ = (id) => document.getElementById(id);
+
+function show(title, msg, isError) {
+  $("title").textContent = title;
+  $("msg").textContent = msg;
+  $("msg").className = isError ? "err" : "";
+}
+
+/** "android", or http://127.0.0.1|localhost|[::1]:<port>/settings. Everything else is refused. */
+function cleanReturn(value) {
+  const text = String(value || "").trim();
+  if (text === "android") return "android";
+  let url;
+  try { url = new URL(text); } catch { return ""; }
+  if (url.protocol !== "http:") return "";
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) return "";
+  if (url.username || url.password) return "";
+  if (url.pathname !== "/settings") return "";
+  return `${url.origin}/settings`;
+}
+
+function cleanState(value) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9-]{16,80}$/.test(text) ? text : "";
+}
+
+async function handBack(request, user) {
+  const result = await user.getIdTokenResult();
+  const expiresIn = Math.max(60, Math.min(3600, Math.round((Date.parse(result.expirationTime) - Date.now()) / 1000)));
+  const params = new URLSearchParams({
+    mesa_session: "1",
+    state: request.state,
+    id_token: result.token,
+    refresh_token: user.refreshToken,
+    expires_in: String(expiresIn),
+    email: user.email || "",
+  });
+  // The tokens now live only in the link below. This site keeps no session.
+  await signOut(getAuth()).catch(() => {});
+  sessionStorage.removeItem(KEY);
+  history.replaceState(null, "", location.pathname);
+  if (request.returnTo === "android") {
+    const intent = `intent://mesa?${params}#Intent;scheme=drivebay;package=${ANDROID_PACKAGE};end`;
+    const plain = `drivebay://mesa?${params}`;
+    show("Signed in", "Tap Return to Drivebay to finish on your phone.", false);
+    $("back").href = intent;
+    $("back").hidden = false;
+    $("alt").href = plain;
+    $("alt").hidden = false;
+    // Chrome may block an automatic jump to the app. The button always works.
+    setTimeout(() => { location.href = intent; }, 150);
+    return;
+  }
+  show("Signed in", "Returning to Drivebay settings…", false);
+  const target = `${request.returnTo}#${params}`;
+  $("back").href = target;
+  $("back").hidden = false;
+  location.replace(target);
+}
+
+async function main() {
+  let config;
+  try {
+    const res = await fetch("/__/firebase/init.json", { cache: "no-store" });
+    config = await res.json();
+  } catch {
+    show("Sign-in is not set up", "This page could not load its Firebase settings.", true);
+    return;
+  }
+  initializeApp(config);
+  const auth = getAuth();
+  await setPersistence(auth, browserSessionPersistence);
+
+  const stored = (() => {
+    try { return JSON.parse(sessionStorage.getItem(KEY) || "null"); } catch { return null; }
+  })();
+
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user && stored) {
+      await handBack(stored, result.user);
+      return;
+    }
+  } catch (err) {
+    sessionStorage.removeItem(KEY);
+    const code = String(err?.code || "");
+    const text = code.includes("account-exists-with-different-credential")
+      ? "That email already has a Mesa and Moon account with a different sign-in. Use the button you used before."
+      : "Google or Apple did not finish the sign-in. Close this page and try again from Drivebay.";
+    show("Sign-in did not finish", text, true);
+    return;
+  }
+
+  const query = new URLSearchParams(location.search);
+  const provider = query.get("provider");
+  const request = { state: cleanState(query.get("state")), returnTo: cleanReturn(query.get("return")) };
+  if ((provider !== "google" && provider !== "apple") || !request.state || !request.returnTo) {
+    show("Start from Drivebay", "Open Drivebay and tap Sign in with Google or Sign in with Apple.", true);
+    return;
+  }
+  sessionStorage.setItem(KEY, JSON.stringify(request));
+  let authProvider;
+  if (provider === "google") {
+    authProvider = new GoogleAuthProvider();
+    authProvider.setCustomParameters({ prompt: "select_account" });
+  } else {
+    authProvider = new OAuthProvider("apple.com");
+    authProvider.addScope("email");
+    authProvider.addScope("name");
+  }
+  show(provider === "google" ? "Opening Google…" : "Opening Apple…", "You will come back here after you sign in.", false);
+  await signInWithRedirect(auth, authProvider);
+}
+
+main().catch(() => show("Sign-in did not finish", "Close this page and try again from Drivebay.", true));
+</script>
+</body>
+</html>

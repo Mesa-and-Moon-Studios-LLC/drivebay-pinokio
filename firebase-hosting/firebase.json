@@ -1,0 +1,18 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*"],
+    "cleanUrls": false,
+    "headers": [
+      {
+        "source": "/drivebay-signin.html",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-store" },
+          { "key": "Referrer-Policy", "value": "no-referrer" },
+          { "key": "X-Content-Type-Options", "value": "nosniff" },
+          { "key": "X-Frame-Options", "value": "DENY" }
+        ]
+      }
+    ]
+  }
+}

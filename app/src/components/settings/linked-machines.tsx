@@ -16,18 +16,20 @@ import {
   signOutMesa,
 } from "@/lib/files/linked-machines.functions";
 import {
-  appleAuthorizeUrl,
+  bridgeStartUrl,
   cleanEmail,
   emailAuthBody,
   emailAuthError,
   emailAuthUrl,
   emailSession,
-  googleAuthorizeUrl,
-  idpPostBody,
   passwordOk,
   providerConflictMessage,
-  readIdTokenFragment,
+  readSessionFragment,
+  signinBridgeUrl,
 } from "@/lib/files/mesa-signin.mjs";
+
+const NONCE_KEY = "mesa-nonce";
+const SIGNED_IN_KEY = "mesa-signed-in-at";
 
 type ShareRow = { path: string; access: "ro" | "rw"; name?: string };
 type MachineRow = {
@@ -51,6 +53,8 @@ type Status = {
     googleClientId?: string;
     appleClientId?: string;
     authEmulator?: string;
+    authDomain?: string;
+    signinBridge?: string;
   };
   shares: { hidden: boolean; directInternet: boolean; publicHost: string; folders: ShareRow[] };
   pairs: { pending: { id: string; name: string }[] };
@@ -99,61 +103,59 @@ export function LinkedMachines() {
   }
 
   useEffect(() => {
-    void refresh().catch(() => {});
-    const parsed = readIdTokenFragment(window.location.hash);
-    if (parsed && window.opener) {
-      window.opener.postMessage({ type: "mesa-id-token", ...parsed }, window.location.origin);
-      window.close();
+    // Google and Apple come back through the sign-in page on the Firebase domain,
+    // which lands here with the session in the fragment.
+    const parsed = readSessionFragment(window.location.hash);
+    if (parsed) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      const expected = window.localStorage.getItem(NONCE_KEY);
+      window.localStorage.removeItem(NONCE_KEY);
+      if (!expected || parsed.state !== expected) {
+        toast.error("That Mesa and Moon sign-in did not start on this machine.");
+      } else {
+        void finishProviderSignIn(parsed);
+      }
     }
+    void refresh().catch(() => {});
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      const data = event.data as { type?: string; idToken?: string; provider?: string; nonce?: string };
-      if (data?.type !== "mesa-id-token" || !data.idToken || !data.provider) return;
-      const expected = sessionStorage.getItem("mesa-nonce");
-      if (!expected || data.nonce !== expected) return;
-      sessionStorage.removeItem("mesa-nonce");
-      void completeSignIn(data.provider === "apple" ? "apple.com" : "google.com", data.idToken);
+      if ((event.data as { type?: string })?.type !== "mesa-signed-in") return;
+      void refresh().catch(() => {});
+    }
+    function onStorage(event: StorageEvent) {
+      if (event.key === SIGNED_IN_KEY) void refresh().catch(() => {});
     }
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-    // The sign-in popup lands on this page once.
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("storage", onStorage);
+    };
+    // The sign-in window lands on this page once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function completeSignIn(providerId: string, idToken: string) {
-    if (!status?.config.apiKey) {
-      toast.error("Mesa and Moon sign-in is not configured on this machine.");
-      return;
-    }
+  async function finishProviderSignIn(session: { idToken: string; refreshToken: string; expiresIn: number }) {
     setBusy(true);
     try {
-      const res = await fetch(
-        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(status.config.apiKey)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            postBody: idpPostBody(providerId, idToken),
-            requestUri: window.location.origin,
-            returnSecureToken: true,
-            returnIdpCredential: true,
-          }),
-        },
-      );
-      const body = await res.json();
-      if (!res.ok || !body.idToken || !body.refreshToken) {
-        toast.error("Mesa and Moon did not accept that sign-in.");
+      const saved = await saveMesaSession({
+        data: { idToken: session.idToken, refreshToken: session.refreshToken, expiresIn: session.expiresIn },
+      });
+      if (!saved.ok) {
+        toast.error(saved.message);
         return;
       }
-      const saved = await saveMesaSession({
-        data: {
-          idToken: String(body.idToken),
-          refreshToken: String(body.refreshToken),
-          expiresIn: Number(body.expiresIn) || 3600,
-        },
-      });
-      if (!saved.ok) toast.error(saved.message);
-      else toast.success("Signed in to Mesa and Moon");
+      toast.success("Signed in to Mesa and Moon");
+      window.localStorage.setItem(SIGNED_IN_KEY, String(Date.now()));
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: "mesa-signed-in" }, window.location.origin);
+          window.close();
+          return;
+        } catch {
+          // The sign-in window lost its opener. Stay here, signed in.
+        }
+      }
       await refresh();
     } catch {
       toast.error("Mesa and Moon did not accept that sign-in.");
@@ -229,19 +231,18 @@ export function LinkedMachines() {
       toast.error("Add mesa-firebase.json on this machine. Drivebay keeps working without it.");
       return;
     }
-    const clientId = provider === "google" ? status.config.googleClientId : status.config.appleClientId;
-    if (!clientId) {
+    const enabled = provider === "google" ? status.config.google : status.config.apple;
+    const bridge = signinBridgeUrl(status.config);
+    if (!enabled || !bridge) {
       toast.error(provider === "google" ? "Google sign-in is not configured." : "Apple sign-in is not configured.");
       return;
     }
     const nonce = crypto.randomUUID();
-    sessionStorage.setItem("mesa-nonce", nonce);
-    const redirectUri = `${window.location.origin}/settings`;
-    const url =
-      provider === "google"
-        ? googleAuthorizeUrl({ clientId, redirectUri, nonce })
-        : appleAuthorizeUrl({ clientId, redirectUri, nonce });
-    window.open(url, "mesa-sign-in", "width=480,height=720");
+    // localStorage, so the sign-in window and this tab both see it.
+    window.localStorage.setItem(NONCE_KEY, nonce);
+    const url = bridgeStartUrl({ bridge, provider, state: nonce, returnTo: `${window.location.origin}/settings` });
+    const popup = window.open(url, "mesa-sign-in", "width=480,height=720");
+    if (!popup) window.location.assign(url);
   }
 
   async function saveShareForm() {

@@ -28,7 +28,6 @@ import kotlin.concurrent.thread
  * Pair tokens stay in the local vault. The cloud gets connection info only.
  */
 object MesaPanel {
-    private const val REDIRECT = "drivebay://mesa"
     private const val RISK =
         "Direct internet opens this port on the public network. Anyone who can reach that port can try to connect. Your files stay on this machine and do not pass through Mesa and Moon servers. This is less safe than Tailscale. Turn it on only if you forwarded the port yourself."
 
@@ -60,27 +59,19 @@ object MesaPanel {
 
     fun consume(activity: Activity, intent: Intent?) {
         val data = intent?.data?.toString() ?: return
-        val parsed = MesaCloud.readFragment(data) ?: return
-        val expected = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE).getString("nonce", "")
-        if (expected.isNullOrBlank() || parsed.second != expected) {
+        val session = MesaCloud.readBridgeSession(data) ?: return
+        val prefs = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE)
+        val expected = prefs.getString("nonce", "")
+        if (expected.isNullOrBlank() || session.state != expected) {
             toast(activity, "That Mesa and Moon sign-in did not match this phone.")
             return
         }
-        val config = loadConfig(activity) ?: return
-        val provider = if (parsed.first == "apple") "apple.com" else "google.com"
-        thread(name = "mesa-signin") {
-            val session = exchange(config, provider, parsed.third)
-            activity.runOnUiThread {
-                if (session == null) {
-                    toast(activity, "Mesa and Moon did not accept that sign-in.")
-                } else {
-                    saveSession(activity, session)
-                    register(activity)
-                    refresh(activity, activity.findViewById(R.id.mesaStatus))
-                    toast(activity, "Signed in to Mesa and Moon")
-                }
-            }
-        }
+        prefs.edit().remove("nonce").apply()
+        // The sign-in page already ran the Firebase sign-in. Keep the Firebase session it handed back.
+        saveSession(activity, Triple(session.idToken, session.email, session.refreshToken))
+        register(activity)
+        refresh(activity, activity.findViewById(R.id.mesaStatus))
+        toast(activity, "Signed in to Mesa and Moon")
     }
 
     private fun start(activity: Activity, provider: String) {
@@ -90,17 +81,14 @@ object MesaPanel {
             return
         }
         val clientId = if (provider == "google") config.googleClientId else config.appleClientId
-        if (clientId.isBlank()) {
+        val bridge = MesaCloud.signinBridgeUrl(config)
+        if (clientId.isBlank() || bridge.isBlank()) {
             toast(activity, if (provider == "google") "Google sign-in is not configured." else "Apple sign-in is not configured.")
             return
         }
         val nonce = UUID.randomUUID().toString()
         activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE).edit().putString("nonce", nonce).apply()
-        val url = if (provider == "google") {
-            MesaCloud.googleAuthorizeUrl(clientId, REDIRECT, nonce)
-        } else {
-            MesaCloud.appleAuthorizeUrl(clientId, REDIRECT, nonce)
-        }
+        val url = MesaCloud.bridgeStartUrl(bridge, provider, nonce)
         activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
@@ -399,20 +387,6 @@ object MesaPanel {
             }
         }
         return out
-    }
-
-    private fun exchange(config: MesaCloud.Config, provider: String, idToken: String): Triple<String, String, String>? {
-        val body = MesaCloud.idpBody(provider, idToken, REDIRECT)
-        val text = post(
-            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + config.apiKey,
-            body,
-            null,
-        ) ?: return null
-        val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
-        val next = json.optString("idToken")
-        val refresh = json.optString("refreshToken")
-        if (next.isBlank() || refresh.isBlank()) return null
-        return Triple(next, json.optString("email"), refresh)
     }
 
     private fun fetchMachines(config: MesaCloud.Config, idToken: String, self: String): JSONArray? {

@@ -2,6 +2,14 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.37.2
+- Google and Apple sign-in go through an https page on the Firebase project's own domain (`https://<authDomain>/drivebay-signin.html`), which runs Firebase's handler at `/__/auth/handler`. Android no longer sends Google a `drivebay://` return address (Google answered Error 400 invalid_request), and the Mac no longer gives Apple a plain http return address. The page hands the session back to the Android app or to Settings on this computer only. Email sign-in is unchanged.
+- The file browser has a menu bar with File, Edit, View and Organize dropdowns. The main bar and the menu bar stay pinned at the top on phones and computers. Only the file list scrolls.
+- Long press a file or folder on a phone, or right-click it on a computer, for Open, Select, Cut, Copy, Paste, Rename, Delete (it asks first) and Send to. Ctrl or Cmd click selects more than one. Ctrl X, Ctrl C and Ctrl V work too.
+- After Cut or Copy, a paste bar stays under the menu bar while you open other folders. It shows what is waiting, such as 2 items cut, with Paste here and Cancel. It goes away after you paste or cancel. Paste never overwrites: a name that is taken gets " (copy)". Cut follows the rename and move switches in Settings. Copy follows the upload switches.
+- Send to opens the Android share sheet in the app, the system share sheet in browsers that have one, and otherwise downloads the file.
+- Android 3.37.2 (versionCode 33702). The Windows installer, the macOS disk image, and the Linux archive report 3.37.2.
+
 ## 3.37.1
 - Settings can sign in with email and a password, next to Continue with Google and Continue with Apple. Create account, sign in, sign out, and the password reset email use Firebase email/password. The password is not stored. Drivebay stores the Firebase ID token and refresh token the same way it stores Google and Apple. An email that already belongs to Google or Apple is not given a second user and is not given a password from this screen. Drivebay tells you to use that button, so it stays one Mesa and Moon account and the same machine list.
 - A mounted machine or phone is named from that computer's display name, such as Aaron's Mac Mini. The name stays short. A second machine with the same name gets a number. Windows still chooses a drive letter for net use. Drivebay does not show the letter. Explorer shows the computer name in `_LabelFromReg`. macOS uses that name with `mount_webdav -v` or rclone `--volname`, in `~/Drivebay/<name>`. Linux gio shows the WebDAV display name, which is the computer name. rclone uses the same folder name.

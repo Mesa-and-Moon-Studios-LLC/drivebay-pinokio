@@ -101,6 +101,10 @@
     <string name="upload_started">Uploading to the PC</string>
     <string name="upload_done">Uploaded to the PC</string>
     <string name="upload_failed">The upload did not finish</string>
+    <string name="share_title">Send to</string>
+    <string name="share_preparing">Getting the files ready to send…</string>
+    <string name="share_failed">Those files could not be sent</string>
+    <string name="share_too_large">That is over 1 GB. Download it first, then share it from Downloads.</string>
     <string name="phone_share_err_folder">Drivebay can\'t open the chosen folders anymore. Choose them again.</string>
     <string name="phone_share_err_port">Port %1$d is already in use on this phone. Phone sharing is off.</string>
     <string name="phone_share_err_permission">Android blocked phone sharing. Open Drivebay and try again.</string>

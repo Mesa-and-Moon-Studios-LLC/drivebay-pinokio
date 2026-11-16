@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isSameOrInside, uniquePasteName } from "./clipboard.mjs";
 import type { DirListing, Drive, FileCategory, FsEntry, FsKind } from "./types";
 
 const TEXT_EXTS = new Set([
@@ -493,4 +494,47 @@ export async function openFileForRead(filePath: string) {
     name: path.basename(resolved),
     stream: createReadStream(resolved),
   };
+}
+
+/**
+ * Paste cut or copied entries into `destPath`.
+ * Cut moves (rename, or copy then remove across disks). Copy never overwrites: names get " (copy)".
+ */
+export async function pasteEntries(
+  sources: string[],
+  destPath: string,
+  mode: "cut" | "copy",
+): Promise<{ pasted: string[] }> {
+  const dest = resolveSafePath(destPath);
+  const destStat = await fs.stat(dest);
+  if (!destStat.isDirectory()) throw new Error("Paste into a folder");
+  const taken = new Set(await fs.readdir(dest));
+  const pasted: string[] = [];
+  for (const raw of sources) {
+    const from = resolveSafePath(raw);
+    const st = await fs.lstat(from);
+    if (st.isDirectory() && isSameOrInside(dest, from, path.sep)) {
+      throw new Error(`Cannot paste “${path.basename(from)}” into itself`);
+    }
+    if (mode === "cut" && path.dirname(from) === dest) {
+      pasted.push(from);
+      continue;
+    }
+    const name = uniquePasteName(path.basename(from), taken);
+    taken.add(name);
+    const target = path.join(dest, name);
+    if (mode === "cut") {
+      try {
+        await fs.rename(from, target);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+        await fs.cp(from, target, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+        await fs.rm(from, { recursive: true, force: false });
+      }
+    } else {
+      await fs.cp(from, target, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+    }
+    pasted.push(target);
+  }
+  return { pasted };
 }

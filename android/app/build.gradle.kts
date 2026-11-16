@@ -11,8 +11,8 @@ android {
         applicationId = "com.mesaandmoon.drivebay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33701
-        versionName = "3.37.1"
+        versionCode = 33702
+        versionName = "3.37.2"
     }
 
     buildFeatures {

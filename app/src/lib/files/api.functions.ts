@@ -420,3 +420,37 @@ export const decideApiApproval = createServerFn({ method: "POST" })
       Date.now(),
     );
   });
+
+export const pasteEntries = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      sources: z.array(z.string().min(1)).min(1).max(500),
+      dest: z.string().min(1),
+      mode: z.enum(["cut", "copy"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const fs = await import("./fs.server");
+    const lock = await import("./server-lock.server");
+    const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
+    if (data.mode === "cut") {
+      // Moving is a rename across folders, so it follows the rename and move switches.
+      lock.assertPolicy("allowRename");
+      remote.assertRemoteAction("move");
+    } else {
+      // A copy writes new files, so it follows the upload switches.
+      lock.assertPolicy("allowUpload");
+      remote.assertRemoteAction("upload");
+    }
+    const dest = fs.resolveSafePath(data.dest);
+    lock.assertPathAllowed(dest);
+    await access.assertPathAllowedByDriveAccess(dest);
+    for (const source of data.sources) {
+      const resolved = fs.resolveSafePath(source);
+      lock.assertPathAllowed(resolved);
+      await access.assertPathAllowedByDriveAccess(resolved);
+    }
+    return fs.pasteEntries(data.sources, data.dest, data.mode);
+  });

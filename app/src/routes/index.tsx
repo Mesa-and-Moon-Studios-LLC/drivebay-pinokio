@@ -28,10 +28,14 @@ function HomePage() {
   if (!App) {
     return <div className="min-h-dvh bg-bg" />;
   }
+  // One screen-high column: the banner and the file browser share it, so the page itself never
+  // scrolls and the browser's top bars stay pinned.
   return (
-    <>
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
       <SupportBanner />
-      <App />
-    </>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <App />
+      </div>
+    </div>
   );
 }

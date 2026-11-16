@@ -1,30 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  ArrowDownAZ,
   ArrowUp,
-  ArrowUpDown,
+  CheckSquare,
+  ChevronDown,
   ChevronRight,
-  Clock3,
+  ClipboardPaste,
   Columns2,
+  Copy,
   Download,
-  Eye,
-  EyeOff,
+  ExternalLink,
+  FolderOpen,
   FolderPlus,
   HardDrive,
   Home,
-  LayoutGrid,
-  List as ListIcon,
+  Link2,
   Loader2,
   LogOut,
   Menu,
   Pencil,
   RefreshCw,
+  Scissors,
   Search,
+  Send,
   Settings,
+  Share2,
   Trash2,
   Upload,
-  Layers,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,6 +41,7 @@ import {
   getPreview,
   listDrives,
   listEntries,
+  pasteEntries,
   readFileBase64,
   renameEntry,
   searchFiles,
@@ -46,6 +49,7 @@ import {
 } from "@/lib/files/api.functions";
 import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { snapshotUploadFiles } from "@/lib/files/upload-files.mjs";
+import { clipboardLabel, pasteProblem, type Clip } from "@/lib/files/clipboard.mjs";
 import { defaultStartPath, formatBytes, formatWhen, splitPath } from "@/lib/files/format";
 import type { DirListing, Drive, FileCategory, FsEntry, PreviewPayload, SearchHit } from "@/lib/files/types";
 import { FileGlyph } from "@/components/file-icon";
@@ -57,6 +61,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -149,6 +168,94 @@ function errMessage(err: unknown): string {
   return "Something went wrong";
 }
 
+const CLIP_KEY = "drivebay-clipboard";
+
+function readStoredClip(): Clip | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(CLIP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Clip;
+    return parsed && Array.isArray(parsed.items) && parsed.items.length ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function pathSep(p: string): string {
+  return /^[a-z]:[\\/]/i.test(p) || p.startsWith("\\\\") ? "\\" : "/";
+}
+
+type NativeBridge = {
+  download?: (url: string, fileName: string, size: string) => void;
+  shareFiles?: (json: string) => void;
+};
+
+function nativeBridge(): NativeBridge | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as Window & { DrivebayNative?: NativeBridge }).DrivebayNative;
+}
+
+function downloadUrl(path: string): string {
+  return new URL(`/api/download?path=${encodeURIComponent(path)}`, window.location.href).toString();
+}
+
+/** Long press on touch screens, right click everywhere. */
+function useEntryMenu(onMenu: (entry: FsEntry, x: number, y: number) => void) {
+  const timer = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const clear = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
+  return {
+    /** True once after a long press, so the tap that ends it does not also open the item. */
+    consumeLongPress() {
+      const was = fired.current;
+      fired.current = false;
+      return was;
+    },
+    bind(entry: FsEntry) {
+      return {
+        onContextMenu(e: React.MouseEvent) {
+          e.preventDefault();
+          // A touch hold can raise contextmenu as well as our timer. Open once and swallow the tap.
+          const holding = timer.current !== null;
+          clear();
+          if (holding) fired.current = true;
+          else if (fired.current) return;
+          onMenu(entry, e.clientX, e.clientY);
+        },
+        onTouchStart(e: React.TouchEvent) {
+          const t = e.touches[0];
+          if (!t) return;
+          fired.current = false;
+          start.current = { x: t.clientX, y: t.clientY };
+          clear();
+          timer.current = window.setTimeout(() => {
+            fired.current = true;
+            if (start.current) onMenu(entry, start.current.x, start.current.y);
+          }, 480);
+        },
+        onTouchMove(e: React.TouchEvent) {
+          const t = e.touches[0];
+          if (!t || !start.current) return;
+          if (Math.abs(t.clientX - start.current.x) > 10 || Math.abs(t.clientY - start.current.y) > 10) clear();
+        },
+        onTouchEnd() {
+          clear();
+        },
+        onTouchCancel() {
+          clear();
+        },
+      };
+    },
+  };
+}
+
+type EntryMenuApi = ReturnType<typeof useEntryMenu>;
+
 export function FileBrowserApp() {
   const navigate = useNavigate();
   const { user, isPending } = useCurrentUserState();
@@ -180,6 +287,14 @@ export function FileBrowserApp() {
   const [pathEdit, setPathEdit] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [marked, setMarked] = useState<Map<string, FsEntry>>(() => new Map());
+  const [clip, setClipState] = useState<Clip | null>(() => readStoredClip());
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number; entry: FsEntry } | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<FsEntry[]>([]);
+  const entryMenu = useEntryMenu((entry, x, y) => {
+    setSelected(entry.path);
+    setMenuAt({ entry, x, y });
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewUrlRef = useRef<string | null>(null);
   const [serverLock, setServerLock] = useState<{
@@ -324,6 +439,14 @@ export function FileBrowserApp() {
   useEffect(() => {
     const w = window as Window & { __drivebayAndroidBack?: () => boolean };
     w.__drivebayAndroidBack = () => {
+      if (menuAt) {
+        setMenuAt(null);
+        return true;
+      }
+      if (marked.size) {
+        setMarked(new Map());
+        return true;
+      }
       if (renameOpen) {
         setRenameOpen(false);
         return true;
@@ -364,6 +487,8 @@ export function FileBrowserApp() {
       delete uploadWindow.__drivebayUploadFinished;
     };
   }, [
+    menuAt,
+    marked,
     renameOpen,
     deleteOpen,
     folderOpen,
@@ -459,37 +584,14 @@ export function FileBrowserApp() {
 
   async function downloadSelected() {
     if (!selectedEntry || selectedEntry.kind === "dir") return;
-    const native = (
-      window as Window & {
-        DrivebayNative?: { download: (url: string, fileName: string, size: string) => void };
-      }
-    ).DrivebayNative;
-    if (native?.download) {
-      const absolute = new URL(
-        `/api/download?path=${encodeURIComponent(selectedEntry.path)}`,
-        window.location.href,
-      ).toString();
-      native.download(absolute, selectedEntry.name, String(selectedEntry.size ?? 0));
+    if (nativeBridge()?.download) {
+      void downloadEntry(selectedEntry);
       return;
     }
     setBusy(true);
     try {
       // Stream large files via /api/download (no base64 size ceiling).
-      const url = `/api/download?path=${encodeURIComponent(selectedEntry.path)}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Download failed (${res.status})`);
-      }
-      const blob = await res.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = selectedEntry.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objectUrl);
+      await downloadEntry(selectedEntry);
     } catch (err) {
       toast.error(errMessage(err));
     } finally {
@@ -572,15 +674,21 @@ export function FileBrowserApp() {
   }
 
   async function handleDelete() {
-    if (!selectedEntry) return;
+    const targets = deleteTargets.length ? deleteTargets : selectedEntry ? [selectedEntry] : [];
+    if (!targets.length) return;
     if (serverLock && !serverLock.allowDelete) {
       toast.error("Delete is locked on the server.");
       return;
     }
     setBusy(true);
     try {
-      await deleteEntry({ data: { path: selectedEntry.path } });
+      for (const target of targets) {
+        await deleteEntry({ data: { path: target.path } });
+      }
       setDeleteOpen(false);
+      setDeleteTargets([]);
+      setMarked(new Map());
+      if (clip && clip.items.some((item) => targets.some((t) => t.path === item.path))) setClip(null);
       await openPath(listing?.path ?? path);
     } catch (err) {
       toast.error(errMessage(err));
@@ -589,8 +697,204 @@ export function FileBrowserApp() {
     }
   }
 
+  function startUpload() {
+    const native = (window as Window & { DrivebayNative?: { pickUpload?: (parent: string) => void } }).DrivebayNative;
+    const parent = listing?.path;
+    if (native?.pickUpload && parent) {
+      native.pickUpload(parent);
+      return;
+    }
+    fileInputRef.current?.click();
+  }
+
+  function setClip(next: Clip | null) {
+    setClipState(next);
+    try {
+      if (next) window.sessionStorage.setItem(CLIP_KEY, JSON.stringify(next));
+      else window.sessionStorage.removeItem(CLIP_KEY);
+    } catch {
+      // Private mode. The bar still works for this page.
+    }
+  }
+
+  /** The marked items when the entry is one of them, otherwise just the entry. */
+  function targetsFor(entry: FsEntry | null): FsEntry[] {
+    if (entry && marked.has(entry.path)) return Array.from(marked.values());
+    if (entry) return [entry];
+    if (marked.size) return Array.from(marked.values());
+    return selectedEntry ? [selectedEntry] : [];
+  }
+
+  function toggleMark(entry: FsEntry) {
+    setMarked((prev) => {
+      const next = new Map(prev);
+      if (next.has(entry.path)) next.delete(entry.path);
+      else next.set(entry.path, entry);
+      return next;
+    });
+  }
+
+  function putOnClipboard(mode: "cut" | "copy", entries: FsEntry[]) {
+    if (!entries.length) return;
+    if (mode === "cut" && serverLock && !serverLock.allowMove) {
+      toast.error("Moving files is turned off in Settings on the PC that runs Drivebay.");
+      return;
+    }
+    if (mode === "copy" && serverLock && !serverLock.allowUpload) {
+      toast.error("Copying files is turned off in Settings on the PC that runs Drivebay.");
+      return;
+    }
+    const next: Clip = {
+      mode,
+      items: entries.map((e) => ({ path: e.path, name: e.name, kind: e.kind })),
+      from: listing?.path ?? path,
+    };
+    setClip(next);
+    setMarked(new Map());
+    toast.message(`${clipboardLabel(next)}. Open a folder and tap Paste here.`);
+  }
+
+  async function pasteInto(dest: string) {
+    if (!clip) return;
+    const problem = pasteProblem(clip, dest, pathSep(dest));
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await pasteEntries({
+        data: { sources: clip.items.map((i) => i.path), dest, mode: clip.mode },
+      });
+      const n = result.pasted.length;
+      toast.success(`${clip.mode === "copy" ? "Copied" : "Moved"} ${n} ${n === 1 ? "item" : "items"}`);
+      setClip(null);
+      const current = listing?.path ?? path;
+      await openPath(current, { select: dest === current ? result.pasted[0] ?? null : null });
+    } catch (err) {
+      toast.error(errMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadEntry(entry: FsEntry) {
+    if (entry.kind === "dir") return;
+    const native = nativeBridge();
+    if (native?.download) {
+      native.download(downloadUrl(entry.path), entry.name, String(entry.size ?? 0));
+      return;
+    }
+    const res = await fetch(`/api/download?path=${encodeURIComponent(entry.path)}`, { credentials: "include" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `Download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = entry.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  const canShareFiles =
+    Boolean(nativeBridge()?.shareFiles) ||
+    (typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof navigator.canShare === "function");
+
+  /** Send to: the Android share sheet, the system share sheet in the browser, or a download. */
+  async function sendTo(entries: FsEntry[]) {
+    const files = entries.filter((e) => e.kind !== "dir");
+    if (!files.length) {
+      toast.error("Send to works on files. Open the folder and pick the files inside.");
+      return;
+    }
+    if (files.length < entries.length) toast.message("Folders were skipped. Send to shares files.");
+    const native = nativeBridge();
+    if (native?.shareFiles) {
+      native.shareFiles(JSON.stringify(files.map((f) => ({ url: downloadUrl(f.path), name: f.name, size: f.size ?? 0 }))));
+      return;
+    }
+    if (typeof navigator.share === "function" && typeof navigator.canShare === "function") {
+      const total = files.reduce((sum, f) => sum + (f.size ?? 0), 0);
+      if (total > 256 * 1024 * 1024) {
+        toast.error("That is too large to share from the browser. Use Download instead.");
+        return;
+      }
+      setBusy(true);
+      try {
+        const shared: File[] = [];
+        for (const f of files) {
+          const res = await fetch(`/api/download?path=${encodeURIComponent(f.path)}`, { credentials: "include" });
+          if (!res.ok) throw new Error(`Could not read ${f.name}`);
+          const blob = await res.blob();
+          shared.push(new File([blob], f.name, { type: blob.type || "application/octet-stream" }));
+        }
+        if (!navigator.canShare({ files: shared })) {
+          toast.message("This browser cannot share these files. Downloading instead.");
+          for (const f of files) await downloadEntry(f);
+          return;
+        }
+        await navigator.share({ files: shared, title: files.length === 1 ? files[0]?.name : `${files.length} files` });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        toast.error(errMessage(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    toast.message("This browser has no share sheet. Downloading instead.");
+    try {
+      for (const f of files) await downloadEntry(f);
+    } catch (err) {
+      toast.error(errMessage(err));
+    }
+  }
+
+  async function copyPaths(entries: FsEntry[]) {
+    const text = entries.map((e) => e.path).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(entries.length === 1 ? "Path copied" : "Paths copied");
+    } catch {
+      toast.error("The clipboard is not available here.");
+    }
+  }
+
+  function askRename(entry: FsEntry) {
+    setSelected(entry.path);
+    setRenameValue(entry.name);
+    setRenameOpen(true);
+  }
+
+  function askDelete(entries: FsEntry[]) {
+    if (!entries.length) return;
+    setDeleteTargets(entries);
+    setDeleteOpen(true);
+  }
+
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === "x" && (selectedEntry || marked.size)) {
+      e.preventDefault();
+      putOnClipboard("cut", targetsFor(selectedEntry));
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "c" && (selectedEntry || marked.size)) {
+      e.preventDefault();
+      putOnClipboard("copy", targetsFor(selectedEntry));
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "v" && clip && listing) {
+      e.preventDefault();
+      void pasteInto(listing.path);
+      return;
+    }
     if (e.key === "Backspace" && listing?.parent) {
       e.preventDefault();
       void openPath(listing.parent);
@@ -652,8 +956,47 @@ export function FileBrowserApp() {
     />
   );
 
+  const current = listing?.path ?? path;
+  const selectionTargets = targetsFor(selectedEntry);
+  const hasTargets = selectionTargets.length > 0;
+  const fileTargets = selectionTargets.filter((e) => e.kind !== "dir");
+  const allowMove = serverLock?.allowMove !== false;
+  const allowCopy = serverLock?.allowUpload !== false;
+  const pasteBlocked = clip && current ? pasteProblem(clip, current, pathSep(current)) : "Nothing to paste";
+  const menuTargets = menuAt ? targetsFor(menuAt.entry) : [];
+  const narrow = typeof window !== "undefined" && window.innerWidth < 640;
+
+  function onEntryClick(entry: FsEntry, e: React.MouseEvent, openOnTap: boolean) {
+    if (entryMenu.consumeLongPress()) {
+      e.preventDefault();
+      return;
+    }
+    if (e.metaKey || e.ctrlKey) {
+      toggleMark(entry);
+      setSelected(entry.path);
+      return;
+    }
+    if (marked.size) {
+      toggleMark(entry);
+      return;
+    }
+    if (openOnTap) void activate(entry);
+    else void inspect(entry);
+  }
+
+  const listProps = {
+    selected,
+    marked,
+    clipPaths: clip?.mode === "cut" ? new Set(clip.items.map((i) => i.path)) : undefined,
+    entryMenu,
+    onClickEntry: onEntryClick,
+    onOpen: (e: FsEntry) => void activate(e),
+  };
+
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-bg text-fg" onKeyDown={onKeyDown} tabIndex={0}>
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg text-fg" onKeyDown={onKeyDown} tabIndex={0}>
+      {/* Main bar, menu bar and paste bar stay pinned. Only the file list below them scrolls. */}
+      <div className="sticky top-0 z-30 shrink-0 bg-bg" data-testid="top-bars">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         <Button
           variant="ghost"
@@ -768,38 +1111,6 @@ export function FileBrowserApp() {
             <Search />
           </IconBtn>
         </span>
-        <div className="flex items-center gap-0.5">
-          <IconBtn label={showHidden ? "Hide hidden" : "Show hidden"} onClick={() => setShowHidden((v) => !v)}>
-            {showHidden ? <Eye /> : <EyeOff />}
-          </IconBtn>
-          <IconBtn label="List" onClick={() => setView("list")}>
-            <ListIcon className={view === "list" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn label="Grid" onClick={() => setView("grid")}>
-            <LayoutGrid className={view === "grid" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn
-            label="Sort by name"
-            onClick={() => setSortMode("name")}
-          >
-            <ArrowDownAZ className={sortMode === "name" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn label="Sort by type" onClick={() => setSortMode("type")}>
-            <ArrowUpDown className={sortMode === "type" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn label="Sort by size" onClick={() => setSortMode("size")}>
-            <HardDrive className={sortMode === "size" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn label="Sort by date" onClick={() => setSortMode("date")}>
-            <Clock3 className={sortMode === "date" ? "text-fg" : undefined} />
-          </IconBtn>
-          <IconBtn
-            label={groupByType ? "Ungroup" : "Group by type"}
-            onClick={() => setGroupByType((v) => !v)}
-          >
-            <Layers className={groupByType ? "text-fg" : undefined} />
-          </IconBtn>
-        </div>
         <div className="hidden items-center gap-2 pl-1 md:flex">
           <span className="max-w-28 truncate text-xs text-fg-muted">{ownerName}</span>
           {showAppSettings ? (
@@ -817,6 +1128,174 @@ export function FileBrowserApp() {
           </Button>
         </div>
       </header>
+
+      <nav
+        className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border px-2 md:px-3"
+        aria-label="Menu bar"
+        data-testid="menu-bar"
+      >
+        <DropdownMenu>
+          <MenuBarTrigger label="File" />
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem disabled={serverLock?.allowCreateFolder === false} onSelect={() => setFolderOpen(true)}>
+              <FolderPlus />
+              New folder
+            </DropdownMenuItem>
+            {serverLock?.allowUpload ? (
+              <DropdownMenuItem onSelect={() => startUpload()}>
+                <Upload />
+                Upload
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!selectedEntry || selectedEntry.kind === "dir"}
+              onSelect={() => void downloadSelected()}
+            >
+              <Download />
+              Download
+            </DropdownMenuItem>
+            <SendToSub
+              disabled={fileTargets.length === 0}
+              canShare={canShareFiles}
+              onShare={() => void sendTo(selectionTargets)}
+              onDownload={() => void Promise.all(fileTargets.map((f) => downloadEntry(f))).catch((err) => toast.error(errMessage(err)))}
+              onCopyPath={() => void copyPaths(selectionTargets)}
+            />
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => listing && void openPath(listing.path)}>
+              <RefreshCw />
+              Refresh
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <MenuBarTrigger label="Edit" />
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem disabled={!hasTargets || !allowMove} onSelect={() => putOnClipboard("cut", selectionTargets)}>
+              <Scissors />
+              Cut
+              <DropdownMenuShortcut>Ctrl X</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!hasTargets || !allowCopy} onSelect={() => putOnClipboard("copy", selectionTargets)}>
+              <Copy />
+              Copy
+              <DropdownMenuShortcut>Ctrl C</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={Boolean(pasteBlocked) || busy} onSelect={() => listing && void pasteInto(listing.path)}>
+              <ClipboardPaste />
+              Paste here
+              <DropdownMenuShortcut>Ctrl V</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            {serverLock?.allowRename || serverLock?.allowMove ? (
+              <DropdownMenuItem
+                disabled={!selectedEntry || selectionTargets.length !== 1}
+                onSelect={() => selectedEntry && askRename(selectedEntry)}
+              >
+                <Pencil />
+                Rename
+              </DropdownMenuItem>
+            ) : null}
+            {serverLock?.allowDelete ? (
+              <DropdownMenuItem danger disabled={!hasTargets} onSelect={() => askDelete(selectionTargets)}>
+                <Trash2 />
+                Delete
+              </DropdownMenuItem>
+            ) : null}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={visible.length === 0}
+              onSelect={() => setMarked(new Map(visible.map((e) => [e.path, e] as const)))}
+            >
+              <CheckSquare />
+              Select all
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={marked.size === 0} onSelect={() => setMarked(new Map())}>
+              <X />
+              Clear selection
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <MenuBarTrigger label="View" />
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Layout</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={view} onValueChange={(v) => setView(v as ViewMode)}>
+              <DropdownMenuRadioItem value="list">List</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="grid">Grid</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={showHidden} onCheckedChange={(v) => setShowHidden(Boolean(v))}>
+              Show hidden files
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <MenuBarTrigger label="Organize" />
+          <DropdownMenuContent align="start">
+            <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+              <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="size">Size</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="date">Date modified</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={groupByType} onCheckedChange={(v) => setGroupByType(Boolean(v))}>
+              Group by type
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2 pl-2 text-xs text-fg-subtle">
+          {marked.size ? (
+            <button type="button" className="rounded-sm px-1.5 py-1 text-fg hover:bg-bg-subtle" onClick={() => setMarked(new Map())}>
+              {marked.size} selected ✕
+            </button>
+          ) : null}
+          <span className="hidden sm:inline">
+            {searching
+              ? "Searching…"
+              : searchHits
+                ? `${searchHits.length} match${searchHits.length === 1 ? "" : "es"}${searchTruncated ? "+" : ""}`
+                : `${visible.length} ${visible.length === 1 ? "item" : "items"}`}
+          </span>
+        </div>
+      </nav>
+
+      {clip ? (
+        <div
+          className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border bg-bg-subtle px-3 py-1.5 text-sm md:px-4"
+          role="status"
+          data-testid="paste-bar"
+        >
+          {clip.mode === "copy" ? <Copy className="size-4 shrink-0 text-fg-muted" /> : <Scissors className="size-4 shrink-0 text-fg-muted" />}
+          <span className="min-w-0 flex-1 truncate">
+            <span className="font-medium">{clipboardLabel(clip)}</span>
+            <span className="text-fg-muted">
+              {" · "}
+              {clip.items.length === 1 ? clip.items[0]?.name : `${clip.items[0]?.name} and ${clip.items.length - 1} more`}
+            </span>
+          </span>
+          <Button
+            size="sm"
+            disabled={busy || Boolean(pasteBlocked)}
+            title={pasteBlocked || undefined}
+            onClick={() => listing && void pasteInto(listing.path)}
+          >
+            {busy ? <Loader2 className="animate-spin" /> : <ClipboardPaste />}
+            Paste here
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setClip(null)}>
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+      </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="hidden w-56 shrink-0 overflow-hidden border-r border-border md:flex md:flex-col">
@@ -838,97 +1317,32 @@ export function FileBrowserApp() {
             }
           }}
         >
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={serverLock?.allowCreateFolder === false}
-              onClick={() => setFolderOpen(true)}
-            >
-              <FolderPlus className="size-3.5" />
-              New folder
-            </Button>
-            {serverLock?.allowUpload ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  const native = (
-                    window as Window & { DrivebayNative?: { pickUpload?: (parent: string) => void } }
-                  ).DrivebayNative;
-                  const parent = listing?.path;
-                  if (native?.pickUpload && parent) {
-                    native.pickUpload(parent);
-                    return;
-                  }
-                  fileInputRef.current?.click();
-                }}
-              >
-                <Upload className="size-3.5" />
-                Upload
-              </Button>
-            ) : null}
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                const input = e.currentTarget;
-                const picked = input.files;
-                if (!picked || picked.length === 0 || serverLock?.allowUpload === false) {
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const input = e.currentTarget;
+              const picked = input.files;
+              if (!picked || picked.length === 0 || serverLock?.allowUpload === false) {
+                input.value = "";
+                return;
+              }
+              void snapshotUploadFiles(picked, (file) => (file as File).arrayBuffer())
+                .then((snaps) => {
                   input.value = "";
-                  return;
-                }
-                void snapshotUploadFiles(picked, (file) => (file as File).arrayBuffer())
-                  .then((snaps) => {
-                    input.value = "";
-                    const files = snaps.map(
-                      (snap) => new File([snap.bytes], snap.name, { type: snap.type, lastModified: snap.lastModified }),
-                    );
-                    return handleUpload(files);
-                  })
-                  .catch((err) => {
-                    input.value = "";
-                    toast.error(errMessage(err));
-                  });
-              }}
-            />
-            {serverLock?.allowRename || serverLock?.allowMove ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!selectedEntry}
-                onClick={() => {
-                  if (!selectedEntry) return;
-                  setRenameValue(selectedEntry.name);
-                  setRenameOpen(true);
-                }}
-              >
-                <Pencil className="size-3.5" />
-                Rename
-              </Button>
-            ) : null}
-            {serverLock?.allowDelete ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={!selectedEntry}
-                className="text-danger hover:text-danger"
-                onClick={() => setDeleteOpen(true)}
-              >
-                <Trash2 className="size-3.5" />
-                Delete
-              </Button>
-            ) : null}
-            <div className="ml-auto hidden text-xs text-fg-subtle sm:block">
-              {searching
-                ? "Searching…"
-                : searchHits
-                  ? `${searchHits.length} match${searchHits.length === 1 ? "" : "es"}${searchTruncated ? "+" : ""}`
-                  : `${visible.length} ${visible.length === 1 ? "item" : "items"}`}
-            </div>
-          </div>
+                  const files = snaps.map(
+                    (snap) => new File([snap.bytes], snap.name, { type: snap.type, lastModified: snap.lastModified }),
+                  );
+                  return handleUpload(files);
+                })
+                .catch((err) => {
+                  input.value = "";
+                  toast.error(errMessage(err));
+                });
+            }}
+          />
 
           {searchHits ? (
             <div className="flex shrink-0 items-center gap-2 border-b border-border bg-bg-elevated px-3 py-2 text-xs text-fg-muted">
@@ -966,20 +1380,9 @@ export function FileBrowserApp() {
                       </span>
                     </h3>
                     {view === "list" ? (
-                      <FileTable
-                        entries={group.items}
-                        selected={selected}
-                        showFolder={Boolean(searchHits)}
-                        onSelect={(e) => void inspect(e)}
-                        onOpen={(e) => void activate(e)}
-                      />
+                      <FileTable entries={group.items} showFolder={Boolean(searchHits)} {...listProps} />
                     ) : (
-                      <FileGrid
-                        entries={group.items}
-                        selected={selected}
-                        onSelect={(e) => void inspect(e)}
-                        onOpen={(e) => void activate(e)}
-                      />
+                      <FileGrid entries={group.items} {...listProps} />
                     )}
                   </section>
                 ))}
@@ -992,20 +1395,12 @@ export function FileBrowserApp() {
             ) : view === "list" ? (
               <FileTable
                 entries={visible}
-                selected={selected}
                 showFolder={Boolean(searchHits)}
                 emptyLabel={searchHits ? "No matches" : undefined}
-                onSelect={(e) => void inspect(e)}
-                onOpen={(e) => void activate(e)}
+                {...listProps}
               />
             ) : (
-              <FileGrid
-                entries={visible}
-                selected={selected}
-                emptyLabel={searchHits ? "No matches" : undefined}
-                onSelect={(e) => void inspect(e)}
-                onOpen={(e) => void activate(e)}
-              />
+              <FileGrid entries={visible} emptyLabel={searchHits ? "No matches" : undefined} {...listProps} />
             )}
           </div>
 
@@ -1065,6 +1460,83 @@ export function FileBrowserApp() {
         </SheetContent>
       </Sheet>
 
+      <DropdownMenu open={Boolean(menuAt)} onOpenChange={(open) => !open && setMenuAt(null)}>
+        <DropdownMenuTrigger asChild>
+          <span
+            aria-hidden
+            className="pointer-events-none fixed size-px opacity-0"
+            style={{ left: menuAt?.x ?? 0, top: menuAt?.y ?? 0 }}
+          />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56" data-testid="entry-menu">
+          {menuAt ? (
+            <>
+              <DropdownMenuLabel className="truncate normal-case">
+                {menuTargets.length > 1 ? `${menuTargets.length} selected` : menuAt.entry.name}
+              </DropdownMenuLabel>
+              {menuTargets.length === 1 ? (
+                <DropdownMenuItem onSelect={() => void activate(menuAt.entry)}>
+                  {menuAt.entry.kind === "dir" ? <FolderOpen /> : <ExternalLink />}
+                  Open
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem onSelect={() => toggleMark(menuAt.entry)}>
+                <CheckSquare />
+                {marked.has(menuAt.entry.path) ? "Unselect" : "Select"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!allowMove} onSelect={() => putOnClipboard("cut", menuTargets)}>
+                <Scissors />
+                Cut
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!allowCopy} onSelect={() => putOnClipboard("copy", menuTargets)}>
+                <Copy />
+                Copy
+              </DropdownMenuItem>
+              {menuAt.entry.kind === "dir" && menuTargets.length === 1 ? (
+                <DropdownMenuItem
+                  disabled={!clip || Boolean(pasteProblem(clip, menuAt.entry.path, pathSep(menuAt.entry.path))) || busy}
+                  onSelect={() => void pasteInto(menuAt.entry.path)}
+                >
+                  <ClipboardPaste />
+                  Paste into folder
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuItem disabled={Boolean(pasteBlocked) || busy} onSelect={() => listing && void pasteInto(listing.path)}>
+                <ClipboardPaste />
+                Paste here
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {serverLock?.allowRename || serverLock?.allowMove ? (
+                <DropdownMenuItem disabled={menuTargets.length !== 1} onSelect={() => askRename(menuAt.entry)}>
+                  <Pencil />
+                  Rename
+                </DropdownMenuItem>
+              ) : null}
+              {serverLock?.allowDelete ? (
+                <DropdownMenuItem danger onSelect={() => askDelete(menuTargets)}>
+                  <Trash2 />
+                  Delete
+                </DropdownMenuItem>
+              ) : null}
+              <DropdownMenuSeparator />
+              <SendToSub
+                inline={narrow}
+                disabled={menuTargets.every((e) => e.kind === "dir")}
+                canShare={canShareFiles}
+                onShare={() => void sendTo(menuTargets)}
+                onDownload={() =>
+                  void Promise.all(menuTargets.filter((e) => e.kind !== "dir").map((f) => downloadEntry(f))).catch((err) =>
+                    toast.error(errMessage(err)),
+                  )
+                }
+                onCopyPath={() => void copyPaths(menuTargets)}
+              />
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1119,13 +1591,23 @@ export function FileBrowserApp() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeleteTargets([]);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete {selectedEntry?.name}?</DialogTitle>
+            <DialogTitle>
+              Delete {deleteTargets.length > 1 ? `${deleteTargets.length} items` : (deleteTargets[0] ?? selectedEntry)?.name}?
+            </DialogTitle>
             <DialogDescription>
               This cannot be undone
-              {selectedEntry?.kind === "dir" ? " and removes everything inside." : "."}
+              {(deleteTargets.length ? deleteTargets : selectedEntry ? [selectedEntry] : []).some((e) => e.kind === "dir")
+                ? " and removes everything inside."
+                : "."}
             </DialogDescription>
           </DialogHeader>
           <div className="mt-4 flex justify-end gap-2">
@@ -1223,21 +1705,107 @@ function DriveNav({
   );
 }
 
+function MenuBarTrigger({ label }: { label: string }) {
+  return (
+    <DropdownMenuTrigger asChild>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 shrink-0 gap-1 px-2.5 text-[13px] data-[state=open]:bg-bg-subtle data-[state=open]:text-fg"
+      >
+        {label}
+        <ChevronDown className="size-3.5 opacity-70" />
+      </Button>
+    </DropdownMenuTrigger>
+  );
+}
+
+function SendToSub({
+  disabled,
+  canShare,
+  onShare,
+  onDownload,
+  onCopyPath,
+  inline,
+}: {
+  disabled: boolean;
+  canShare: boolean;
+  onShare: () => void;
+  onDownload: () => void;
+  onCopyPath: () => void;
+  inline?: boolean;
+}) {
+  if (inline) {
+    // Phones: a side submenu would run off the screen, so the choices sit in the menu itself.
+    return (
+      <>
+        <DropdownMenuLabel className="flex items-center gap-1.5">
+          <Send className="size-3" />
+          Send to
+        </DropdownMenuLabel>
+        <DropdownMenuItem disabled={disabled} onSelect={onShare}>
+          <Share2 />
+          {canShare ? "Share…" : "Share (downloads here)"}
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={disabled} onSelect={onDownload}>
+          <Download />
+          Download to this device
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCopyPath}>
+          <Link2 />
+          Copy path
+        </DropdownMenuItem>
+      </>
+    );
+  }
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger disabled={disabled}>
+        <Send />
+        Send to
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuItem onSelect={onShare}>
+          <Share2 />
+          {canShare ? "Share…" : "Share (downloads here)"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onDownload}>
+          <Download />
+          Download to this device
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCopyPath}>
+          <Link2 />
+          Copy path
+        </DropdownMenuItem>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+type EntryListProps = {
+  entries: FsEntry[];
+  selected: string | null;
+  marked: Map<string, FsEntry>;
+  clipPaths?: Set<string>;
+  entryMenu: EntryMenuApi;
+  onClickEntry: (entry: FsEntry, e: React.MouseEvent, openOnTap: boolean) => void;
+  onOpen: (entry: FsEntry) => void;
+  emptyLabel?: string;
+};
+
+const noCallout = { WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" } as const;
+
 function FileTable({
   entries,
   selected,
-  onSelect,
+  marked,
+  clipPaths,
+  entryMenu,
+  onClickEntry,
   onOpen,
   showFolder,
   emptyLabel,
-}: {
-  entries: FsEntry[];
-  selected: string | null;
-  onSelect: (entry: FsEntry) => void;
-  onOpen: (entry: FsEntry) => void;
-  showFolder?: boolean;
-  emptyLabel?: string;
-}) {
+}: EntryListProps & { showFolder?: boolean }) {
   if (entries.length === 0) {
     return (
       <div className="grid h-full min-h-48 place-items-center px-6 text-center text-sm text-fg-muted">
@@ -1250,21 +1818,26 @@ function FileTable({
       <ul className="divide-y divide-border md:hidden">
         {entries.map((entry) => {
           const active = selected === entry.path;
+          const isMarked = marked.has(entry.path);
           const folder = "folder" in entry && typeof entry.folder === "string" ? entry.folder : "";
           return (
             <li key={entry.path}>
               <button
                 type="button"
-                onClick={() => onOpen(entry)}
+                {...entryMenu.bind(entry)}
+                style={noCallout}
+                onClick={(e) => onClickEntry(entry, e, true)}
                 className={cn(
                   "flex min-h-14 w-full items-center gap-3 px-3 py-3 text-left",
-                  active ? "bg-bg-subtle" : "active:bg-bg-elevated",
+                  isMarked ? "bg-accent/15" : active ? "bg-bg-subtle" : "active:bg-bg-elevated",
+                  clipPaths?.has(entry.path) && "opacity-55",
                 )}
               >
-                <FileGlyph
-                  category={entry.category}
-                  className={entry.kind === "dir" ? "text-fg" : "text-fg-muted"}
-                />
+                {isMarked ? (
+                  <CheckSquare className="size-4 shrink-0 text-fg" />
+                ) : (
+                  <FileGlyph category={entry.category} className={entry.kind === "dir" ? "text-fg" : "text-fg-muted"} />
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm">{entry.name}</span>
                   <span className="block truncate font-mono text-[11px] text-fg-subtle">
@@ -1288,23 +1861,28 @@ function FileTable({
         <tbody>
           {entries.map((entry) => {
             const active = selected === entry.path;
+            const isMarked = marked.has(entry.path);
             const folder = "folder" in entry && typeof entry.folder === "string" ? entry.folder : "";
             return (
               <tr
                 key={entry.path}
-                onClick={() => onSelect(entry)}
+                {...entryMenu.bind(entry)}
+                style={noCallout}
+                onClick={(e) => onClickEntry(entry, e, false)}
                 onDoubleClick={() => onOpen(entry)}
                 className={cn(
                   "cursor-default border-b border-border/70",
-                  active ? "bg-bg-subtle" : "hover:bg-bg-elevated",
+                  isMarked ? "bg-accent/15" : active ? "bg-bg-subtle" : "hover:bg-bg-elevated",
+                  clipPaths?.has(entry.path) && "opacity-55",
                 )}
               >
                 <td className="px-3 py-2.5">
                   <span className="flex min-h-10 min-w-0 items-center gap-2">
-                    <FileGlyph
-                      category={entry.category}
-                      className={entry.kind === "dir" ? "text-fg" : "text-fg-muted"}
-                    />
+                    {isMarked ? (
+                      <CheckSquare className="size-4 shrink-0 text-fg" />
+                    ) : (
+                      <FileGlyph category={entry.category} className={entry.kind === "dir" ? "text-fg" : "text-fg-muted"} />
+                    )}
                     <span className="truncate">{entry.name}</span>
                   </span>
                 </td>
@@ -1326,19 +1904,7 @@ function FileTable({
   );
 }
 
-function FileGrid({
-  entries,
-  selected,
-  onSelect,
-  onOpen,
-  emptyLabel,
-}: {
-  entries: FsEntry[];
-  selected: string | null;
-  onSelect: (entry: FsEntry) => void;
-  onOpen: (entry: FsEntry) => void;
-  emptyLabel?: string;
-}) {
+function FileGrid({ entries, selected, marked, clipPaths, entryMenu, onClickEntry, onOpen, emptyLabel }: EntryListProps) {
   if (entries.length === 0) {
     return (
       <div className="grid h-full place-items-center px-6 text-center text-sm text-fg-muted">
@@ -1350,21 +1916,30 @@ function FileGrid({
     <ul className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3 lg:grid-cols-4">
       {entries.map((entry) => {
         const active = selected === entry.path;
+        const isMarked = marked.has(entry.path);
         return (
           <li key={entry.path}>
             <button
               type="button"
-              onClick={() => onSelect(entry)}
+              {...entryMenu.bind(entry)}
+              style={noCallout}
+              onClick={(e) => onClickEntry(entry, e, false)}
               onDoubleClick={() => onOpen(entry)}
               className={cn(
                 "flex min-h-24 h-full w-full flex-col items-start gap-3 rounded-md border p-3 text-left",
-                active ? "border-border-strong bg-bg-subtle" : "border-transparent bg-bg-elevated hover:border-border",
+                isMarked
+                  ? "border-accent/60 bg-accent/15"
+                  : active
+                    ? "border-border-strong bg-bg-subtle"
+                    : "border-transparent bg-bg-elevated hover:border-border",
+                clipPaths?.has(entry.path) && "opacity-55",
               )}
             >
-              <FileGlyph
-                category={entry.category}
-                className={cn("size-5", entry.kind === "dir" ? "text-fg" : "text-fg-muted")}
-              />
+              {isMarked ? (
+                <CheckSquare className="size-5 text-fg" />
+              ) : (
+                <FileGlyph category={entry.category} className={cn("size-5", entry.kind === "dir" ? "text-fg" : "text-fg-muted")} />
+              )}
               <span className="line-clamp-2 w-full text-sm leading-snug">{entry.name}</span>
               <span className="font-mono text-[11px] text-fg-subtle">
                 {entry.kind === "dir" ? "Folder" : formatBytes(entry.size)}
