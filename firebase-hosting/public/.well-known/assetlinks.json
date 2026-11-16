@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mesaandmoon.drivebay",
+      "sha256_cert_fingerprints": [
+        "D4:33:11:75:3C:AF:E5:D9:04:EB:78:31:FC:16:AF:6F:83:08:4C:EF:12:C9:EF:CC:67:67:16:26:BB:66:F4:F5"
+      ]
+    }
+  }
+]

@@ -124,6 +124,13 @@ object MesaPanel {
                         isAllCaps = false
                         setOnClickListener { connect(activity, row) }
                     })
+                    if (row.optString("tailscaleHost").isNotBlank()) {
+                        body.addView(MaterialButton(activity).apply {
+                            text = "Remote access"
+                            isAllCaps = false
+                            setOnClickListener { remoteAccessDialog(activity, row) }
+                        })
+                    }
                 }
                 android.app.AlertDialog.Builder(activity)
                     .setTitle(R.string.mesa_machines)
@@ -208,6 +215,94 @@ object MesaPanel {
             else MesaCloud.shareNames(connection.inputStream.bufferedReader().readText())
         } catch (_: Exception) {
             emptyList()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun remoteAccessDialog(activity: Activity, machine: JSONObject) {
+        val token = CredentialVault(activity).load("link-" + machine.optString("machineId")).orEmpty()
+        if (token.isBlank()) {
+            toast(activity, "Pair this phone with that computer first.")
+            return
+        }
+        val minutes = android.widget.Spinner(activity)
+        minutes.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("15 minutes", "1 hour", "4 hours", "24 hours"))
+        val mode = android.widget.Spinner(activity)
+        mode.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("Read-only", "Read-and-write"))
+        val box = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(TextView(activity).apply {
+                text = "Turn this computer's regular internet access on from this phone, already on your Tailscale network. It turns itself off after the time you pick."
+            })
+            addView(minutes)
+            addView(mode)
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle("Remote access · " + machine.optString("displayName"))
+            .setView(box)
+            .setPositiveButton("Turn on") { _, _ ->
+                val mins = intArrayOf(15, 60, 240, 1440)[minutes.selectedItemPosition]
+                val access = if (mode.selectedItemPosition == 0) "ro" else "rw"
+                setRemoteAccess(activity, machine, token, true, mins, access)
+            }
+            .setNeutralButton("Turn off") { _, _ -> setRemoteAccess(activity, machine, token, false, 15, "rw") }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun setRemoteAccess(activity: Activity, machine: JSONObject, token: String, enabled: Boolean, minutes: Int, mode: String) {
+        val url = MesaCloud.connectionUrl(machine)
+        if (url.isEmpty() || machine.optString("tailscaleHost").isBlank()) {
+            toast(activity, "Turn remote access on from a device that is already on the Tailscale network.")
+            return
+        }
+        thread(name = "mesa-remote-access") {
+            val origin = java.net.URI(url).let { "${it.scheme}://${it.authority}" }
+            val payload = org.json.JSONObject()
+                .put("enabled", enabled)
+                .put("minutes", minutes)
+                .put("mode", mode)
+                .put("machineId", machineId(activity))
+                .put("displayName", android.os.Build.MODEL ?: "Phone")
+            val text = postWithToken("$origin/api/link/remote-access", payload.toString(), token)
+            val json = text?.let { runCatching { JSONObject(it) }.getOrNull() }
+            activity.runOnUiThread {
+                if (json == null || json.optBoolean("ok") != true && !json.has("enabled")) {
+                    toast(activity, json?.optString("error").takeUnless { it.isNullOrBlank() } ?: "That machine did not accept the change.")
+                    return@runOnUiThread
+                }
+                if (json.optBoolean("enabled")) {
+                    val countdown = json.optString("countdown")
+                    val banner = json.optString("banner")
+                    android.app.AlertDialog.Builder(activity)
+                        .setTitle("Remote access is on")
+                        .setMessage("Turns off in $countdown. ${if (mode == "ro") "Read-only" else "Read-and-write"}. $banner")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                } else {
+                    toast(activity, "Remote access is off.")
+                }
+            }
+        }
+    }
+
+    private fun postWithToken(url: String, body: String, token: String): String? {
+        val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer $token")
+            connectTimeout = 8000
+            readTimeout = 8000
+        }
+        return try {
+            connection.outputStream.use { it.write(body.toByteArray()) }
+            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader()?.readText()
+        } catch (_: Exception) {
+            null
         } finally {
             connection.disconnect()
         }
@@ -369,11 +464,13 @@ object MesaPanel {
     private fun publicKey(activity: Activity): String {
         val prefs = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE)
         val existing = prefs.getString("publicKey", "") ?: ""
-        if (existing.isNotBlank()) return existing
-        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val created = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        prefs.edit().putString("publicKey", created).apply()
-        return created
+        if (existing.isNotBlank() && MachineKeys.looksLikePublicKey(existing) && !CredentialVault(activity).load("mesa-machine-private").isNullOrBlank()) {
+            return existing
+        }
+        val created = MachineKeys.generate()
+        CredentialVault(activity).save("mesa-machine-private", created.privateKey)
+        prefs.edit().putString("publicKey", created.publicKey).apply()
+        return created.publicKey
     }
 
     private fun localAddresses(): List<String> {

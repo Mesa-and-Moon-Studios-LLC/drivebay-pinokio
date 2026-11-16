@@ -15,6 +15,7 @@ import { PhoneDriveMount } from "@/components/settings/phone-drive";
 import { LinkedMachines } from "@/components/settings/linked-machines";
 import { DonateMenu } from "@/components/settings/donate-menu";
 import { SupportBanner } from "@/components/support-banner";
+import { RemoteAccessBanner } from "@/components/remote-access-banner";
 import { HowToGuide } from "@/components/settings/how-to";
 import { UPDATE_STATUS_EVENT } from "@/components/update-notice";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,14 @@ function SettingsPage() {
     enabled: boolean;
     offAt: number | null;
     canEdit: boolean;
+  } | null>(null);
+  const [remoteAccess, setRemoteAccess] = useState<{
+    enabled?: boolean;
+    offAt?: number | null;
+    mode?: string;
+    source?: string;
+    byName?: string;
+    canEdit?: boolean;
   } | null>(null);
   const [publicHours, setPublicHours] = useState<0 | 1 | 4 | 24>(1);
   const [savingPublic, setSavingPublic] = useState(false);
@@ -140,6 +149,7 @@ function SettingsPage() {
         setLocalIp(help.localIp || "");
         setPublicIp(help.publicIp || "");
         setPublicAccess(help.publicAccess ?? null);
+        setRemoteAccess(help.remoteAccess ?? null);
       })
       .catch(() => {
         /* Settings still load when the router note cannot. */
@@ -378,6 +388,7 @@ function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
       <SupportBanner />
+      <RemoteAccessBanner access={remoteAccess} machineId="self" canEdit={remoteAccess?.canEdit !== false} onChange={() => void getRouterHelp().then((help) => setRemoteAccess(help.remoteAccess ?? null))} />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         {onThisPc ? null : (
           <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>

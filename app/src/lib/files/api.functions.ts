@@ -191,6 +191,7 @@ export const getRouterHelp = createServerFn({ method: "GET" })
     const port = settings.readPortSettings().port;
     const showRouter = mode === "regular" || mode === "both";
     const access = mode === "both" ? settings.readPublicAccess() : null;
+    const remote = settings.readRemoteAccess();
     return {
       mode,
       port,
@@ -203,6 +204,14 @@ export const getRouterHelp = createServerFn({ method: "GET" })
             canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
           }
         : null,
+      remoteAccess: {
+        enabled: remote.enabled === true,
+        offAt: remote.offAt,
+        mode: remote.mode || "",
+        source: remote.source || "",
+        byName: remote.byName || "",
+        canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
+      },
     };
   });
 

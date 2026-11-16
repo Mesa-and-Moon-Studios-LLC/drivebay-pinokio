@@ -60,7 +60,21 @@ async function publicAccessBlock(request: Request, pathname: string): Promise<Re
     const access = settings.readPublicAccess();
     const host = await import("@/lib/files/host-request.server");
     const { requestReach } = await import("@/lib/files/public-access.mjs");
-    if (requestReach(mode, host.clientAddress(), access, Date.now()) !== "deny") return null;
+    const { publicWriteAllowed, readRemoteAccessFile } = await import("@/lib/files/public-access.mjs");
+    const remote = readRemoteAccessFile(settings.resolvePublicAccessFile());
+    const address = host.clientAddress();
+    if (requestReach(mode, address, remote, Date.now()) === "deny") {
+      // fall through to the off-page below
+    } else {
+      const writing = !["GET", "HEAD", "OPTIONS"].includes((request.method || "GET").toUpperCase());
+      if (writing && !publicWriteAllowed(mode, address, remote, Date.now())) {
+        return Response.json(
+          { error: "Remote access is read-only" },
+          { status: 403, headers: { "cache-control": "no-store" } },
+        );
+      }
+      return null;
+    }
   } catch {
     return null;
   }

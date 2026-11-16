@@ -4,7 +4,7 @@
  */
 import { handleLinkedHttp } from "../../src/lib/files/linked-http.mjs";
 import { machineHome } from "../../src/lib/files/linked-store.mjs";
-import { resolveDataDir } from "../../src/lib/files/settings.server";
+import { readReachMode, resolveDataDir, resolvePublicAccessFile } from "../../src/lib/files/settings.server";
 
 type LinkedEvent = {
   url: URL;
@@ -43,6 +43,8 @@ export default async function linkedDavMiddleware(event: LinkedEvent, next: () =
     body: Buffer.from(body),
     remoteAddress: remoteAddress(event),
     home: machineHome() || resolveDataDir(),
+    accessFile: resolvePublicAccessFile(),
+    reachMode: readReachMode(),
   });
   if (!result) return next();
   const raw = result.body;

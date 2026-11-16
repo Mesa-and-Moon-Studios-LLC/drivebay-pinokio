@@ -1,7 +1,12 @@
-# Keep secrets and libraries off the web.
+# Keep secrets, libraries, and migration scripts off the web.
+# Do not add %{Authorization}i to CustomLog. Apache's default combined log
+# does not include that header; leave it that way so ID tokens stay out of logs.
 <Files "config.php">
   Require all denied
 </Files>
+<FilesMatch "^(migrate-.*\.php)$">
+  Require all denied
+</FilesMatch>
 <FilesMatch "\.(sql|md|example\.php|example\.json)$">
   Require all denied
 </FilesMatch>

@@ -2,7 +2,7 @@
 
 Drivebay 3.37 can sign each machine into one Mesa and Moon account. The account is optional. Browse, the password lock, and phone-as-drive all work with nobody signed in.
 
-The cloud stores connection info only: machine id, display name, type (`pc`, `mac`, `linux`, or `phone`), Tailscale address, LAN address, port, public key, and last seen. A hidden machine is left out of other machines' lists. A public address is stored only after the owner turns on direct internet and types the host. Your files never touch our servers. Folder lists, passwords, phone codes, and pair tokens are not uploaded. There is no relay. If a relay is ever added, it has to be end-to-end encrypted. This version does not have one.
+From 3.38, the cloud stores an encrypted machine directory. Your devices encrypt the public key, name, addresses, port, and hidden flag before anything is uploaded. The server also keeps a last-seen time in the clear so other machines can see if one is online, plus wrapped copies of the account key that only your passphrase, passkey, or recovery key can open. Until you lock the list, 3.37 still stores those connection fields in the clear so they can be migrated. A hidden machine is left out of other machines' lists. A public address is stored only after the owner turns on direct internet and types the host. Your files never touch our servers. Folder lists, passwords, phone codes, and pair tokens are not uploaded. There is no relay. If a relay is ever added, it has to be end-to-end encrypted. This version does not have one.
 
 ## Sign in
 

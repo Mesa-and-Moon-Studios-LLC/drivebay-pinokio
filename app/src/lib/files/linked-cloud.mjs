@@ -22,6 +22,12 @@ import {
   saveAccount,
   saveIdentity,
 } from "./linked-store.mjs";
+import {
+  envelopeFor,
+  loadDek,
+  migrateLegacyList,
+  openListedMachines,
+} from "./linked-vault.mjs";
 import { loopbackEmulator, secureTokenUrl } from "./mesa-signin.mjs";
 
 function decodeJwtPayload(idToken) {
@@ -141,6 +147,36 @@ async function bearer(home, config, fetchImpl) {
   return saveAccount(home, { ...account, ...next });
 }
 
+export async function pushVaultWraps(home, wraps, fetchImpl = fetch) {
+  const config = loadFirebaseConfig(home);
+  if (!config?.ready) return { ok: false, error: "Mesa and Moon sign-in is not configured on this machine." };
+  const account = await bearer(home, config, fetchImpl);
+  if (!account) return { ok: false, error: "Sign in to Mesa and Moon on this machine first." };
+  const res = await fetchImpl(`${config.cloudApi}/vault.php`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${account.idToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ wraps }),
+  });
+  if (!res.ok) return { ok: false, error: "The Mesa and Moon cloud did not accept the locked machine list." };
+  return { ok: true };
+}
+
+export async function fetchVault(home, fetchImpl = fetch) {
+  const config = loadFirebaseConfig(home);
+  if (!config?.ready) return { ok: false, error: "Mesa and Moon sign-in is not configured on this machine.", wraps: [], locked: false };
+  const account = await bearer(home, config, fetchImpl);
+  if (!account) return { ok: false, error: "Sign in to Mesa and Moon on this machine first.", wraps: [], locked: false };
+  const res = await fetchImpl(`${config.cloudApi}/vault.php`, {
+    headers: { authorization: `Bearer ${account.idToken}` },
+  });
+  if (!res.ok) return { ok: false, error: "The Mesa and Moon cloud did not return the lock records.", wraps: [], locked: false };
+  const body = await res.json();
+  return { ok: true, wraps: Array.isArray(body.wraps) ? body.wraps : [], locked: body.locked === true };
+}
+
 export async function pushThisMachine(home, port, fetchImpl = fetch) {
   const config = loadFirebaseConfig(home);
   if (!config?.ready) return { ok: false, error: "Mesa and Moon sign-in is not configured on this machine." };
@@ -148,16 +184,36 @@ export async function pushThisMachine(home, port, fetchImpl = fetch) {
   if (!account) return { ok: false, error: "Sign in to Mesa and Moon on this machine first." };
   const record = registrationFor(home, port);
   if (!record.ok) return record;
+  const dek = loadDek(home);
+  const body = dek ? envelopeFor(home, record.machine, dek) : { ok: true, envelope: record.machine };
+  if (!body.ok) return body;
   const res = await fetchImpl(`${config.cloudApi}/machines.php`, {
     method: "POST",
     headers: {
       authorization: `Bearer ${account.idToken}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify(record.machine),
+    body: JSON.stringify(body.envelope || record.machine),
   });
   if (!res.ok) return { ok: false, error: "The Mesa and Moon cloud did not accept this machine." };
   return { ok: true, machine: record.machine };
+}
+
+export async function pushEnvelopes(home, envelopes, fetchImpl = fetch) {
+  const config = loadFirebaseConfig(home);
+  if (!config?.ready) return { ok: false, error: "Mesa and Moon sign-in is not configured on this machine." };
+  const account = await bearer(home, config, fetchImpl);
+  if (!account) return { ok: false, error: "Sign in to Mesa and Moon on this machine first." };
+  const res = await fetchImpl(`${config.cloudApi}/machines.php`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${account.idToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ envelopes }),
+  });
+  if (!res.ok) return { ok: false, error: "The Mesa and Moon cloud did not accept the locked machine list." };
+  return { ok: true };
 }
 
 export async function fetchMachines(home, fetchImpl = fetch) {
@@ -172,8 +228,38 @@ export async function fetchMachines(home, fetchImpl = fetch) {
   });
   if (!res.ok) return { ok: false, error: "The Mesa and Moon cloud did not return machines.", machines: [] };
   const body = await res.json();
-  const machines = Array.isArray(body.machines) ? body.machines : [];
-  return { ok: true, machines, selfId: identity?.machineId || "" };
+  const raw = Array.isArray(body.machines) ? body.machines : [];
+  const dek = loadDek(home);
+  if (dek) {
+    const opened = openListedMachines(dek, { machines: raw });
+    let migrated = 0;
+    if (opened.legacy.length) {
+      const migratedList = migrateLegacyList(dek, opened.legacy);
+      if (migratedList.ok && migratedList.envelopes.length) {
+        const pushed = await pushEnvelopes(home, migratedList.envelopes, fetchImpl);
+        if (pushed.ok) {
+          migrated = migratedList.envelopes.length;
+          for (const row of opened.legacy) opened.machines.push(row);
+        }
+      }
+    }
+    return {
+      ok: true,
+      machines: opened.machines,
+      selfId: identity?.machineId || "",
+      locked: body.locked === true,
+      wraps: Array.isArray(body.wraps) ? body.wraps : [],
+      migrated,
+    };
+  }
+  return {
+    ok: true,
+    machines: raw,
+    selfId: identity?.machineId || "",
+    locked: body.locked === true,
+    wraps: Array.isArray(body.wraps) ? body.wraps : [],
+    needsUnlock: body.locked === true,
+  };
 }
 
 export function remoteIsPrivate(address) {

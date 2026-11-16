@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { nextPublicAccess, readPublicAccessFile, writePublicAccessFile } from "./public-access.mjs";
+import { nextPublicAccess, nextRemoteAccess, readPublicAccessFile, readRemoteAccessFile, writePublicAccessFile, writeRemoteAccessFile } from "./public-access.mjs";
 import { isIpv4, localLanIpv4 } from "./router-steps.mjs";
 
 export type PortStyle = "random" | "static";
@@ -94,6 +94,15 @@ export type PublicAccessState = {
   offAt: number | null;
 };
 
+export type RemoteAccessState = {
+  enabled: boolean;
+  offAt: number | null;
+  mode?: string;
+  source?: string;
+  byMachineId?: string;
+  byName?: string;
+};
+
 export function resolvePublicAccessFile(): string {
   return resolve(dirname(resolvePortFile()), "public-access.json");
 }
@@ -105,6 +114,16 @@ export function readPublicAccess(now = Date.now()): PublicAccessState {
 export function writePublicAccess(enabled: boolean, hours: number, now = Date.now()): PublicAccessState {
   const next = nextPublicAccess(enabled, hours, now);
   writePublicAccessFile(resolvePublicAccessFile(), next);
+  return next;
+}
+
+export function readRemoteAccess(now = Date.now()): RemoteAccessState {
+  return readRemoteAccessFile(resolvePublicAccessFile(), now);
+}
+
+export function writeRemoteAccess(input: { enabled: boolean; minutes: number; mode?: string; source?: string; byMachineId?: string; byName?: string }, now = Date.now()): RemoteAccessState {
+  const next = nextRemoteAccess({ ...input, now });
+  writeRemoteAccessFile(resolvePublicAccessFile(), next);
   return next;
 }
 

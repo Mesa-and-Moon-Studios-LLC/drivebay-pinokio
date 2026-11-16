@@ -13,8 +13,11 @@ import {
   listLinkedMachines,
   saveLinkedShares,
   saveMesaSession,
+  setMachineRemoteAccess,
   signOutMesa,
 } from "@/lib/files/linked-machines.functions";
+import { VaultLock } from "@/components/settings/vault-lock";
+import { RemoteAccessBanner } from "@/components/remote-access-banner";
 import {
   bridgeStartUrl,
   cleanEmail,
@@ -61,6 +64,8 @@ type Status = {
   links: { machineId: string; label: string; paired: boolean; via: string }[];
   self: { displayName: string } | null;
   warning: string;
+  vault?: { ready?: boolean; unlocked?: boolean; hasPassphrase?: boolean; hasPasskey?: boolean; hasRecovery?: boolean; cannotRecover?: string };
+  remoteAccess?: { enabled?: boolean; offAt?: number | null; mode?: string; source?: string; byName?: string };
 };
 
 export function LinkedMachines() {
@@ -79,6 +84,8 @@ export function LinkedMachines() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [remoteMinutes, setRemoteMinutes] = useState(15);
+  const [remoteMode, setRemoteMode] = useState<"ro" | "rw">("ro");
 
   async function refresh() {
     const next = await getLinkedStatus();
@@ -395,7 +402,10 @@ export function LinkedMachines() {
           </div>
         )}
 
-        <div className="space-y-1">
+        <VaultLock vault={status?.vault} config={status?.config} signedIn={signedIn} onDone={() => void refresh()} />
+        <RemoteAccessBanner access={status?.remoteAccess} machineId="self" onChange={() => void refresh()} />
+
+                <div className="space-y-1">
           <Label htmlFor="machine-name">Name on this login</Label>
           <Input id="machine-name" value={name} onChange={(event) => setName(event.target.value)} />
         </div>
@@ -544,6 +554,49 @@ export function LinkedMachines() {
               </div>
               {machine.self ? null : (
                 <>
+                  {machine.connect?.via === "tailscale" ? (
+                    <span className="flex flex-wrap items-center gap-1">
+                      <select
+                        className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
+                        value={remoteMinutes}
+                        onChange={(event) => setRemoteMinutes(Number(event.target.value))}
+                        aria-label="Remote access time limit"
+                      >
+                        <option value={15}>15 minutes</option>
+                        <option value={60}>1 hour</option>
+                        <option value={240}>4 hours</option>
+                        <option value={1440}>24 hours</option>
+                      </select>
+                      <select
+                        className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
+                        value={remoteMode}
+                        onChange={(event) => setRemoteMode(event.target.value === "rw" ? "rw" : "ro")}
+                        aria-label="Remote access mode"
+                      >
+                        <option value="ro">Read-only</option>
+                        <option value="rw">Read-and-write</option>
+                      </select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setBusy(true);
+                          void setMachineRemoteAccess({
+                            data: { machineId: machine.machineId, enabled: true, minutes: remoteMinutes, mode: remoteMode },
+                          })
+                            .then((result) => {
+                              if (result.ok) toast.success(result.message);
+                              else toast.error(result.message);
+                            })
+                            .finally(() => setBusy(false));
+                        }}
+                      >
+                        Turn remote access on
+                      </Button>
+                    </span>
+                  ) : null}
                   <Button type="button" size="sm" disabled={busy} onClick={() => void connect(machine, false)}>
                     Connect
                   </Button>

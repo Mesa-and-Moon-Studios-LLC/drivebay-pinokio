@@ -3,7 +3,10 @@
  * Pairing and WebDAV talk to the machine that holds the files.
  */
 
+import path from "node:path";
 import { isMountableHost } from "./phone-drive.mjs";
+import { isLoopbackAddress } from "./loopback.mjs";
+import { isTailnetAddress } from "./tailnet.mjs";
 import {
   approveRequest,
   issueCode,
@@ -13,9 +16,18 @@ import {
   randomToken,
   redeemCode,
   startRequest,
+  verifyPairToken,
 } from "./linked-machines.mjs";
 import { handleDav } from "./linked-dav.mjs";
 import { loadIdentity, loadPairState, loadShares, savePairState } from "./linked-store.mjs";
+import {
+  formatCountdown,
+  nextRemoteAccess,
+  publicWriteAllowed,
+  readRemoteAccessFile,
+  remoteAccessBanner,
+  writeRemoteAccessFile,
+} from "./public-access.mjs";
 
 function json(status, value) {
   const body = Buffer.from(JSON.stringify(value), "utf8");
@@ -43,6 +55,21 @@ function privatePeer(address) {
   return isMountableHost(address);
 }
 
+function accessPath(home, accessFile) {
+  return accessFile || (home ? path.join(home, "public-access.json") : "");
+}
+
+function pairTokenFrom(headers, payload) {
+  const headerMap = {};
+  for (const [key, value] of Object.entries(headers || {})) headerMap[key.toLowerCase()] = value;
+  const auth = String(headerMap.authorization || "");
+  const bearer = /^Bearer\s+(\S+)$/i.exec(auth);
+  if (bearer) return bearer[1];
+  if (payload && payload.token) return String(payload.token);
+  const basic = auth;
+  return "";
+}
+
 export async function handleLinkedHttp({
   method,
   path,
@@ -51,6 +78,8 @@ export async function handleLinkedHttp({
   remoteAddress = "",
   home,
   now = Date.now(),
+  accessFile,
+  reachMode = "both",
 }) {
   const verb = String(method || "GET").toUpperCase();
   const pathname = String(path || "").split("?")[0];
@@ -58,6 +87,8 @@ export async function handleLinkedHttp({
   if (pathname === "/dav" || pathname.startsWith("/dav/")) {
     const shares = loadShares(home);
     const identity = loadIdentity(home);
+    const access = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+    const writeOk = publicWriteAllowed(reachMode, knownPeer, access, now);
     return handleDav({
       method: verb,
       urlPath: pathname,
@@ -69,6 +100,7 @@ export async function handleLinkedHttp({
       remoteIsPrivate: !knownPeer || privatePeer(knownPeer),
       directInternet: shares.directInternet === true,
       displayName: identity?.displayName || "Drivebay",
+      publicWrite: writeOk,
     });
   }
   if (!pathname.startsWith("/api/link/")) return null;
@@ -130,6 +162,64 @@ export async function handleLinkedHttp({
     if (result.ok) savePairState(home, result.state);
     if (!result.ok) return json(409, { error: result.error });
     return json(200, { token: result.token });
+  }
+
+  if (pathname === "/api/link/remote-access" && (verb === "GET" || verb === "POST")) {
+    const file = accessPath(home, accessFile);
+    const loopback = isLoopbackAddress(knownPeer);
+    const tailscale = isTailnetAddress(knownPeer);
+    const token = pairTokenFrom(headers, payload);
+    const paired = token && verifyPairToken(state, token);
+    if (!loopback && !paired) return json(401, { error: "Pair this device with that computer first." });
+    if (verb === "GET") {
+      const current = file ? readRemoteAccessFile(file, now) : { enabled: false, offAt: null };
+      const banner = remoteAccessBanner(current, now);
+      return json(200, {
+        ok: true,
+        enabled: current.enabled === true,
+        offAt: current.offAt,
+        mode: current.mode || "",
+        source: current.source || "",
+        byName: current.byName || "",
+        countdown: banner && banner.remainingMs != null ? formatCountdown(banner.remainingMs) : "",
+        banner: banner ? banner.message : "",
+      });
+    }
+    if (!loopback && !tailscale) {
+      return json(403, { error: "Turn remote access on from a device that is already on the Tailscale network." });
+    }
+    if (reachMode === "tailscale") {
+      return json(409, { error: "This computer is in Tailscale-only mode. Set it to Both on that computer first." });
+    }
+    const enabled = payload.enabled === true;
+    let next;
+    try {
+      next = enabled
+        ? nextRemoteAccess({
+            enabled: true,
+            minutes: Number(payload.minutes),
+            mode: payload.mode === "ro" ? "ro" : "rw",
+            now,
+            source: loopback ? "local" : "remote",
+            byMachineId: String(payload.machineId || ""),
+            byName: String(payload.displayName || ""),
+          })
+        : nextRemoteAccess({ enabled: false, minutes: 15, mode: "rw", now });
+    } catch (err) {
+      return json(400, { error: err.message || "Choose a time limit." });
+    }
+    writeRemoteAccessFile(file, next);
+    const banner = remoteAccessBanner(next, now);
+    return json(200, {
+      ok: true,
+      enabled: next.enabled === true,
+      offAt: next.offAt,
+      mode: next.mode || "",
+      source: next.source || "",
+      byName: next.byName || "",
+      countdown: banner && banner.remainingMs != null ? formatCountdown(banner.remainingMs) : "",
+      banner: banner ? banner.message : "",
+    });
   }
 
   return json(404, { error: "Unknown link method." });

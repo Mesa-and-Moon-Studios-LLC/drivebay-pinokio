@@ -1,6 +1,6 @@
 # Drivebay
 
-**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.37.2.exe)**
+**[Download for Windows](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases/latest/download/Drivebay-Setup-3.38.0.exe)**
 
 Password-locked file browser for every drive on this machine. Built to run inside [Pinokio](https://pinokio.computer).
 
@@ -10,7 +10,7 @@ Password-locked file browser for every drive on this machine. Built to run insid
 https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio
 ```
 
-Current version: **3.37.2** — see [Changelog](#changelog) below.
+Current version: **3.38.0** — see [Changelog](#changelog) below.
 
 ## Install in Pinokio (do this)
 
@@ -33,9 +33,9 @@ Change the port later with **Set port** or the in-app **Settings** page, then St
 
 ## Install without Pinokio
 
-Download **Drivebay-Setup-3.37.2.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
+Download **Drivebay-Setup-3.38.0.exe** from [GitHub Releases](https://github.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/releases). You do not need Node.js, git, or Pinokio. The installer includes the server and the runtime that runs it, and it starts a production build.
 
-Push a version tag such as `v3.37.2` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives, and the macOS disk image, are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
+Push a version tag such as `v3.38.0` to publish that file on the release. Pull requests also upload the installer as a build artifact. macOS and Linux archives, and the macOS disk image, are built the same way. See [Install on macOS or Linux](#install-on-macos-or-linux).
 
 The setup screens are:
 
@@ -223,7 +223,7 @@ Save the port, then stop Drivebay and start it again. In Pinokio, stop it there 
 
 ### Update Drivebay and uninstall
 
-To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.37.2. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
+To update from this PC, use Update when the page says Update available, or run the install command again. Drivebay checks the latest GitHub release at most once every 12 hours, and Settings has Check for updates. On Windows, Update downloads the installer and runs it silently, then restarts the server. On macOS and Linux, Update downloads the tarball, replaces the program files, and restarts the service. The account, password, mode, and settings stay. A saved port outside 42000-42999 stays. A saved port in that range moves to 8765, or the next free port outside that range. Setup prints the new address and updates the firewall rule and the shortcut. It does not ask for a port, username, password, or Tailscale. The last line is Drivebay updated to 3.38.0. A version below the published minimum must update. If the check cannot reach GitHub, Drivebay keeps running.
 
 Paste this in PowerShell:
 
@@ -231,7 +231,7 @@ Paste this in PowerShell:
 irm https://raw.githubusercontent.com/Mesa-and-Moon-Studios-LLC/drivebay-pinokio/main/install.ps1 | iex
 ```
 
-The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.37.2. In Pinokio, use Update.
+The .exe installer updates the same way when you run it again, including a silent update. The finish page says Drivebay updated to 3.38.0. In Pinokio, use Update.
 
 To uninstall, paste this in PowerShell:
 
@@ -319,6 +319,11 @@ A blank constant leaves that choice out of the menu. With every constant blank, 
 `.github/FUNDING.yml` lists the PayPal link under `custom` and Ko-fi as `ko_fi: mesaandmoonstudios`. `github: lordstryfe` stays commented until GitHub Sponsors is approved.
 
 ## Changelog
+
+### 3.38.0
+- The machine list is encrypted on your devices before it reaches Mesa and Moon. You set a recovery passphrase at first setup, can save a passkey, and get a one-time recovery key. Mesa and Moon cannot recover the list if those are lost. Your files stay on your devices.
+- From a signed-in, Tailscale-paired phone or computer, turn a computer's regular internet access on or off with a time limit and read-only or read-and-write. A banner with a countdown shows on both devices.
+- Android 3.38.0 (versionCode 33800) uses a real device keypair and keeps the private key on the phone. The Windows installer, the macOS disk image, and the Linux archive report 3.38.0.
 
 ### 3.37.2
 - Google and Apple sign-in go through an https page on the Firebase project's own domain (`https://<authDomain>/drivebay-signin.html`), which runs Firebase's handler at `/__/auth/handler`. Android no longer sends Google a `drivebay://` return address (Google answered Error 400 invalid_request), and the Mac no longer gives Apple a plain http return address. The page hands the session back to the Android app or to Settings on this computer only. Email sign-in is unchanged.

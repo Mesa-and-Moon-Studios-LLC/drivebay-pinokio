@@ -33,6 +33,8 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
         ? { machineId: identity.machineId, displayName: identity.displayName || "", publicKey: identity.publicKey || "" }
         : null,
       warning: machines.DIRECT_INTERNET_WARNING,
+      vault: (await import("./linked-vault.mjs")).vaultStatus(home),
+      remoteAccess: (await import("./settings.server")).readRemoteAccess(),
     };
   });
 
@@ -133,6 +135,14 @@ export const listLinkedMachines = createServerFn({ method: "GET" })
     const machines = await import("./linked-machines.mjs");
     const listed = await cloud.fetchMachines(home);
     if (!listed.ok) return { ok: false as const, message: listed.error || "No machine list.", machines: [] as const };
+    if (listed.needsUnlock) {
+      return {
+        ok: false as const,
+        message: "Unlock the machine list on this device with your passphrase, passkey, or recovery key.",
+        machines: [] as const,
+        needsUnlock: true as const,
+      };
+    }
     const now = Date.now();
     const rows = (listed.machines || []).map((row: { lastSeen?: string; machineId?: string }) => ({
       ...row,
@@ -304,4 +314,125 @@ export const disconnectLinkedMachine = createServerFn({ method: "POST" })
       store.saveLinkedTokens(home, records);
     }
     return { ok: result.code === 0, message: drive.redact(result.output, row.token || "") };
+  });
+
+
+export const setupLinkedVault = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      passphrase: z.string().min(8).max(256),
+      prfOutput: z.string().min(16).max(256).optional(),
+      credentialId: z.string().max(512).optional(),
+      prfSalt: z.string().max(256).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const vault = await import("./linked-vault.mjs");
+    const cloud = await import("./linked-cloud.mjs");
+    const settings = await import("./settings.server");
+    const setup = vault.setupVault(home, {
+      passphrase: data.passphrase,
+      prfOutput: data.prfOutput,
+      credentialId: data.credentialId,
+      prfSalt: data.prfSalt,
+    });
+    if (!setup.ok) return { ok: false as const, message: setup.error || "Could not lock the machine list." };
+    const wraps = await cloud.pushVaultWraps(home, setup.wraps);
+    if (!wraps.ok) return { ok: false as const, message: wraps.error || "The cloud did not accept the lock records." };
+    const listed = await cloud.fetchMachines(home);
+    if (listed.migrated) {
+      /* legacy rows were rewritten as ciphertext */
+    }
+    await cloud.pushThisMachine(home, settings.readPortSettings().port);
+    return {
+      ok: true as const,
+      recoveryKey: setup.recoveryKey as string,
+      message: setup.message as string,
+    };
+  });
+
+export const unlockLinkedVault = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      passphrase: z.string().max(256).optional(),
+      recoveryKey: z.string().max(256).optional(),
+      prfOutput: z.string().min(16).max(256).optional(),
+      wrapId: z.string().min(8).max(64).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const vault = await import("./linked-vault.mjs");
+    const cloud = await import("./linked-cloud.mjs");
+    const listed = await cloud.fetchVault(home);
+    const wraps = listed.wraps || [];
+    const wrap = data.prfOutput
+      ? wraps.find((row: { kind?: string; wrapId?: string }) => row.kind === "passkey" && (!data.wrapId || row.wrapId === data.wrapId))
+      : data.recoveryKey
+        ? wraps.find((row: { kind?: string }) => row.kind === "recovery")
+        : wraps.find((row: { kind?: string }) => row.kind === "passphrase");
+    const unlocked = vault.unlockWithSecret(home, { ...data, wrap });
+    if (!unlocked.ok) return { ok: false as const, message: unlocked.error || "Could not unlock the machine list." };
+    const settings = await import("./settings.server");
+    await cloud.pushThisMachine(home, settings.readPortSettings().port);
+    return { ok: true as const, message: "The machine list is unlocked on this device." };
+  });
+
+export const setMachineRemoteAccess = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      machineId: z.string().min(8).max(64),
+      enabled: z.boolean(),
+      minutes: z.number().int().optional(),
+      mode: z.enum(["ro", "rw"]).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const store = await import("./linked-store.mjs");
+    if (!store.loadAccount(home)?.uid) return { ok: false as const, message: "Sign in to Mesa and Moon first." };
+    const settings = await import("./settings.server");
+    const identity = store.loadIdentity(home);
+    if (data.machineId === identity?.machineId || data.machineId === "self") {
+      const next = settings.writeRemoteAccess({
+        enabled: data.enabled,
+        minutes: data.minutes || 15,
+        mode: data.mode || "rw",
+        source: "local",
+        byName: identity?.displayName || "this computer",
+        byMachineId: identity?.machineId || "",
+      });
+      return { ok: true as const, ...next, message: next.enabled ? "Remote access is on." : "Remote access is off." };
+    }
+    const cloud = await import("./linked-cloud.mjs");
+    const machines = await import("./linked-machines.mjs");
+    const listed = await cloud.fetchMachines(home);
+    if (!listed.ok) return { ok: false as const, message: listed.error || "No machine list." };
+    const machine = (listed.machines || []).find((row: { machineId?: string }) => row.machineId === data.machineId);
+    if (!machine) return { ok: false as const, message: "That machine is not on this login." };
+    const target = machines.connectionUrl(machine);
+    if (target.via !== "tailscale" || !target.url) {
+      return { ok: false as const, message: "Turn remote access on from a device that is already on the Tailscale network." };
+    }
+    const token = store.loadLinkedTokens(home)[data.machineId]?.token;
+    if (!token) return { ok: false as const, message: "Pair this device with that computer first." };
+    const origin = new URL(target.url).origin;
+    const res = await fetch(`${origin}/api/link/remote-access`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        enabled: data.enabled,
+        minutes: data.minutes || 15,
+        mode: data.mode || "rw",
+        machineId: identity?.machineId || "",
+        displayName: identity?.displayName || "Drivebay",
+      }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false as const, message: body.error || "That machine did not accept the change." };
+    return { ok: true as const, ...body, message: body.enabled ? "Remote access is on." : "Remote access is off." };
   });

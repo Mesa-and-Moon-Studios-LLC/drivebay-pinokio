@@ -155,6 +155,7 @@ export function handleDav({
   remoteIsPrivate = true,
   directInternet = false,
   displayName = "Drivebay",
+  publicWrite = true,
 }) {
   const verb = String(method || "GET").toUpperCase();
   const allow = "OPTIONS, PROPFIND, GET, HEAD, PUT, DELETE, MKCOL, MOVE, LOCK, UNLOCK";
@@ -183,6 +184,7 @@ export function handleDav({
   if (where.kind === "missing") return text(404, "Missing");
 
   if (WRITE_METHODS.has(verb)) {
+    if (!publicWrite) return text(403, "Remote access is read-only.");
     if (where.kind === "root") return text(403, "Nothing is shared at the root.");
     if (where.share.access !== "rw") return text(403, "That folder is read-only.");
   }
