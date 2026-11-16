@@ -414,7 +414,7 @@ test("install.ps1 updates an existing install and keeps the account", async () =
     const config = JSON.parse(fs.readFileSync(path.join(home, "config.json"), "utf8"));
     assert.equal(config.port, oldPort);
     assert.equal(config.mode, "tailscale");
-    assert.equal(config.version, "3.38.0");
+    assert.equal(config.version, "3.38.1");
     assert.equal(config.note, "keep-me");
     assert.equal(fs.readFileSync(path.join(home, "drivebay.port"), "utf8").trim(), String(oldPort));
     const installed = fs.readFileSync(path.join(home, "uninstall.ps1"), "utf8");

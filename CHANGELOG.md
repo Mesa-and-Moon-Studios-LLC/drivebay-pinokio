@@ -2,6 +2,11 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.38.1
+- The remote-access banner is titled "Unprotected port forward on — reachable from the internet, outside Tailscale," with the mode, time left, and an Off now button. The description says the open port uses plain HTTP, so traffic is not encrypted, and that opening files still takes a signed-in DriveBay account, a paired device, or an API token. Mesa and Moon cannot see your transfers or your devices.
+- A signed-in session can read that banner status without being the PC's own browser, so a phone opening the computer in the web UI can see it. WebDAV and `/api/link` refuse public-internet requests while the toggle is off in Both mode, even if direct internet sharing is on.
+- Android 3.38.1 (versionCode 33801). The Windows installer, the macOS disk image, and the Linux archive report 3.38.1.
+
 ## 3.38.0
 - The signed-in machine list is encrypted on your devices. Each device creates a key and locks public keys, names, addresses, ports, and the hidden flag with AES-256-GCM. Mesa and Moon's server only stores the Firebase account id, an opaque machine id, ciphertext, a nonce, last-seen (so others can see if a machine is online), and wrapped copies of that key. A recovery passphrase (Argon2id) is required. You can also save a passkey (WebAuthn PRF). A one-time recovery key is shown once. Mesa and Moon cannot recover the list if those are lost. Existing plaintext rows are rewritten the first time you lock the list.
 - From a signed-in device already on your Tailscale network, turn another computer's regular internet / port-forward path on or off, with a 15 minute, 1 hour, 4 hour, or 24 hour time limit and read-only or read-and-write. Both devices show a "Remote access is on" banner with a countdown. Pairing is still required. Tailscale-only computers stay Tailscale-only until they are set to Both.

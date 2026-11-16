@@ -215,6 +215,22 @@ export const getRouterHelp = createServerFn({ method: "GET" })
     };
   });
 
+export const getRemoteAccessStatus = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    const settings = await import("./settings.server");
+    const remote = settings.readRemoteAccess();
+    return {
+      enabled: remote.enabled === true,
+      offAt: remote.offAt,
+      mode: remote.mode || "",
+      source: remote.source || "",
+      byName: remote.byName || "",
+      canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
+    };
+  });
+
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {

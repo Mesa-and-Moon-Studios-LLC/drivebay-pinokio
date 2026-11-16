@@ -6,7 +6,7 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveRemoteActions, saveServerLock } from "@/lib/files/api.functions";
+import { getRemoteAccessStatus, getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveRemoteActions, saveServerLock } from "@/lib/files/api.functions";
 import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
@@ -153,6 +153,13 @@ function SettingsPage() {
       })
       .catch(() => {
         /* Settings still load when the router note cannot. */
+      });
+    getRemoteAccessStatus()
+      .then((status) => {
+        if (alive) setRemoteAccess(status);
+      })
+      .catch(() => {
+        /* The file browser still works if this status call fails. */
       });
     return () => {
       alive = false;
@@ -388,7 +395,7 @@ function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
       <SupportBanner />
-      <RemoteAccessBanner access={remoteAccess} machineId="self" canEdit={remoteAccess?.canEdit !== false} onChange={() => void getRouterHelp().then((help) => setRemoteAccess(help.remoteAccess ?? null))} />
+      <RemoteAccessBanner access={remoteAccess} machineId="self" canEdit={remoteAccess?.canEdit !== false} onChange={() => void getRemoteAccessStatus().then((status) => setRemoteAccess(status))} />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         {onThisPc ? null : (
           <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>

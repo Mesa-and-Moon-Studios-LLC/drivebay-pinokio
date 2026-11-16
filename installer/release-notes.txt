@@ -1,6 +1,4 @@
-Drivebay 3.38.0: encrypted machine list, passkey or passphrase lock, remote access toggle
+Drivebay 3.38.1: unprotected port-forward banner and public-path close when off
 
-- The machine list is encrypted on your devices. Mesa and Moon only holds data it cannot read, plus last-seen and your sign-in email in Firebase. A recovery passphrase is required. A passkey is optional. A recovery key is shown once. Mesa and Moon cannot recover the list if those are lost.
-- From a signed-in device on your Tailscale network, turn another computer's regular internet access on or off, with a time limit and read-only or read-and-write. Both devices show a countdown banner.
-- Android 3.38.0 (versionCode 33800). The Windows installer and the server report 3.38.0.
-- The PHP API and the Firebase passkey page are staged and are not live until you approve a deploy.
+- The banner says the port is unprotected and reachable from the internet, outside Tailscale. Traffic on that port is plain HTTP. Files still need a sign-in, a paired device, or an API token.
+- Android 3.38.1 (versionCode 33801). The Windows installer and the server report 3.38.1.

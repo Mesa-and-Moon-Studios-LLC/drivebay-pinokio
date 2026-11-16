@@ -6,8 +6,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isLoopbackAddress } from "./loopback.mjs";
 import { isTailnetAddress } from "./tailnet.mjs";
-import { formatCountdown, REMOTE_ACCESS_BANNER } from "./linked-copy.mjs";
-export { formatCountdown, REMOTE_ACCESS_BANNER };
+import { formatCountdown, REMOTE_ACCESS_BANNER, REMOTE_ACCESS_BANNER_TITLE } from "./linked-copy.mjs";
+export { formatCountdown, REMOTE_ACCESS_BANNER, REMOTE_ACCESS_BANNER_TITLE };
 
 /**
  * @param {unknown} enabled
@@ -127,6 +127,7 @@ export function remoteAccessBanner(state, now = Date.now()) {
   if (state.offAt != null && now >= state.offAt) return null;
   const remaining = state.offAt != null ? Math.max(0, state.offAt - now) : null;
   return {
+    title: REMOTE_ACCESS_BANNER_TITLE,
     message: REMOTE_ACCESS_BANNER,
     mode: state.mode === "ro" ? "ro" : "rw",
     source: state.source || "",

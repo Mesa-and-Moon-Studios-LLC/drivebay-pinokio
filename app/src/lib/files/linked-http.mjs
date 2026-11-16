@@ -26,6 +26,7 @@ import {
   publicWriteAllowed,
   readRemoteAccessFile,
   remoteAccessBanner,
+  requestReach,
   writeRemoteAccessFile,
 } from "./public-access.mjs";
 
@@ -88,6 +89,18 @@ export async function handleLinkedHttp({
     const shares = loadShares(home);
     const identity = loadIdentity(home);
     const access = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+    if (requestReach(reachMode, knownPeer, access, now) === "deny") {
+      const body = Buffer.from("Public access is off", "utf8");
+      return {
+        status: 403,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
+          "content-length": String(body.length),
+        },
+        body,
+      };
+    }
     const writeOk = publicWriteAllowed(reachMode, knownPeer, access, now);
     return handleDav({
       method: verb,
@@ -105,6 +118,10 @@ export async function handleLinkedHttp({
   }
   if (!pathname.startsWith("/api/link/")) return null;
   if (!home) return json(503, { error: "This machine has no data folder." });
+  const linkAccess = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+  if (requestReach(reachMode, knownPeer, linkAccess, now) === "deny") {
+    return json(403, { error: "Public access is off" });
+  }
   const shares = loadShares(home);
   const pairAllowed = knownPeer && (privatePeer(knownPeer) || shares.directInternet === true);
   if (!pairAllowed) {
@@ -182,6 +199,7 @@ export async function handleLinkedHttp({
         source: current.source || "",
         byName: current.byName || "",
         countdown: banner && banner.remainingMs != null ? formatCountdown(banner.remainingMs) : "",
+        title: banner ? banner.title : "",
         banner: banner ? banner.message : "",
       });
     }
@@ -218,6 +236,7 @@ export async function handleLinkedHttp({
       source: next.source || "",
       byName: next.byName || "",
       countdown: banner && banner.remainingMs != null ? formatCountdown(banner.remainingMs) : "",
+      title: banner ? banner.title : "",
       banner: banner ? banner.message : "",
     });
   }

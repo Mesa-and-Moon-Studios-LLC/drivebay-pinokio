@@ -276,13 +276,21 @@ object MesaPanel {
                 if (json.optBoolean("enabled")) {
                     val countdown = json.optString("countdown")
                     val banner = json.optString("banner")
+                    val title = json.optString("title").ifBlank {
+                        "Unprotected port forward on — reachable from the internet, outside Tailscale"
+                    }
+                    val accessMode = json.optString("mode").ifBlank { mode }
+                    val modeLabel = if (accessMode == "ro") "read-only" else "read-and-write"
                     android.app.AlertDialog.Builder(activity)
-                        .setTitle("Remote access is on")
-                        .setMessage("Turns off in $countdown. ${if (mode == "ro") "Read-only" else "Read-and-write"}. $banner")
+                        .setTitle(title)
+                        .setMessage("$countdown left · $modeLabel. $banner")
                         .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton("Off now") { _, _ ->
+                            setRemoteAccess(activity, machine, token, false, 15, "rw")
+                        }
                         .show()
                 } else {
-                    toast(activity, "Remote access is off.")
+                    toast(activity, "Unprotected port forward is off.")
                 }
             }
         }

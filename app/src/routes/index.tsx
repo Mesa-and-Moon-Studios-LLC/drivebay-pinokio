@@ -3,7 +3,7 @@ import { useEffect, useState, type ComponentType } from "react";
 import { pageAfterSignIn } from "@/lib/host-page.mjs";
 import { SupportBanner } from "@/components/support-banner";
 import { RemoteAccessBanner, type RemoteAccessInfo } from "@/components/remote-access-banner";
-import { getRouterHelp } from "@/lib/files/api.functions";
+import { getRemoteAccessStatus } from "@/lib/files/api.functions";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -22,8 +22,8 @@ function HomeRemoteBanner() {
     let alive = true;
     async function tick() {
       try {
-        const help = await getRouterHelp();
-        if (alive) setAccess(help.remoteAccess ?? null);
+        const status = await getRemoteAccessStatus();
+        if (alive) setAccess(status);
       } catch {
         /* the file browser still works if this status call fails */
       }
@@ -35,7 +35,7 @@ function HomeRemoteBanner() {
       window.clearInterval(id);
     };
   }, []);
-  return <RemoteAccessBanner access={access} machineId="self" canEdit={access?.canEdit !== false} onChange={() => void getRouterHelp().then((help) => setAccess(help.remoteAccess ?? null))} />;
+  return <RemoteAccessBanner access={access} machineId="self" canEdit={access?.canEdit !== false} onChange={() => void getRemoteAccessStatus().then((status) => setAccess(status))} />;
 }
 
 function HomePage() {

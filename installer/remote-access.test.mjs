@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   formatCountdown,
@@ -10,6 +11,7 @@ import {
   readRemoteAccessFile,
   remoteAccessBanner,
   REMOTE_ACCESS_BANNER,
+  REMOTE_ACCESS_BANNER_TITLE,
   requestReach,
   writeRemoteAccessFile,
 } from "../app/src/lib/files/public-access.mjs";
@@ -27,7 +29,12 @@ test("remote access requires a time limit and supports read-only", () => {
   assert.equal(on.offAt, now + 15 * 60 * 1000);
   assert.throws(() => nextRemoteAccess({ enabled: true, minutes: 2, mode: "rw", now }), /15 minutes/);
   const banner = remoteAccessBanner(on, now);
+  assert.equal(banner.title, REMOTE_ACCESS_BANNER_TITLE);
   assert.equal(banner.message, REMOTE_ACCESS_BANNER);
+  assert.match(banner.title, /Unprotected port forward on/);
+  assert.match(banner.message, /plain HTTP/);
+  assert.match(banner.message, /not encrypted/);
+  assert.doesNotMatch(banner.message, /no one can see what you/i);
   assert.equal(banner.mode, "ro");
   assert.equal(formatCountdown(banner.remainingMs), "15:00");
   assert.equal(publicWriteAllowed("both", "8.8.8.8", on, now), false);
@@ -137,7 +144,8 @@ test("a Tailscale-paired device can turn remote access on and off; a public addr
     assert.equal(body.enabled, true);
     assert.equal(body.mode, "ro");
     assert.equal(body.countdown, "15:00");
-    assert.match(body.banner, /Remote access is on/);
+    assert.equal(body.title, REMOTE_ACCESS_BANNER_TITLE);
+    assert.match(body.banner, /plain HTTP/);
     const status = await handleLinkedHttp({
       method: "GET",
       path: "/api/link/remote-access",
@@ -163,4 +171,77 @@ test("a Tailscale-paired device can turn remote access on and off; a public addr
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("WebDAV and pairing stay closed to the public internet while remote access is off", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-dav-off-"));
+  try {
+    ensureIdentity(dir, "Mac Mini");
+    const share = path.join(dir, "share");
+    fs.mkdirSync(share);
+    fs.writeFileSync(path.join(share, "note.txt"), "secret");
+    const token = randomToken();
+    const salt = randomSalt();
+    writePrivate(path.join(dir, "pair-state.json"), {
+      code: null,
+      pending: [],
+      grants: { phone1: { salt, tokenHash: hashSecret(token, salt), name: "Phone" } },
+    });
+    saveShares(dir, { folders: [{ path: share, access: "rw", name: "Docs" }], directInternet: true, hidden: false, publicHost: "203.0.113.5" });
+    const file = path.join(dir, "public-access.json");
+    writeRemoteAccessFile(file, nextRemoteAccess({ enabled: false, minutes: 15, mode: "rw", now: 1_700_000_000_000 }));
+    const denied = await handleLinkedHttp({
+      method: "GET",
+      path: "/dav/Docs/note.txt",
+      headers: { authorization: "Basic " + Buffer.from("drivebay:" + token).toString("base64") },
+      remoteAddress: "8.8.8.8",
+      home: dir,
+      now: 1_700_000_000_000,
+      accessFile: file,
+      reachMode: "both",
+    });
+    assert.equal(denied.status, 403);
+    assert.match(denied.body.toString(), /Public access is off/);
+    const who = await handleLinkedHttp({
+      method: "GET",
+      path: "/api/link/whoami",
+      remoteAddress: "8.8.8.8",
+      home: dir,
+      now: 1_700_000_000_000,
+      accessFile: file,
+      reachMode: "both",
+    });
+    assert.equal(who.status, 403);
+    const tailscale = await handleLinkedHttp({
+      method: "GET",
+      path: "/api/link/whoami",
+      remoteAddress: "100.64.0.22",
+      home: dir,
+      now: 1_700_000_000_000,
+      accessFile: file,
+      reachMode: "both",
+    });
+    assert.equal(tailscale.status, 200);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the web banner is available to a signed-in session that is not the PC admin", () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const api = fs.readFileSync(path.join(root, "app/src/lib/files/api.functions.ts"), "utf8");
+  const start = api.indexOf("export const getRemoteAccessStatus");
+  const next = api.indexOf("export const ", start + 10);
+  assert.ok(start !== -1);
+  const body = api.slice(start, next === -1 ? undefined : next);
+  assert.match(body, /authMiddleware/);
+  assert.equal(body.includes("assertPcAdmin"), false);
+  const index = fs.readFileSync(path.join(root, "app/src/routes/index.tsx"), "utf8");
+  assert.match(index, /getRemoteAccessStatus/);
+  const banner = fs.readFileSync(path.join(root, "app/src/components/remote-access-banner.tsx"), "utf8");
+  assert.match(banner, /REMOTE_ACCESS_BANNER_TITLE/);
+  assert.match(banner, /Off now/);
+  const panel = fs.readFileSync(path.join(root, "android/app/src/main/java/com/lordstryfe/drivebay/MesaPanel.kt"), "utf8");
+  assert.match(panel, /Unprotected port forward on/);
+  assert.match(panel, /Off now/);
 });
