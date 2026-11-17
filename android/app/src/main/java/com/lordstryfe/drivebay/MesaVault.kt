@@ -1,6 +1,5 @@
 package com.lordstryfe.drivebay
 
-import android.util.Base64
 import org.bouncycastle.crypto.generators.Argon2BytesGenerator
 import org.bouncycastle.crypto.params.Argon2Parameters
 import org.json.JSONArray
@@ -25,8 +24,9 @@ object MesaVault {
 
     fun newDek(random: SecureRandom = SecureRandom()): ByteArray = ByteArray(32).also { random.nextBytes(it) }
 
-    fun b64(data: ByteArray): String = Base64.encodeToString(data, Base64.NO_WRAP)
-    fun fromB64(value: String): ByteArray = Base64.decode(value, Base64.DEFAULT)
+    // java.util.Base64 (API 26+) so the same code runs in JVM unit tests.
+    fun b64(data: ByteArray): String = java.util.Base64.getEncoder().encodeToString(data)
+    fun fromB64(value: String): ByteArray = java.util.Base64.getMimeDecoder().decode(value)
 
     fun aesGcmEncrypt(key: ByteArray, plaintext: ByteArray, random: SecureRandom = SecureRandom()): Pair<String, String> {
         val nonce = ByteArray(12).also { random.nextBytes(it) }

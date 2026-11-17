@@ -1,0 +1,64 @@
+package com.lordstryfe.drivebay
+
+import org.bouncycastle.crypto.digests.SHA256Digest
+import org.bouncycastle.crypto.generators.HKDFBytesGenerator
+import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
+import org.bouncycastle.crypto.params.HKDFParameters
+import org.bouncycastle.crypto.signers.Ed25519Signer
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+/**
+ * Join proof for adding this phone to the same Mesa and Moon login.
+ * Matches joinProof / signJoin in app/src/lib/files/linked-crypto.mjs.
+ *
+ * The phone unlocks the account key (DEK) with the join password, then proves it holds the key
+ * with an HMAC, and proves it owns its device key with an Ed25519 signature. Both cover the
+ * host machine id, this phone's id, and a one-time request secret. Neither value is the password
+ * or the key.
+ */
+object MesaJoin {
+    fun message(hostId: String, peerId: String, secret: String): ByteArray =
+        "drivebay-join-v1\u0000$hostId\u0000$peerId\u0000$secret".toByteArray(Charsets.UTF_8)
+
+    fun joinKey(dek: ByteArray): ByteArray {
+        val gen = HKDFBytesGenerator(SHA256Digest())
+        gen.init(HKDFParameters(dek, "drivebay-join".toByteArray(Charsets.UTF_8), "drivebay-join-v1".toByteArray(Charsets.UTF_8)))
+        return ByteArray(32).also { gen.generateBytes(it, 0, 32) }
+    }
+
+    fun proof(dek: ByteArray, hostId: String, peerId: String, secret: String): String {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(joinKey(dek), "HmacSHA256"))
+        return MesaVault.b64(mac.doFinal(message(hostId, peerId, secret)))
+    }
+
+    /** The PKCS#8 Ed25519 key ends with the 32-byte seed. */
+    fun signature(privateKeyB64: String, hostId: String, peerId: String, secret: String): String {
+        val der = MesaVault.fromB64(privateKeyB64)
+        require(der.size >= 32) { "Device key is too short." }
+        val seed = der.copyOfRange(der.size - 32, der.size)
+        val signer = Ed25519Signer()
+        signer.init(true, Ed25519PrivateKeyParameters(seed, 0))
+        val msg = message(hostId, peerId, secret)
+        signer.update(msg, 0, msg.size)
+        return MesaVault.b64(signer.generateSignature())
+    }
+
+    /** Request secret: long enough for the host (16+), random per request. */
+    fun newSecret(random: java.security.SecureRandom = java.security.SecureRandom()): String {
+        val bytes = ByteArray(32).also { random.nextBytes(it) }
+        return "dbp_" + bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /** Try each passphrase wrap from the cloud until one opens. Null when the password is wrong. */
+    fun unlockWithPassword(wraps: org.json.JSONArray, password: String): ByteArray? {
+        for (i in 0 until wraps.length()) {
+            val wrap = wraps.optJSONObject(i) ?: continue
+            if (wrap.optString("kind") != "passphrase") continue
+            val dek = runCatching { MesaVault.unwrapWithPassphrase(wrap, password) }.getOrNull()
+            if (dek != null && dek.size == 32) return dek
+        }
+        return null
+    }
+}

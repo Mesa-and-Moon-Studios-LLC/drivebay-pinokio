@@ -124,6 +124,14 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/section_connection"
+                    android:textColor="#E8EEF7"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
                     android:text="@string/url_help"
                     android:textColor="#94A3B8"
@@ -199,24 +207,6 @@
                     android:layout_marginTop="16dp"
                     android:text="@string/save_connect" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/downloadsBtn"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/downloads"
-                    android:textColor="#E8EEF7" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/checkUpdatesBtn"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/check_for_updates"
-                    android:textColor="#E8EEF7" />
-
                 <TextView
                     android:id="@+id/serversLabel"
                     android:layout_width="match_parent"
@@ -246,12 +236,11 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/mesa_section"
                     android:textColor="#E8EEF7"
                     android:textSize="18sp"
                     android:textStyle="bold" />
-
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -259,7 +248,6 @@
                     android:text="@string/mesa_help"
                     android:textColor="#94A3B8"
                     android:textSize="13sp" />
-
                 <TextView
                     android:id="@+id/mesaStatus"
                     android:layout_width="match_parent"
@@ -307,6 +295,21 @@
                     android:textColor="#E8EEF7"
                     android:visibility="gone" />
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/section_my_machines"
+                    android:textColor="#E8EEF7"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/section_my_machines_help"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp" />
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/mesaMachines"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
@@ -329,12 +332,11 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
+                    android:layout_marginTop="28dp"
                     android:text="@string/phone_share_section"
                     android:textColor="#E8EEF7"
                     android:textSize="18sp"
                     android:textStyle="bold" />
-
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -342,7 +344,6 @@
                     android:text="@string/phone_share_help"
                     android:textColor="#94A3B8"
                     android:textSize="13sp" />
-
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/ownerPasswordBtn"
                     style="@style/Widget.MaterialComponents.Button.OutlinedButton"
@@ -368,6 +369,39 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="28dp"
+                    android:text="@string/section_updates"
+                    android:textColor="#E8EEF7"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="@string/section_updates_help"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/downloadsBtn"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/downloads"
+                    android:textColor="#E8EEF7" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/checkUpdatesBtn"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/check_for_updates"
+                    android:textColor="#E8EEF7" />
+
             </LinearLayout>
         </ScrollView>
 

@@ -100,15 +100,33 @@ object MesaPanel {
             return
         }
         thread(name = "mesa-machines") {
-            val list = fetchMachines(config, session.first, machineId(activity))
-            activity.runOnUiThread {
-                if (list == null) {
-                    toast(activity, "The Mesa and Moon cloud did not return machines.")
-                    return@runOnUiThread
+            // Refresh this phone's own record first so the other machines see it as online.
+            registerBlocking(activity)
+            val directory = fetchDirectory(config, session.first, machineId(activity))
+            if (directory == null) {
+                activity.runOnUiThread { toast(activity, "The Mesa and Moon cloud did not return machines.") }
+                return@thread
+            }
+            var dek = loadDek(activity)
+            if (directory.locked && dek == null) {
+                // The list is encrypted with the join password. Ask for it, then reopen.
+                activity.runOnUiThread {
+                    askJoinPassword(activity, directory.wraps) { showMachines(activity) }
                 }
+                return@thread
+            }
+            val list = if (directory.locked && dek != null) openLocked(dek, directory.machines) else directory.machines
+            activity.runOnUiThread {
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
                 if (list.length() == 0) {
                     body.addView(TextView(activity).apply { text = "No machines on this login yet." })
+                }
+                if (!directory.locked) {
+                    body.addView(TextView(activity).apply {
+                        text = "No join password is set yet. Set one on a computer (Settings, My machines) to join with a password and an approval."
+                        textSize = 12f
+                        setPadding(0, 8, 0, 8)
+                    })
                 }
                 for (i in 0 until list.length()) {
                     val row = list.getJSONObject(i)
@@ -119,6 +137,13 @@ object MesaPanel {
                         setPadding(0, 12, 0, 0)
                     })
                     if (row.optString("machineId") == machineId(activity)) continue
+                    if (directory.locked && row.optString("type") != "phone") {
+                        body.addView(MaterialButton(activity).apply {
+                            text = "Join"
+                            isAllCaps = false
+                            setOnClickListener { joinMachine(activity, row, directory.wraps) }
+                        })
+                    }
                     body.addView(MaterialButton(activity).apply {
                         text = activity.getString(R.string.mesa_connect)
                         isAllCaps = false
@@ -309,6 +334,11 @@ object MesaPanel {
     }
 
     fun register(activity: Activity) {
+        thread(name = "mesa-register") { registerBlocking(activity) }
+    }
+
+    /** Plain connection info until the list is locked, then an envelope sealed with the account key. */
+    private fun registerBlocking(activity: Activity) {
         val config = loadConfig(activity) ?: return
         val session = loadSession(activity) ?: return
         val share = PhoneShareStore(activity)
@@ -325,9 +355,14 @@ object MesaPanel {
             false,
             "",
         )
-        thread(name = "mesa-register") {
-            post(config.cloudApi + "/machines.php", body.toString(), session.first)
+        val directory = fetchDirectory(config, session.first, machineId(activity))
+        val payload = if (directory?.locked == true) {
+            val dek = loadDek(activity) ?: return
+            runCatching { MesaVault.encryptDirectory(dek, body) }.getOrNull() ?: return
+        } else {
+            body
         }
+        post(config.cloudApi + "/machines.php", payload.toString(), session.first)
     }
 
     private fun refresh(activity: Activity, status: TextView) {
@@ -486,9 +521,171 @@ object MesaPanel {
         return out
     }
 
-    private fun fetchMachines(config: MesaCloud.Config, idToken: String, self: String): JSONArray? {
+    private class Directory(val machines: JSONArray, val locked: Boolean, val wraps: JSONArray)
+
+    private fun fetchDirectory(config: MesaCloud.Config, idToken: String, self: String): Directory? {
         val text = get(config.cloudApi + "/machines.php?self=" + self, idToken) ?: return null
-        return runCatching { JSONObject(text).optJSONArray("machines") ?: JSONArray() }.getOrNull()
+        return runCatching {
+            val json = JSONObject(text)
+            Directory(
+                json.optJSONArray("machines") ?: JSONArray(),
+                json.optBoolean("locked", false),
+                json.optJSONArray("wraps") ?: JSONArray(),
+            )
+        }.getOrNull()
+    }
+
+    /** Open each sealed record. A record this key cannot open is skipped, not fatal. */
+    private fun openLocked(dek: ByteArray, machines: JSONArray): JSONArray {
+        val out = JSONArray()
+        for (i in 0 until machines.length()) {
+            val row = machines.optJSONObject(i) ?: continue
+            if (row.optInt("envelopeVersion") == 2 && row.optString("ciphertext").isNotBlank()) {
+                runCatching { MesaVault.decryptDirectory(dek, row) }.getOrNull()?.let { out.put(it) }
+            } else {
+                out.put(row)
+            }
+        }
+        return out
+    }
+
+    private fun loadDek(activity: Activity): ByteArray? {
+        val text = CredentialVault(activity).load("mesa-dek").orEmpty()
+        if (text.isBlank()) return null
+        return runCatching { MesaVault.fromB64(text) }.getOrNull()?.takeIf { it.size == 32 }
+    }
+
+    private fun saveDek(activity: Activity, dek: ByteArray) {
+        CredentialVault(activity).save("mesa-dek", MesaVault.b64(dek))
+    }
+
+    private fun askJoinPassword(activity: Activity, wraps: JSONArray, done: () -> Unit) {
+        val input = EditText(activity).apply {
+            hint = "Join password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle("Enter your join password")
+            .setMessage("Your machine list is encrypted. The password is not saved. Only the key it opens stays on this phone.")
+            .setView(input)
+            .setPositiveButton("Unlock") { _, _ ->
+                val typed = input.text?.toString().orEmpty()
+                thread(name = "mesa-unlock") {
+                    val dek = MesaJoin.unlockWithPassword(wraps, typed)
+                    if (dek == null) {
+                        activity.runOnUiThread { toast(activity, "That join password did not open your machine list.") }
+                    } else {
+                        saveDek(activity, dek)
+                        registerBlocking(activity)
+                        activity.runOnUiThread { done() }
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun postJson(url: String, body: String): Pair<Int, String> {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 8000
+            readTimeout = 8000
+        }
+        return try {
+            connection.outputStream.use { it.write(body.toByteArray()) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            code to (stream?.bufferedReader()?.readText().orEmpty())
+        } catch (_: Exception) {
+            0 to ""
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /**
+     * Join a machine on this login: send the join password proof and a device-key signature,
+     * then wait for a trusted device on that machine to approve. Only then does this phone get a token.
+     */
+    private fun joinMachine(activity: Activity, machine: JSONObject, wraps: JSONArray) {
+        val url = MesaCloud.connectionUrl(machine)
+        if (url.isEmpty()) {
+            toast(activity, "That machine has no Tailscale or LAN address.")
+            return
+        }
+        val dek = loadDek(activity)
+        if (dek == null) {
+            askJoinPassword(activity, wraps) { joinMachine(activity, machine, wraps) }
+            return
+        }
+        val origin = url.substringBefore("/dav").trimEnd('/')
+        val hostId = machine.optString("machineId")
+        val me = machineId(activity)
+        val privateKey = CredentialVault(activity).load("mesa-machine-private").orEmpty()
+        if (privateKey.isBlank()) {
+            toast(activity, "This phone has no device key yet. Sign in again.")
+            return
+        }
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val waiting = android.app.AlertDialog.Builder(activity)
+            .setTitle(machine.optString("displayName"))
+            .setMessage("Waiting for a trusted device on ${machine.optString("displayName")} to approve this phone. Open Drivebay Settings there, My machines, and tap Approve.")
+            .setNegativeButton(android.R.string.cancel) { _, _ -> cancelled.set(true) }
+            .setCancelable(false)
+            .show()
+        thread(name = "mesa-join") {
+            fun finish(message: String) = activity.runOnUiThread {
+                waiting.dismiss()
+                toast(activity, message)
+            }
+            val secret = MesaJoin.newSecret()
+            val request = runCatching {
+                JSONObject()
+                    .put("machineId", me)
+                    .put("displayName", android.os.Build.MODEL ?: "Phone")
+                    .put("secret", secret)
+                    .put("proof", MesaJoin.proof(dek, hostId, me, secret))
+                    .put("signature", MesaJoin.signature(privateKey, hostId, me, secret))
+            }.getOrNull()
+            if (request == null) {
+                finish("Could not build the join request on this phone.")
+                return@thread
+            }
+            val (status, text) = postJson("$origin/api/link/request", request.toString())
+            val asked = runCatching { JSONObject(text) }.getOrNull()
+            val id = asked?.optString("id").orEmpty()
+            if (status != 200 || id.isBlank()) {
+                finish(asked?.optString("error")?.takeIf { it.isNotBlank() } ?: "That machine did not take the join request.")
+                return@thread
+            }
+            val deadline = System.currentTimeMillis() + 10 * 60 * 1000
+            while (!cancelled.get() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(3000)
+                val polled = postJson("$origin/api/link/poll", JSONObject().put("id", id).put("secret", secret).toString())
+                if (polled.first == 200) {
+                    val answer = runCatching { JSONObject(polled.second) }.getOrNull()
+                    val token = answer?.optString("token").orEmpty()
+                    if (token.isBlank()) continue
+                    val full = answer?.optString("scope") == "full"
+                    runCatching { CredentialVault(activity).save("link-" + hostId, token) }
+                    val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
+                    activity.runOnUiThread {
+                        waiting.dismiss()
+                        val head = if (full) "Trusted. All drives on this machine:" else "Connected. Shared folders only:"
+                        val message = if (names.isEmpty()) "$head\n(none found)" else head + "\n" + names.joinToString("\n")
+                        android.app.AlertDialog.Builder(activity)
+                            .setTitle(machine.optString("displayName"))
+                            .setMessage(message)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show()
+                    }
+                    return@thread
+                }
+            }
+            if (!cancelled.get()) finish("Nobody approved this phone in time. Ask again.")
+        }
     }
 
     private fun postAny(url: String, body: String): String? {
