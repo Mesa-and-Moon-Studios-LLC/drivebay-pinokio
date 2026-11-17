@@ -167,5 +167,7 @@ export function publicLinks(records) {
     paired: Boolean(row?.token),
     pending: Boolean(row?.pendingId),
     scope: row?.scope === "full" ? "full" : "shares",
+    showInExplorer: row?.showInExplorer !== false,
+    localUrl: row?.localUrl ? String(row.localUrl) : "",
   }));
 }

@@ -15,6 +15,7 @@ import {
   revokeLinkedGrant,
   saveLinkedShares,
   saveMesaSession,
+  setLinkedExplorerVisible,
   setMachineRemoteAccess,
   signOutMesa,
 } from "@/lib/files/linked-machines.functions";
@@ -68,9 +69,21 @@ type Status = {
     pending: { id: string; name: string; join?: boolean; fromId?: string; hostId?: string; hostName?: string }[];
     grants: { id: string; name: string; createdAt: number; scope: "full" | "shares" }[];
   };
-  links: { machineId: string; label: string; paired: boolean; pending?: boolean; via: string; scope?: string }[];
+  links: {
+    machineId: string;
+    label: string;
+    paired: boolean;
+    pending?: boolean;
+    via: string;
+    scope?: string;
+    letter?: string;
+    showInExplorer?: boolean;
+    mounted?: boolean;
+    localUrl?: string;
+  }[];
   self: { displayName: string } | null;
   warning: string;
+  explorer?: { supported?: boolean; placeName?: string; needsAdmin?: boolean };
   vault?: { ready?: boolean; unlocked?: boolean; hasPassphrase?: boolean; hasPasskey?: boolean; hasRecovery?: boolean; cannotRecover?: string };
   remoteAccess?: { enabled?: boolean; offAt?: number | null; mode?: string; source?: string; byName?: string };
 };
@@ -695,6 +708,31 @@ export function MyMachinesSection() {
                     Join
                   </Button>
                 )}
+                {granted && status?.explorer?.supported ? (
+                  <label className="flex items-center gap-1 text-xs text-fg-muted">
+                    <input
+                      type="checkbox"
+                      className="accent-current"
+                      checked={link?.showInExplorer !== false}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const show = event.target.checked;
+                        setBusy(true);
+                        void setLinkedExplorerVisible({ data: { machineId: machine.machineId, show } })
+                          .then((result) => {
+                            if (result && "ok" in result && !result.ok) toast.error(result.message || "Could not update the mount");
+                            else if (show) toast.success(`Showing ${machine.displayName} in ${status.explorer?.placeName || "Explorer"}`);
+                          })
+                          .finally(() => {
+                            setBusy(false);
+                            void refresh();
+                          });
+                      }}
+                    />
+                    Show in {status.explorer?.placeName || "Explorer"}
+                    {link?.mounted && link.label ? ` · ${link.label}` : ""}
+                  </label>
+                ) : null}
                 {link?.pending && !granted ? (
                   <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void finish(machine.machineId)}>
                     Check approval
@@ -724,8 +762,16 @@ export function MyMachinesSection() {
         ) : null}
         <p className="text-xs text-fg-muted">
           <span className="text-fg">Join</span> uses your join password and waits for a trusted device on that machine
-          to approve. <span className="text-fg">Open drives</span> browses a machine that already approved you. The
+          to approve. Linked machines also mount in {status?.explorer?.placeName || "Explorer"} under the device name
+          and stay mounted. <span className="text-fg">Open drives</span> still browses a machine in the app. The
           6-digit code in Sharing with others is only for someone else&apos;s device to open shared folders.
+          {status?.explorer?.needsAdmin ? (
+            <span>
+              {" "}
+              A one-time administrator approval can raise the Windows WebDAV file-size limit so large copies are not
+              cut off at 50 MB.
+            </span>
+          ) : null}
         </p>
       </Sub>
     </Card>

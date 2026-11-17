@@ -5,7 +5,7 @@
  */
 
 import { loadIdentity, loadLinkedTokens, loadPairState, saveLinkedTokens, savePairState } from "./linked-store.mjs";
-import { addGrant, connectionCandidates, isOnline, randomSalt, randomToken } from "./linked-machines.mjs";
+import { addGrant, connectionCandidates, isOnline, pickDriveLetter, randomSalt, randomToken } from "./linked-machines.mjs";
 import { joinProof, signJoin } from "./linked-crypto.mjs";
 import { fetchSponsorAttestation, offerReciprocalRemote, pollRemote, requestRemote } from "./linked-connect.mjs";
 import { signReciprocal } from "./linked-reciprocal.mjs";
@@ -121,7 +121,8 @@ export async function meshTrustedPeers(home, { fetchImpl = fetch, mount } = {}) 
           continue;
         }
         if (typeof mount === "function") {
-          await mount(home, machine.machineId, polled.token, machine, polled.scope);
+          const letter = pickDriveLetter(loadLinkedTokens(home), machine.machineId, records[machine.machineId]?.letter || "P");
+          await mount(home, machine.machineId, polled.token, machine, letter, polled.scope);
         } else {
           const current = loadLinkedTokens(home);
           current[machine.machineId] = {

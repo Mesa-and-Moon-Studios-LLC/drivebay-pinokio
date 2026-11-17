@@ -490,15 +490,21 @@ export function randomRequestId() {
 const DRIVE_LETTERS = "PQRSTUVWXYZDEFGHIJKLMNOAB";
 
 /** Each linked machine gets its own Windows letter. C is never used. */
-export function pickDriveLetter(records, machineId, requested = "P") {
-  const used = new Set();
+export function pickDriveLetter(records, machineId, requested = "P", blocked = []) {
+  const used = new Set(
+    [...(blocked || [])]
+      .map((item) => String(item || "").toUpperCase().replace(":", "").slice(0, 1))
+      .filter((letter) => /^[A-Z]$/.test(letter)),
+  );
+  used.add("C");
   for (const [id, row] of Object.entries(records || {})) {
     if (id === machineId) continue;
     const letter = String(row?.letter || "").toUpperCase().replace(":", "").slice(0, 1);
     if (/^[A-Z]$/.test(letter)) used.add(letter);
   }
-  const want = String(requested || "P").toUpperCase().replace(":", "").slice(0, 1);
-  if (/^[A-Z]$/.test(want) && want !== "C" && !used.has(want)) return want;
+  const requestedText = String(requested || "P").toUpperCase().replace(":", "").trim();
+  const want = requestedText.length === 1 ? requestedText : "P";
+  if (/^[A-Z]$/.test(want) && !used.has(want)) return want;
   for (const letter of DRIVE_LETTERS) {
     if (!used.has(letter)) return letter;
   }

@@ -42,18 +42,34 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
       })),
       ...remotePending,
     ];
+    const explorer = await import("./linked-explorer.mjs");
+    const explorerStatus = await explorer.publicExplorerStatus(home).catch(() => ({
+      supported: false,
+      placeName: explorer.explorerPlaceName(),
+      needsAdmin: false,
+      links: {},
+    }));
+    const links = store.publicLinks(store.loadLinkedTokens(home)).map((row: { machineId: string }) => ({
+      ...row,
+      ...(explorerStatus.links?.[row.machineId] || {}),
+    }));
     return {
       account: store.publicAccount(store.loadAccount(home)),
       config: store.publicFirebaseConfig(store.loadFirebaseConfig(home)),
       shares: store.loadShares(home),
       pairs: { ...localPairs, pending },
-      links: store.publicLinks(store.loadLinkedTokens(home)),
+      links,
       self: identity?.machineId
         ? { machineId: identity.machineId, displayName: identity.displayName || "", publicKey: identity.publicKey || "" }
         : null,
       warning: machines.DIRECT_INTERNET_WARNING,
       vault: vault.accountVaultStatus(home, listed),
       remoteAccess: (await import("./settings.server")).readRemoteAccess(),
+      explorer: {
+        supported: explorerStatus.supported,
+        placeName: explorerStatus.placeName,
+        needsAdmin: explorerStatus.needsAdmin === true,
+      },
     };
   });
 
@@ -258,40 +274,15 @@ export const revokeLinkedGrant = createServerFn({ method: "POST" })
   });
 
 async function mountSaved(home: string, machineId: string, token: string, machine: Record<string, unknown>, letter: string, scope: "full" | "shares" = "shares") {
-  const machines = await import("./linked-machines.mjs");
-  const drive = await import("./phone-drive.mjs");
+  const explorer = await import("./linked-explorer.mjs");
   const store = await import("./linked-store.mjs");
-  const records = store.loadLinkedTokens(home);
-  const taken = Object.entries(records)
-    .filter(([id]) => id !== machineId)
-    .map(([, row]) => (row as { label?: string })?.label || "")
-    .filter(Boolean);
-  const plan = machines.linkedMountPlan({ machine, secret: token, letter, home, takenLabels: taken });
-  if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot mount" };
-  const result = await drive.runMount(plan);
-  records[machineId] = {
+  const safeLetter = explorer.resolvedLetter(store.loadLinkedTokens(home), machineId, letter);
+  return explorer.mountLinkedMachine(home, machineId, {
     token,
-    url: plan.url,
-    label: plan.volumeLabel,
-    letter: plan.letter || letter,
-    method: plan.method,
-    mountPoint: plan.mountPoint || "",
-    via: plan.via,
+    machine,
+    letter: safeLetter,
     scope,
-  };
-  store.saveLinkedTokens(home, records);
-  if (result.code === 0 && plan.volumeLabel) {
-    await drive.setDriveLabel(plan.url, plan.volumeLabel, process.platform, plan.risk === true);
-  }
-  const shown = plan.userFacing || plan.volumeLabel || "that machine";
-  return {
-    ok: result.code === 0,
-    message: result.code === 0
-      ? scope === "full" ? `Mounted ${shown}. You can browse all of its drives.` : `Mounted ${shown}. Only its shared folders are visible.`
-      : drive.redact(result.output, token),
-    display: shown,
-    scope,
-  };
+  });
 }
 
 export const connectLinkedMachine = createServerFn({ method: "POST" })
@@ -431,25 +422,31 @@ export const disconnectLinkedMachine = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const home = await adminHome();
     const store = await import("./linked-store.mjs");
-    const machines = await import("./linked-machines.mjs");
-    const drive = await import("./phone-drive.mjs");
     const records = store.loadLinkedTokens(home);
     const row = records[data.machineId];
     if (!row?.url) return { ok: false as const, message: "That machine is not saved on this PC." };
-    const plan = machines.linkedUnmountPlan(row, { platform: process.platform, home });
-    if (!plan.ok) return { ok: false as const, message: plan.error || "Cannot unmount" };
-    const result = await drive.runMount(plan);
-    if (result.code === 0 && row.url) await drive.clearDriveLabel(row.url);
+    const explorer = await import("./linked-explorer.mjs");
+    const result = await explorer.unmountLinkedMachine(home, data.machineId, { keepRecord: !data.forget, stop: true });
     if (data.forget) {
       await notifyForgetPeer(home, data.machineId);
       const http = await import("./linked-http.mjs");
       http.revokeLocalGrant(home, data.machineId);
-      delete records[data.machineId];
-      store.saveLinkedTokens(home, records);
     }
-    return { ok: result.code === 0, message: drive.redact(result.output, row.token || "") };
+    return { ok: result.ok !== false, message: result.message || "" };
   });
 
+
+export const setLinkedExplorerVisible = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ machineId: z.string().min(8).max(64), show: z.boolean() }))
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const explorer = await import("./linked-explorer.mjs");
+    const cloud = await import("./linked-cloud.mjs");
+    const listed = await cloud.fetchMachines(home).catch(() => ({ machines: [] as { machineId?: string }[] }));
+    const machine = (listed.machines || []).find((row: { machineId?: string }) => row.machineId === data.machineId) || {};
+    return explorer.setShowInExplorer(home, data.machineId, data.show, { machine });
+  });
 
 export const setupLinkedVault = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
