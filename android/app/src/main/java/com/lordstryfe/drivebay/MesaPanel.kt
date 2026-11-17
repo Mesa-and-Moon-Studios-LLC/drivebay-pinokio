@@ -28,7 +28,6 @@ import kotlin.concurrent.thread
  * Pair tokens stay in the local vault. The cloud gets connection info only.
  */
 object MesaPanel {
-    private const val REDIRECT = "drivebay://mesa"
     private const val RISK =
         "Direct internet opens this port on the public network. Anyone who can reach that port can try to connect. Your files stay on this machine and do not pass through Mesa and Moon servers. This is less safe than Tailscale. Turn it on only if you forwarded the port yourself."
 
@@ -60,27 +59,19 @@ object MesaPanel {
 
     fun consume(activity: Activity, intent: Intent?) {
         val data = intent?.data?.toString() ?: return
-        val parsed = MesaCloud.readFragment(data) ?: return
-        val expected = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE).getString("nonce", "")
-        if (expected.isNullOrBlank() || parsed.second != expected) {
+        val session = MesaCloud.readBridgeSession(data) ?: return
+        val prefs = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE)
+        val expected = prefs.getString("nonce", "")
+        if (expected.isNullOrBlank() || session.state != expected) {
             toast(activity, "That Mesa and Moon sign-in did not match this phone.")
             return
         }
-        val config = loadConfig(activity) ?: return
-        val provider = if (parsed.first == "apple") "apple.com" else "google.com"
-        thread(name = "mesa-signin") {
-            val session = exchange(config, provider, parsed.third)
-            activity.runOnUiThread {
-                if (session == null) {
-                    toast(activity, "Mesa and Moon did not accept that sign-in.")
-                } else {
-                    saveSession(activity, session)
-                    register(activity)
-                    refresh(activity, activity.findViewById(R.id.mesaStatus))
-                    toast(activity, "Signed in to Mesa and Moon")
-                }
-            }
-        }
+        prefs.edit().remove("nonce").apply()
+        // The sign-in page already ran the Firebase sign-in. Keep the Firebase session it handed back.
+        saveSession(activity, Triple(session.idToken, session.email, session.refreshToken))
+        register(activity)
+        refresh(activity, activity.findViewById(R.id.mesaStatus))
+        toast(activity, "Signed in to Mesa and Moon")
     }
 
     private fun start(activity: Activity, provider: String) {
@@ -90,17 +81,14 @@ object MesaPanel {
             return
         }
         val clientId = if (provider == "google") config.googleClientId else config.appleClientId
-        if (clientId.isBlank()) {
+        val bridge = MesaCloud.signinBridgeUrl(config)
+        if (clientId.isBlank() || bridge.isBlank()) {
             toast(activity, if (provider == "google") "Google sign-in is not configured." else "Apple sign-in is not configured.")
             return
         }
         val nonce = UUID.randomUUID().toString()
         activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE).edit().putString("nonce", nonce).apply()
-        val url = if (provider == "google") {
-            MesaCloud.googleAuthorizeUrl(clientId, REDIRECT, nonce)
-        } else {
-            MesaCloud.appleAuthorizeUrl(clientId, REDIRECT, nonce)
-        }
+        val url = MesaCloud.bridgeStartUrl(bridge, provider, nonce)
         activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     }
 
@@ -112,30 +100,164 @@ object MesaPanel {
             return
         }
         thread(name = "mesa-machines") {
-            val list = fetchMachines(config, session.first, machineId(activity))
-            activity.runOnUiThread {
-                if (list == null) {
-                    toast(activity, "The Mesa and Moon cloud did not return machines.")
-                    return@runOnUiThread
+            // Refresh this phone's own record first so the other machines see it as online.
+            registerBlocking(activity)
+            val directory = fetchDirectory(config, session.first, machineId(activity))
+            if (directory == null) {
+                activity.runOnUiThread { toast(activity, "The Mesa and Moon cloud did not return machines.") }
+                return@thread
+            }
+            var dek = loadDek(activity)
+            if (directory.locked && dek == null) {
+                // The list is encrypted with the join password. Ask for it, then reopen.
+                activity.runOnUiThread {
+                    askJoinPassword(activity, directory.wraps) { showMachines(activity) }
                 }
+                return@thread
+            }
+            val list = if (directory.locked && dek != null) openLocked(dek, directory.machines) else directory.machines
+            MesaSponsor.attach(activity)
+            val pendingAll = org.json.JSONArray()
+            val pendingNotes = mutableListOf<String>()
+            val vault = CredentialVault(activity)
+            val checked = mutableSetOf<String>()
+            fun considerHost(id: String, origin: String?, name: String) {
+                if (id.isBlank() || id == machineId(activity) || !checked.add(id)) return
+                val token = vault.load("link-$id").orEmpty()
+                if (token.isBlank()) return
+                val resolved = origin?.takeIf { it.isNotBlank() } ?: vault.load("link-url-$id")?.takeIf { it.isNotBlank() }
+                if (resolved.isNullOrBlank()) {
+                    pendingNotes.add("No reachable address for $name.")
+                    return
+                }
+                if (origin?.isNotBlank() == true) vault.save("link-url-$id", origin)
+                val found = MesaSponsor.listPending(resolved, token)
+                if (found.pending.length() == 0) {
+                    if (found.error != null) pendingNotes.add("Could not list join requests on $name.")
+                    return
+                }
+                if (vault.load("link-scope-$id").orEmpty() != "full") vault.save("link-scope-$id", "full")
+                for (j in 0 until found.pending.length()) pendingAll.put(found.pending.getJSONObject(j))
+            }
+            for (i in 0 until list.length()) {
+                val row = list.optJSONObject(i) ?: continue
+                if (row.optString("type") == "phone") continue
+                val id = row.optString("machineId")
+                considerHost(id, MesaReciprocal.originOf(row), row.optString("displayName").ifBlank { "that computer" })
+            }
+            for (key in vault.ids()) {
+                if (!key.startsWith("link-") || key.startsWith("link-scope-") || key.startsWith("link-url-")) continue
+                considerHost(key.removePrefix("link-"), vault.load("link-url-" + key.removePrefix("link-")), "a saved computer")
+            }
+            if (checked.none { vault.load("link-$it").orEmpty().isNotBlank() }) {
+                pendingNotes.add("This phone can approve a join once it has a full trusted connection to a computer. Until then, approve on the Mac: open Settings and tap Approve in the Join requests box at the top.")
+            }
+            activity.runOnUiThread {
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+                if (pendingAll.length() > 0 || pendingNotes.isNotEmpty()) {
+                    body.addView(TextView(activity).apply {
+                        text = "Join requests"
+                        textSize = 16f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setPadding(0, 8, 0, 8)
+                    })
+                    for (note in pendingNotes) {
+                        body.addView(TextView(activity).apply {
+                            text = note
+                            textSize = 12f
+                            alpha = 0.8f
+                            setPadding(0, 0, 0, 8)
+                        })
+                    }
+                    for (i in 0 until pendingAll.length()) {
+                        val req = pendingAll.getJSONObject(i)
+                        val hostLabel = req.optString("hostName").ifBlank { "a trusted computer" }
+                        body.addView(TextView(activity).apply {
+                            text = (req.optString("name").ifBlank { "A machine" }) + " wants to join " + hostLabel + "."
+                            textSize = 14f
+                            setPadding(0, 16, 0, 0)
+                        })
+                        if (req.optBoolean("join")) {
+                            body.addView(TextView(activity).apply {
+                                text = "Its join password and device key checked out."
+                                textSize = 12f
+                                alpha = 0.7f
+                            })
+                        }
+                        body.addView(MaterialButton(activity).apply {
+                            text = "Approve"
+                            isAllCaps = false
+                            setOnClickListener { approvePending(activity, req, list, directory.wraps) }
+                        })
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = "Deny"
+                            isAllCaps = false
+                            setOnClickListener { denyPending(activity, req) }
+                        })
+                    }
+                }
                 if (list.length() == 0) {
                     body.addView(TextView(activity).apply { text = "No machines on this login yet." })
                 }
+                if (!directory.locked) {
+                    body.addView(TextView(activity).apply {
+                        text = "No join password is set yet. Set one on a computer (Settings, My machines) to join with a password and an approval."
+                        textSize = 12f
+                        setPadding(0, 8, 0, 8)
+                    })
+                }
                 for (i in 0 until list.length()) {
                     val row = list.getJSONObject(i)
-                    val title = row.optString("displayName") + " · " + row.optString("type") +
-                        if (MesaCloud.isOnline(row.optString("lastSeen"), System.currentTimeMillis())) " · online" else " · offline"
+                    val online = MesaCloud.isOnline(row.optString("lastSeen"), System.currentTimeMillis())
+                    val isSelf = row.optString("machineId") == machineId(activity)
                     body.addView(TextView(activity).apply {
-                        text = title
-                        setPadding(0, 12, 0, 0)
+                        text = row.optString("displayName") + if (isSelf) " (this phone)" else ""
+                        textSize = 16f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setPadding(0, 28, 0, 0)
                     })
-                    if (row.optString("machineId") == machineId(activity)) continue
-                    body.addView(MaterialButton(activity).apply {
-                        text = activity.getString(R.string.mesa_connect)
-                        isAllCaps = false
-                        setOnClickListener { connect(activity, row) }
+                    body.addView(TextView(activity).apply {
+                        text = row.optString("type") + " · " + if (online) "online" else "offline"
+                        textSize = 12f
+                        alpha = 0.7f
                     })
+                    if (isSelf) continue
+                    val granted = hasOpenGrant(activity, row)
+                    if (granted) {
+                        body.addView(MaterialButton(activity).apply {
+                            text = "Open drives"
+                            isAllCaps = false
+                            setOnClickListener { openDrives(activity, row) }
+                        })
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = "Forget"
+                            isAllCaps = false
+                            setOnClickListener {
+                                thread(name = "mesa-forget") {
+                                    MesaReciprocal.forgetPeer(activity, row)
+                                    activity.runOnUiThread {
+                                        toast(activity, "Forgot that machine.")
+                                        showMachines(activity)
+                                    }
+                                }
+                            }
+                        })
+                    } else {
+                        if (directory.locked) {
+                            body.addView(MaterialButton(activity).apply {
+                                text = "Join"
+                                isAllCaps = false
+                                setOnClickListener { joinMachine(activity, row, directory.wraps) }
+                            })
+                        }
+                    }
+                    if (row.optString("tailscaleHost").isNotBlank()) {
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = "Remote access"
+                            isAllCaps = false
+                            setOnClickListener { remoteAccessDialog(activity, row) }
+                        })
+                    }
                 }
                 android.app.AlertDialog.Builder(activity)
                     .setTitle(R.string.mesa_machines)
@@ -178,22 +300,44 @@ object MesaPanel {
             return
         }
         thread(name = "mesa-connect") {
-            val token = if (machine.optString("type") == "phone") code else redeem(url, code, activity)
+            val token = runCatching {
+                if (machine.optString("type") == "phone") code else redeem(url, code, activity)
+            }.getOrNull()
             if (token.isNullOrBlank()) {
                 activity.runOnUiThread { toast(activity, "That machine refused the code.") }
                 return@thread
             }
-            CredentialVault(activity).save("link-" + machine.optString("machineId"), token)
-            val names = propfind(url, token)
+            val saved = runCatching {
+                val vault = CredentialVault(activity)
+                val id = machine.optString("machineId")
+                vault.save("link-$id", token)
+                vault.save("link-scope-$id", "shares")
+                vault.save("link-url-$id", url.substringBefore("/dav").trimEnd('/'))
+            }.isSuccess
             activity.runOnUiThread {
-                val message = if (names.isEmpty()) "Connected. No folders are shared." else names.joinToString("\n")
-                android.app.AlertDialog.Builder(activity)
-                    .setTitle(machine.optString("displayName"))
-                    .setMessage(message)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
+                if (!saved) toast(activity, "Paired, but this phone could not save the pairing. Try again.")
+                else openDrives(activity, machine)
             }
         }
+    }
+
+    /** A saved token that is not known to be shared-folders-only opens the drives without asking again. */
+    private fun hasOpenGrant(activity: Activity, machine: JSONObject): Boolean {
+        val vault = CredentialVault(activity)
+        val id = machine.optString("machineId")
+        if (machine.optString("type") == "phone") return false
+        if (vault.load("link-$id").isNullOrBlank()) return false
+        return vault.load("link-scope-$id").orEmpty() != "shares"
+    }
+
+    /** Open a machine this phone already holds a grant for in the full-screen browser. */
+    private fun openDrives(activity: Activity, machine: JSONObject) {
+        if (MesaCloud.connectionUrl(machine).isEmpty()) {
+            toast(activity, "That machine has no Tailscale or LAN address.")
+            return
+        }
+        runCatching { LinkedBrowserActivity.launch(activity, machine) }
+            .onFailure { toast(activity, "Could not open the file browser.") }
     }
 
     private fun redeem(url: String, code: String, activity: Activity): String? {
@@ -208,24 +352,114 @@ object MesaPanel {
     }
 
     private fun propfind(url: String, token: String): List<String> {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "PROPFIND"
-            setRequestProperty("Depth", "1")
-            setRequestProperty("Authorization", "Basic " + Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP))
+        // HttpURLConnection cannot send PROPFIND on Android (ProtocolException), so use DavClient.
+        val auth = Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP)
+        val reply = DavClient.propfind(url, auth) ?: return emptyList()
+        return if (reply.status == 207) runCatching { MesaCloud.shareNames(reply.body) }.getOrDefault(emptyList()) else emptyList()
+    }
+
+    private fun remoteAccessDialog(activity: Activity, machine: JSONObject) {
+        val token = CredentialVault(activity).load("link-" + machine.optString("machineId")).orEmpty()
+        if (token.isBlank()) {
+            toast(activity, "Pair this phone with that computer first.")
+            return
+        }
+        val minutes = android.widget.Spinner(activity)
+        minutes.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("15 minutes", "1 hour", "4 hours", "24 hours"))
+        val mode = android.widget.Spinner(activity)
+        mode.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("Read-only", "Read-and-write"))
+        val box = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(TextView(activity).apply {
+                text = "Turn this computer's regular internet access on from this phone, already on your Tailscale network. It turns itself off after the time you pick."
+            })
+            addView(minutes)
+            addView(mode)
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle("Remote access · " + machine.optString("displayName"))
+            .setView(box)
+            .setPositiveButton("Turn on") { _, _ ->
+                val mins = intArrayOf(15, 60, 240, 1440)[minutes.selectedItemPosition]
+                val access = if (mode.selectedItemPosition == 0) "ro" else "rw"
+                setRemoteAccess(activity, machine, token, true, mins, access)
+            }
+            .setNeutralButton("Turn off") { _, _ -> setRemoteAccess(activity, machine, token, false, 15, "rw") }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun setRemoteAccess(activity: Activity, machine: JSONObject, token: String, enabled: Boolean, minutes: Int, mode: String) {
+        val url = MesaCloud.connectionUrl(machine)
+        if (url.isEmpty() || machine.optString("tailscaleHost").isBlank()) {
+            toast(activity, "Turn remote access on from a device that is already on the Tailscale network.")
+            return
+        }
+        thread(name = "mesa-remote-access") {
+            val origin = java.net.URI(url).let { "${it.scheme}://${it.authority}" }
+            val payload = org.json.JSONObject()
+                .put("enabled", enabled)
+                .put("minutes", minutes)
+                .put("mode", mode)
+                .put("machineId", machineId(activity))
+                .put("displayName", android.os.Build.MODEL ?: "Phone")
+            val text = postWithToken("$origin/api/link/remote-access", payload.toString(), token)
+            val json = text?.let { runCatching { JSONObject(it) }.getOrNull() }
+            activity.runOnUiThread {
+                if (json == null || json.optBoolean("ok") != true && !json.has("enabled")) {
+                    toast(activity, json?.optString("error").takeUnless { it.isNullOrBlank() } ?: "That machine did not accept the change.")
+                    return@runOnUiThread
+                }
+                if (json.optBoolean("enabled")) {
+                    val countdown = json.optString("countdown")
+                    val banner = json.optString("banner")
+                    val title = json.optString("title").ifBlank {
+                        "Unprotected port forward on — reachable from the internet, outside Tailscale"
+                    }
+                    val accessMode = json.optString("mode").ifBlank { mode }
+                    val modeLabel = if (accessMode == "ro") "read-only" else "read-and-write"
+                    android.app.AlertDialog.Builder(activity)
+                        .setTitle(title)
+                        .setMessage("$countdown left · $modeLabel. $banner")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .setNeutralButton("Off now") { _, _ ->
+                            setRemoteAccess(activity, machine, token, false, 15, "rw")
+                        }
+                        .show()
+                } else {
+                    toast(activity, "Unprotected port forward is off.")
+                }
+            }
+        }
+    }
+
+    private fun postWithToken(url: String, body: String, token: String): String? {
+        val connection = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer $token")
             connectTimeout = 8000
             readTimeout = 8000
         }
         return try {
-            if (connection.responseCode != 207) emptyList()
-            else MesaCloud.shareNames(connection.inputStream.bufferedReader().readText())
+            connection.outputStream.use { it.write(body.toByteArray()) }
+            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader()?.readText()
         } catch (_: Exception) {
-            emptyList()
+            null
         } finally {
             connection.disconnect()
         }
     }
 
     fun register(activity: Activity) {
+        thread(name = "mesa-register") { registerBlocking(activity) }
+    }
+
+    /** Plain connection info until the list is locked, then an envelope sealed with the account key. */
+    private fun registerBlocking(activity: Activity) {
         val config = loadConfig(activity) ?: return
         val session = loadSession(activity) ?: return
         val share = PhoneShareStore(activity)
@@ -242,9 +476,21 @@ object MesaPanel {
             false,
             "",
         )
-        thread(name = "mesa-register") {
-            post(config.cloudApi + "/machines.php", body.toString(), session.first)
+        val directory = fetchDirectory(config, session.first, machineId(activity))
+        val payload = if (directory?.locked == true) {
+            val dek = loadDek(activity) ?: return
+            runCatching { MesaVault.encryptDirectory(dek, body) }.getOrNull() ?: return
+        } else {
+            body
         }
+        post(config.cloudApi + "/machines.php", payload.toString(), session.first)
+        val dek = loadDek(activity)
+        val listed = if (directory?.locked == true) {
+            if (dek == null) JSONArray() else openLocked(dek, directory.machines)
+        } else {
+            directory?.machines ?: JSONArray()
+        }
+        MesaReciprocal.offerPending(activity, listed)
     }
 
     private fun refresh(activity: Activity, status: TextView) {
@@ -381,11 +627,13 @@ object MesaPanel {
     private fun publicKey(activity: Activity): String {
         val prefs = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE)
         val existing = prefs.getString("publicKey", "") ?: ""
-        if (existing.isNotBlank()) return existing
-        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val created = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        prefs.edit().putString("publicKey", created).apply()
-        return created
+        if (existing.isNotBlank() && MachineKeys.looksLikePublicKey(existing) && !CredentialVault(activity).load("mesa-machine-private").isNullOrBlank()) {
+            return existing
+        }
+        val created = MachineKeys.generate()
+        CredentialVault(activity).save("mesa-machine-private", created.privateKey)
+        prefs.edit().putString("publicKey", created.publicKey).apply()
+        return created.publicKey
     }
 
     private fun localAddresses(): List<String> {
@@ -401,23 +649,226 @@ object MesaPanel {
         return out
     }
 
-    private fun exchange(config: MesaCloud.Config, provider: String, idToken: String): Triple<String, String, String>? {
-        val body = MesaCloud.idpBody(provider, idToken, REDIRECT)
-        val text = post(
-            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=" + config.apiKey,
-            body,
-            null,
-        ) ?: return null
-        val json = runCatching { JSONObject(text) }.getOrNull() ?: return null
-        val next = json.optString("idToken")
-        val refresh = json.optString("refreshToken")
-        if (next.isBlank() || refresh.isBlank()) return null
-        return Triple(next, json.optString("email"), refresh)
+    private class Directory(val machines: JSONArray, val locked: Boolean, val wraps: JSONArray)
+
+    private fun fetchDirectory(config: MesaCloud.Config, idToken: String, self: String): Directory? {
+        val text = get(config.cloudApi + "/machines.php?self=" + self, idToken) ?: return null
+        return runCatching {
+            val json = JSONObject(text)
+            Directory(
+                json.optJSONArray("machines") ?: JSONArray(),
+                json.optBoolean("locked", false),
+                json.optJSONArray("wraps") ?: JSONArray(),
+            )
+        }.getOrNull()
     }
 
-    private fun fetchMachines(config: MesaCloud.Config, idToken: String, self: String): JSONArray? {
-        val text = get(config.cloudApi + "/machines.php?self=" + self, idToken) ?: return null
-        return runCatching { JSONObject(text).optJSONArray("machines") ?: JSONArray() }.getOrNull()
+    /** Open each sealed record. A record this key cannot open is skipped, not fatal. */
+    private fun openLocked(dek: ByteArray, machines: JSONArray): JSONArray {
+        val out = JSONArray()
+        for (i in 0 until machines.length()) {
+            val row = machines.optJSONObject(i) ?: continue
+            if (row.optInt("envelopeVersion") == 2 && row.optString("ciphertext").isNotBlank()) {
+                runCatching { MesaVault.decryptDirectory(dek, row) }.getOrNull()?.let { out.put(it) }
+            } else {
+                out.put(row)
+            }
+        }
+        return out
+    }
+
+    private fun loadDek(activity: Activity): ByteArray? {
+        val text = CredentialVault(activity).load("mesa-dek").orEmpty()
+        if (text.isBlank()) return null
+        return runCatching { MesaVault.fromB64(text) }.getOrNull()?.takeIf { it.size == 32 }
+    }
+
+    private fun saveDek(activity: Activity, dek: ByteArray) {
+        CredentialVault(activity).save("mesa-dek", MesaVault.b64(dek))
+    }
+
+    private fun askJoinPassword(activity: Activity, wraps: JSONArray, done: () -> Unit) {
+        val input = EditText(activity).apply {
+            hint = "Join password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        android.app.AlertDialog.Builder(activity)
+            .setTitle("Enter your join password")
+            .setMessage("Your machine list is encrypted. The password is not saved. Only the key it opens stays on this phone.")
+            .setView(input)
+            .setPositiveButton("Unlock") { _, _ ->
+                val typed = input.text?.toString().orEmpty()
+                thread(name = "mesa-unlock") {
+                    val dek = MesaJoin.unlockWithPassword(wraps, typed)
+                    if (dek == null) {
+                        activity.runOnUiThread { toast(activity, "That join password did not open your machine list.") }
+                    } else {
+                        saveDek(activity, dek)
+                        registerBlocking(activity)
+                        activity.runOnUiThread { done() }
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun postJson(url: String, body: String): Pair<Int, String> {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            connectTimeout = 8000
+            readTimeout = 8000
+        }
+        return try {
+            connection.outputStream.use { it.write(body.toByteArray()) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            code to (stream?.bufferedReader()?.readText().orEmpty())
+        } catch (_: Exception) {
+            0 to ""
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /**
+     * Join a machine on this login: send the join password proof and a device-key signature,
+     * then wait for a trusted device on that machine to approve. Only then does this phone get a token.
+     */
+
+    private fun approvePending(activity: Activity, request: JSONObject, machines: JSONArray, wraps: JSONArray) {
+        val dek = loadDek(activity)
+        if (dek == null) {
+            askJoinPassword(activity, wraps) { approvePending(activity, request, machines, wraps) }
+            return
+        }
+        val me = machineId(activity)
+        val privateKey = CredentialVault(activity).load("mesa-machine-private").orEmpty()
+        if (privateKey.isBlank()) {
+            toast(activity, "This phone has no device key yet. Sign in again.")
+            return
+        }
+        thread(name = "mesa-approve") {
+            val hostUrl = request.optString("hostUrl")
+            val hostId = request.optString("hostId")
+            val token = CredentialVault(activity).load("link-$hostId").orEmpty()
+            val joinerId = request.optString("fromId")
+            val att = MesaSponsor.attestation(dek, privateKey, me, joinerId, request.optString("name"), request.optString("id"), hostId)
+            val error = MesaSponsor.approveOnHost(hostUrl, token, request.optString("id"), att)
+            if (error != null) {
+                activity.runOnUiThread { toast(activity, error) }
+                return@thread
+            }
+            var joiner = JSONObject().put("displayName", request.optString("name")).put("machineId", joinerId)
+            for (i in 0 until machines.length()) {
+                val row = machines.optJSONObject(i) ?: continue
+                if (row.optString("machineId") == joinerId) joiner = row
+            }
+            MesaSponsor.grantToJoiner(activity, joiner, joinerId)
+            activity.runOnUiThread {
+                toast(activity, "Approved. " + (request.optString("name").ifBlank { "That machine" }) + " can now join.")
+                showMachines(activity)
+            }
+        }
+    }
+
+    private fun denyPending(activity: Activity, request: JSONObject) {
+        thread(name = "mesa-deny") {
+            val hostUrl = request.optString("hostUrl")
+            val hostId = request.optString("hostId")
+            val token = CredentialVault(activity).load("link-$hostId").orEmpty()
+            val error = MesaSponsor.denyOnHost(hostUrl, token, request.optString("id"))
+            activity.runOnUiThread {
+                toast(activity, error ?: "Denied.")
+                showMachines(activity)
+            }
+        }
+    }
+
+    private fun joinMachine(activity: Activity, machine: JSONObject, wraps: JSONArray) {
+        if (machine.optString("type") == "phone") {
+            toast(activity, "Join this phone from that phone: open My machines and pick this device.")
+            return
+        }
+        val url = MesaCloud.connectionUrl(machine)
+        if (url.isEmpty()) {
+            toast(activity, "That machine has no Tailscale or LAN address.")
+            return
+        }
+        val dek = loadDek(activity)
+        if (dek == null) {
+            askJoinPassword(activity, wraps) { joinMachine(activity, machine, wraps) }
+            return
+        }
+        val origin = url.substringBefore("/dav").trimEnd('/')
+        val hostId = machine.optString("machineId")
+        val me = machineId(activity)
+        val privateKey = CredentialVault(activity).load("mesa-machine-private").orEmpty()
+        if (privateKey.isBlank()) {
+            toast(activity, "This phone has no device key yet. Sign in again.")
+            return
+        }
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val waiting = android.app.AlertDialog.Builder(activity)
+            .setTitle(machine.optString("displayName"))
+            .setMessage("Waiting for a trusted device on ${machine.optString("displayName")} to approve this phone. Open Drivebay Settings there, My machines, and tap Approve.")
+            .setNegativeButton(android.R.string.cancel) { _, _ -> cancelled.set(true) }
+            .setCancelable(false)
+            .show()
+        thread(name = "mesa-join") {
+            fun finish(message: String) = activity.runOnUiThread {
+                waiting.dismiss()
+                toast(activity, message)
+            }
+            val secret = MesaJoin.newSecret()
+            val request = runCatching {
+                JSONObject()
+                    .put("machineId", me)
+                    .put("displayName", android.os.Build.MODEL ?: "Phone")
+                    .put("secret", secret)
+                    .put("proof", MesaJoin.proof(dek, hostId, me, secret))
+                    .put("signature", MesaJoin.signature(privateKey, hostId, me, secret))
+            }.getOrNull()
+            if (request == null) {
+                finish("Could not build the join request on this phone.")
+                return@thread
+            }
+            val (status, text) = postJson("$origin/api/link/request", request.toString())
+            val asked = runCatching { JSONObject(text) }.getOrNull()
+            val id = asked?.optString("id").orEmpty()
+            if (status != 200 || id.isBlank()) {
+                finish(asked?.optString("error")?.takeIf { it.isNotBlank() } ?: "That machine did not take the join request.")
+                return@thread
+            }
+            val deadline = System.currentTimeMillis() + 10 * 60 * 1000
+            while (!cancelled.get() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(3000)
+                val polled = postJson("$origin/api/link/poll", JSONObject().put("id", id).put("secret", secret).toString())
+                if (polled.first == 200) {
+                    val answer = runCatching { JSONObject(polled.second) }.getOrNull()
+                    val token = answer?.optString("token").orEmpty()
+                    if (token.isBlank()) continue
+                    val full = answer?.optString("scope") == "full"
+                    runCatching {
+                        val vault = CredentialVault(activity)
+                        vault.save("link-" + hostId, token)
+                        vault.save("link-scope-" + hostId, if (full) "full" else "shares")
+                        vault.save("link-url-" + hostId, origin)
+                    }
+                    if (full) runCatching { MesaReciprocal.offerTo(activity, machine, token) }
+                    activity.runOnUiThread {
+                        waiting.dismiss()
+                        toast(activity, if (full) "Trusted. Opening all drives on this machine." else "Connected. Shared folders only.")
+                        if (full && MesaReciprocal.needsAllFiles(activity)) promptAllFiles(activity)
+                        openDrives(activity, machine)
+                    }
+                    return@thread
+                }
+            }
+            if (!cancelled.get()) finish("Nobody approved this phone in time. Ask again.")
+        }
     }
 
     private fun postAny(url: String, body: String): String? {
@@ -471,6 +922,14 @@ object MesaPanel {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun promptAllFiles(activity: Activity) {
+        if (activity is MainActivity) {
+            activity.requestLinkAllFiles()
+            return
+        }
+        toast(activity, "Allow all-files access so trusted computers can open this phone's storage.")
     }
 
     private fun toast(activity: Activity, message: String) {

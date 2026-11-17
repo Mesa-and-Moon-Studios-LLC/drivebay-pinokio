@@ -65,6 +65,11 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".LinkedBrowserActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|screenLayout|smallestScreenSize"
+            android:windowSoftInputMode="adjustResize|stateHidden" />
+        <activity
             android:name=".DownloadOpenActivity"
             android:exported="false"
             android:excludeFromRecents="true"

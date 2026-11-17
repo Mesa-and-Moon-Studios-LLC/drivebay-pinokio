@@ -42,6 +42,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.lordstryfe.drivebay.update.SideloadUpdatePrompt
@@ -51,6 +52,7 @@ import com.lordstryfe.drivebay.update.UpdateSource
 import com.mesaandmoon.update.AppUpdateGate
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import kotlinx.coroutines.Dispatchers
+import java.io.File
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -99,6 +101,7 @@ class MainActivity : AppCompatActivity() {
     private var updatingShare = false
     /** Set while the All files access screen is open, so onResume can finish turning whole-phone mode on. */
     private var awaitingAllFiles = false
+    private var awaitingLinkAllFiles = false
 
     private val uploadLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -1052,8 +1055,21 @@ class MainActivity : AppCompatActivity() {
         return getString(R.string.phone_share_last_seen, seen)
     }
 
-    private fun openAllFilesSettings() {
-        awaitingAllFiles = true
+    fun requestLinkAllFiles() {
+        if (PhoneShareService.allFilesAccess()) {
+            MesaReciprocal.rememberNeedAllFiles(this, false)
+            PhoneShareService.start(this)
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setMessage("Allow all-files access so computers you've joined can open this phone's storage.")
+            .setPositiveButton(R.string.phone_share_whole_open) { _, _ -> openAllFilesSettings(forLink = true) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openAllFilesSettings(forLink: Boolean = false) {
+        if (forLink) awaitingLinkAllFiles = true else awaitingAllFiles = true
         val specific = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
         try {
             startActivity(specific)
@@ -1088,6 +1104,13 @@ class MainActivity : AppCompatActivity() {
     private fun syncWholePhoneAccess() {
         if (Build.VERSION.SDK_INT < 30) return
         val granted = PhoneShareService.allFilesAccess()
+        if (awaitingLinkAllFiles || MesaReciprocal.needsAllFiles(this)) {
+            if (awaitingLinkAllFiles) awaitingLinkAllFiles = false
+            if (granted) {
+                MesaReciprocal.rememberNeedAllFiles(this, false)
+                PhoneShareService.start(this)
+            }
+        }
         if (awaitingAllFiles) {
             awaitingAllFiles = false
             if (granted) setWholePhone(true) else renderPhoneShare()
@@ -1339,6 +1362,80 @@ class MainActivity : AppCompatActivity() {
         return lower.contains("/api/download")
     }
 
+    private fun beginShare(json: String) {
+        val items = PhoneSend.parse(json)
+        if (items.isEmpty()) {
+            Toast.makeText(this, R.string.share_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        val allowedHost = prefs.getString(KEY_URL, null)?.let(ServerAddress::hostOf)
+        if (allowedHost.isNullOrBlank() || items.any { !allowedHost.equals(ServerAddress.hostOf(it.url), ignoreCase = true) }) {
+            Toast.makeText(this, R.string.download_need_http, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (items.sumOf { it.size } > PhoneSend.MAX_TOTAL_BYTES) {
+            Toast.makeText(this, R.string.share_too_large, Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, R.string.share_preparing, Toast.LENGTH_SHORT).show()
+        CookieManager.getInstance().flush()
+        val agent = webView.settings.userAgentString.orEmpty()
+        lifecycleScope.launch {
+            val files = withContext(Dispatchers.IO) {
+                val dir = File(cacheDir, "share")
+                dir.deleteRecursively()
+                dir.mkdirs()
+                val names = PhoneSend.dedupe(items.map { it.name })
+                items.mapIndexedNotNull { index, item ->
+                    runCatching {
+                        val target = File(dir, names[index])
+                        val connection = (java.net.URL(item.url).openConnection() as java.net.HttpURLConnection).apply {
+                            val cookie = CookieManager.getInstance().getCookie(item.url).orEmpty()
+                            if (cookie.isNotEmpty()) setRequestProperty("Cookie", cookie)
+                            if (agent.isNotEmpty()) setRequestProperty("User-Agent", agent)
+                            connectTimeout = 15_000
+                            readTimeout = 60_000
+                        }
+                        try {
+                            if (connection.responseCode !in 200..299) return@runCatching null
+                            connection.inputStream.use { input -> target.outputStream().use { input.copyTo(it) } }
+                            target
+                        } finally {
+                            connection.disconnect()
+                        }
+                    }.getOrNull()
+                }
+            }
+            if (files.isEmpty()) {
+                Toast.makeText(this@MainActivity, R.string.share_failed, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val authority = "$packageName.fileprovider"
+            val uris = files.map { FileProvider.getUriForFile(this@MainActivity, authority, it) }
+            val types = files.map { PhoneSend.mimeOf(it.name) }
+            val send = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = types.first()
+                    putExtra(Intent.EXTRA_STREAM, uris.first())
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = PhoneSend.commonMime(types)
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+                }
+            }
+            val clip = android.content.ClipData.newRawUri(files.first().name, uris.first())
+            uris.drop(1).forEach { clip.addItem(android.content.ClipData.Item(it)) }
+            send.clipData = clip
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            try {
+                startActivity(Intent.createChooser(send, getString(R.string.share_title)))
+            } catch (_: Exception) {
+                Toast.makeText(this@MainActivity, R.string.share_failed, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun beginDownload(url: String, suggestedName: String?, knownSize: Long?) {
         val httpUrl = toHttpDownloadUrl(url)
         if (httpUrl.isNullOrBlank()) {
@@ -1490,6 +1587,12 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun autoSignInTried() {
             runOnUiThread { currentServer?.let { autoSubmitted.add(it.id) } }
+        }
+
+        /** Send to in the file browser menu. Opens the Android share sheet. */
+        @JavascriptInterface
+        fun shareFiles(json: String) {
+            runOnUiThread { beginShare(json) }
         }
 
         /** The Upload button in the Android app. The WebView file input is not used for this path. */

@@ -17,6 +17,7 @@ import {
   CLOUD_KEYS,
   DIRECT_INTERNET_WARNING,
   classifyAddresses,
+  connectionCandidates,
   connectionUrl,
   freshPairState,
   isOnline,
@@ -114,6 +115,20 @@ test("online is last seen within two minutes", () => {
 test("addresses pick Tailscale and LAN separately", () => {
   const found = classifyAddresses(["192.168.1.9", "100.70.1.2", "8.8.8.8", "172.16.0.4"]);
   assert.equal(found.tailscaleHost, "100.70.1.2");
+  const v4first = classifyAddresses(["fd7a:115c:a1e0::1", "100.70.170.22", "192.168.0.34"]);
+  assert.equal(v4first.tailscaleHost, "100.70.170.22");
+  assert.equal(v4first.lanAddress, "192.168.0.34");
+  const candidates = connectionCandidates({
+    ...base,
+    tailscaleHost: "fd7a:115c:a1e0::e638:aa17",
+    lanAddress: "192.168.0.34",
+    port: 8780,
+    type: "phone",
+    addresses: ["fd7a:115c:a1e0::e638:aa17", "100.70.170.22", "192.168.0.34"],
+  });
+  assert.equal(candidates[0].host, "100.70.170.22");
+  assert.equal(candidates[0].via, "tailscale");
+  assert.ok(candidates.some((row) => row.host === "192.168.0.34" && row.via === "lan"));
   assert.equal(found.lanAddress, "192.168.1.9");
 });
 
@@ -174,6 +189,13 @@ test("approval returns the pair token only to the machine that asked", () => {
   assert.equal(owner.ok, true);
   assert.equal(owner.token, "dbp_approved");
   assert.equal(verifyPairToken(owner.state, "dbp_approved"), true);
+});
+
+test("polling a request that is no longer pending is marked missing so the joiner can send a new one", () => {
+  const state = freshPairState();
+  const missing = pollRequest(state, { id: "req-gone", secret: "request-secret-value" });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.missing, true);
 });
 
 test("mount plans name the drive and follow the 3.36.7 desktop or rclone split", () => {
@@ -409,7 +431,7 @@ test("sign-in URLs match Google and Apple and the docs name the cloud rules", ()
   assert.match(ui, /Continue with Google/);
   assert.match(ui, /Continue with Apple/);
   assert.match(ui, /Create account/);
-  assert.match(ui, /Email me a reset link/);
+  assert.match(ui, /Send reset link/);
   assert.match(ui, /My machines/);
   const phoneUi = fs.readFileSync(path.join(root, "app/src/components/settings/phone-drive.tsx"), "utf8");
   assert.equal(phoneUi.includes("Windows drive letter"), false);
@@ -549,4 +571,33 @@ test("the PHP token check accepts an email provider and refuses an anonymous one
   if (php.error && php.error.code === "ENOENT") return;
   assert.equal(php.status, 0, php.stderr);
   assert.equal(php.stdout.trim(), "email google apple no-anon missing");
+});
+
+test("own machines in My machines join with a password, not a 6-digit code", () => {
+  const ui = fs.readFileSync(path.join(root, "app/src/components/settings/linked-machines.tsx"), "utf8");
+  const start = ui.indexOf("export function MyMachinesSection");
+  const end = ui.indexOf("export function SharingSection");
+  assert.ok(start >= 0 && end > start);
+  const mine = ui.slice(start, end);
+  const sharing = ui.slice(end);
+  assert.match(mine, /data-testid="own-machine-join"/);
+  assert.match(mine, /Join/);
+  assert.equal(mine.includes("pair-code"), false);
+  assert.equal(mine.includes("6-digit code from the other machine"), false);
+  assert.equal(/onClick=\{\(\) => void connect\(machine/.test(mine), false);
+  assert.match(sharing, /Show a 6-digit code/);
+  const panel = fs.readFileSync(path.join(root, "android/app/src/main/java/com/lordstryfe/drivebay/MesaPanel.kt"), "utf8");
+  assert.match(panel, /approvePending/);
+  assert.equal(panel.includes("with a code (shared folders only)"), false);
+  const joinFn = fs.readFileSync(path.join(root, "app/src/lib/files/linked-machines.functions.ts"), "utf8");
+  assert.equal(joinFn.includes("Join this phone from the phone: open Machines on it and pick this computer."), false);
+
+  const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
+  const linked = fs.readFileSync(path.join(root, "app/src/components/settings/linked-machines.tsx"), "utf8");
+  assert.match(settings, /<JoinRequestsBanner \/>/);
+  assert.match(linked, /data-testid="join-request-banner"/);
+  assert.match(linked, /export function JoinRequestsBanner/);
+  const bannerAt = settings.indexOf("<JoinRequestsBanner />");
+  const accountAt = settings.indexOf("id=\"account\"");
+  assert.ok(bannerAt >= 0 && accountAt > bannerAt, "Approve must appear at the top of Settings, above Account");
 });

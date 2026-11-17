@@ -37,6 +37,9 @@ class CredentialVault(context: Context) {
         prefs.edit().remove(id).apply()
     }
 
+    /** Saved vault key names only. Values stay encrypted and are not returned. */
+    fun ids(): Set<String> = prefs.all.keys
+
     private fun encrypt(plain: String): String {
         val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")

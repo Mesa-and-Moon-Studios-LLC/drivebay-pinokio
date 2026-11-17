@@ -6,7 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { normalizeShares, verifyPairToken } from "./linked-machines.mjs";
+import { grantForToken, normalizeShares, verifyPairToken } from "./linked-machines.mjs";
 
 const WRITE_METHODS = new Set(["PUT", "DELETE", "MKCOL", "MOVE"]);
 
@@ -155,6 +155,8 @@ export function handleDav({
   remoteIsPrivate = true,
   directInternet = false,
   displayName = "Drivebay",
+  publicWrite = true,
+  fullAccess = null,
 }) {
   const verb = String(method || "GET").toUpperCase();
   const allow = "OPTIONS, PROPFIND, GET, HEAD, PUT, DELETE, MKCOL, MOVE, LOCK, UNLOCK";
@@ -173,7 +175,17 @@ export function handleDav({
   if (!davAuthorized(headerMap.authorization, pairState)) {
     return text(401, "Sign in required", { "WWW-Authenticate": 'Basic realm="Drivebay"' });
   }
-  const normalized = normalizeShares(shares);
+  // A trusted own machine (joined with the join password and approved here) gets every
+  // drive this machine shows locally. It is checked here on every request, against the
+  // grant behind this token, and only for Tailscale or LAN peers. Everyone else gets the shared list.
+  const grant = grantForToken(pairState, parseBasic(headerMap.authorization)?.password || "");
+  const full = grant?.scope === "full" && remoteIsPrivate && fullAccess && Array.isArray(fullAccess.roots) && fullAccess.roots.length
+    ? fullAccess
+    : null;
+  const normalized = full
+    ? normalizeShares({ folders: full.roots.map((root) => ({ path: root.path, name: root.name, access: "rw" })) })
+    : normalizeShares(shares);
+  const policy = full?.policy || {};
   const parts = davParts(urlPath, prefix);
   if (!parts) return text(400, "Bad path");
   const depth = String(headerMap.depth || "1").trim().toLowerCase();
@@ -183,8 +195,15 @@ export function handleDav({
   if (where.kind === "missing") return text(404, "Missing");
 
   if (WRITE_METHODS.has(verb)) {
-    if (where.kind === "root") return text(403, "Nothing is shared at the root.");
+    if (!publicWrite) return text(403, "Remote access is read-only.");
+    if (where.kind === "root") return text(403, full ? "Pick a drive first." : "Nothing is shared at the root.");
     if (where.share.access !== "rw") return text(403, "That folder is read-only.");
+    if (full) {
+      if (verb === "PUT" && policy.allowUpload === false) return text(403, "Uploads are turned off on this machine.");
+      if (verb === "DELETE" && policy.allowDelete === false) return text(403, "Delete is turned off on this machine.");
+      if (verb === "MOVE" && policy.allowRename === false) return text(403, "Rename and move are turned off on this machine.");
+      if (verb === "MKCOL" && policy.allowCreateFolder === false) return text(403, "New folders are turned off on this machine.");
+    }
   }
 
   if (verb === "PROPFIND") return propfind(prefix, normalized, parts, where, depth, displayName);

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Drivebay · Passkey</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0a0a0b; color: #f1f1f3;
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { width: min(92vw, 420px); padding: 28px; border: 1px solid rgb(241 241 243 / .12); border-radius: 12px; background: #121214; }
+  h1 { font-size: 17px; margin: 0 0 8px; }
+  p { margin: 8px 0; color: #b9b9c2; }
+  .btn { display: block; margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #d7dbe3; color: #0a0a0b;
+         text-align: center; text-decoration: none; font-weight: 600; border: 0; width: 100%; cursor: pointer; font: inherit; font-weight: 600; }
+  .err { color: #ff8f8f; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Passkey for the machine list</h1>
+  <p id="msg">This page never sends your passkey secret to Mesa and Moon. It stays on this device and is handed back to Drivebay on this computer only.</p>
+  <p class="err" id="err" hidden></p>
+  <button class="btn" id="go" type="button">Continue</button>
+</main>
+<script type="module">
+/*
+ * Drivebay passkey / WebAuthn PRF bridge.
+ * The relying party is this Firebase Hosting origin. The PRF output is returned
+ * with window.opener.postMessage only. It is never written to the URL, a query
+ * string, or a hash, and it is not stored on this site.
+ */
+const ANDROID_PACKAGE = "com.mesaandmoon.drivebay";
+const RP_NAME = "Drivebay";
+const $ = (id) => document.getElementById(id);
+
+function showError(msg) {
+  $("err").hidden = false;
+  $("err").textContent = msg;
+}
+
+function cleanReturn(value) {
+  const text = String(value || "").trim();
+  if (text === "android") return "android";
+  let url;
+  try { url = new URL(text); } catch { return ""; }
+  if (url.protocol !== "http:") return "";
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)) return "";
+  if (url.username || url.password) return "";
+  if (url.pathname !== "/settings") return "";
+  return `${url.origin}/settings`;
+}
+
+function cleanState(value) {
+  const text = String(value || "");
+  return /^[A-Za-z0-9-]{8,80}$/.test(text) ? text : "";
+}
+
+function b64url(buf) {
+  const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+  let bin = "";
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64(buf) {
+  const bytes = buf instanceof ArrayBuffer ? new Uint8Array(buf) : buf;
+  let bin = "";
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return btoa(bin);
+}
+
+function fromB64url(value) {
+  const pad = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = pad + "=".repeat((4 - (pad.length % 4)) % 4);
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function handBack({ state, prfOutput, credentialId, prfSalt, action }) {
+  const payload = { type: "drivebay-prf", state, prfOutput, credentialId, prfSalt, action };
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage(payload, "*");
+    $("msg").textContent = "You can close this window and return to Drivebay.";
+    $("go").hidden = true;
+    return;
+  }
+  // No URL handoff of the PRF secret. Tell the user to reopen from Drivebay.
+  showError("Open this page from Drivebay Settings so the passkey can be handed back without putting it in a link.");
+}
+
+function prfFromCredential(cred, first) {
+  const results = cred.getClientExtensionResults ? cred.getClientExtensionResults() : {};
+  const prf = results.prf || {};
+  const resultsMap = prf.results || {};
+  const raw = resultsMap.first || prf.first;
+  if (!raw) return "";
+  return b64(raw);
+}
+
+async function run() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get("action") === "get" ? "get" : "create";
+  const state = cleanState(params.get("state"));
+  const ret = cleanReturn(params.get("return"));
+  if (!state) {
+    showError("This passkey request is missing.");
+    return;
+  }
+  if (!window.PublicKeyCredential || !navigator.credentials) {
+    showError("This browser does not support passkeys. Use the recovery passphrase instead.");
+    return;
+  }
+  const first = crypto.getRandomValues(new Uint8Array(32));
+  const rpId = window.location.hostname;
+  try {
+    let cred;
+    if (action === "create") {
+      cred = await navigator.credentials.create({
+        publicKey: {
+          rp: { id: rpId, name: RP_NAME },
+          user: { id: first, name: "drivebay-vault", displayName: "Drivebay machine list" },
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          pubKeyCredParams: [
+            { type: "public-key", alg: -7 },
+            { type: "public-key", alg: -8 },
+            { type: "public-key", alg: -257 },
+          ],
+          authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
+          timeout: 120000,
+          extensions: { prf: { eval: { first } } },
+        },
+      });
+    } else {
+      cred = await navigator.credentials.get({
+        publicKey: {
+          rpId,
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          userVerification: "required",
+          timeout: 120000,
+          extensions: { prf: { eval: { first } } },
+        },
+      });
+    }
+    if (!cred) {
+      showError("The passkey was cancelled.");
+      return;
+    }
+    const prfOutput = prfFromCredential(cred, first);
+    if (!prfOutput) {
+      showError("This passkey cannot produce an encryption key on this device. Use the recovery passphrase, or save a passkey in iCloud Keychain or Google Password Manager.");
+      return;
+    }
+    handBack({
+      state,
+      prfOutput,
+      credentialId: cred.rawId ? b64(cred.rawId) : "",
+      prfSalt: b64(first),
+      action,
+    });
+  } catch (err) {
+    showError(err && err.message ? err.message : "The passkey was not created.");
+  }
+}
+
+$("go").addEventListener("click", () => {
+  $("err").hidden = true;
+  void run();
+});
+$("title").textContent = new URLSearchParams(window.location.search).get("action") === "get"
+  ? "Unlock with a passkey"
+  : "Save a passkey";
+</script>
+</body>
+</html>

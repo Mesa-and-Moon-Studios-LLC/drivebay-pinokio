@@ -30,8 +30,12 @@ object PhoneShareLifecycle {
 
     /** Sharing stays up when any paired PC still has a token. Boot resume uses this and does not ask for the owner password. */
     fun shouldResume(enabled: Boolean, pairs: List<PhonePair>, folderCount: Int, wholePhone: Boolean = false): Boolean {
+        if (hasTrustedGrant(pairs)) return true
         return enabled && pairs.any { peerId(it.tokenHash) != null } && (wholePhone || folderCount > 0)
     }
+
+    fun hasTrustedGrant(pairs: List<PhonePair>): Boolean =
+        pairs.any { it.scope == "full" && peerId(it.tokenHash) != null }
 
     /** OPTIONS advertises every paired PC. The PC matches its own id inside the list. */
     fun phoneNameHeader(name: String?): String {

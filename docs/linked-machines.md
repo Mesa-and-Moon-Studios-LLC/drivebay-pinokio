@@ -2,7 +2,7 @@
 
 Drivebay 3.37 can sign each machine into one Mesa and Moon account. The account is optional. Browse, the password lock, and phone-as-drive all work with nobody signed in.
 
-The cloud stores connection info only: machine id, display name, type (`pc`, `mac`, `linux`, or `phone`), Tailscale address, LAN address, port, public key, and last seen. A hidden machine is left out of other machines' lists. A public address is stored only after the owner turns on direct internet and types the host. Your files never touch our servers. Folder lists, passwords, phone codes, and pair tokens are not uploaded. There is no relay. If a relay is ever added, it has to be end-to-end encrypted. This version does not have one.
+From 3.38, the cloud stores an encrypted machine directory. Your devices encrypt the public key, name, addresses, port, and hidden flag before anything is uploaded. The server also keeps a last-seen time in the clear so other machines can see if one is online, plus wrapped copies of the account key that only your passphrase, passkey, or recovery key can open. Until you lock the list, 3.37 still stores those connection fields in the clear so they can be migrated. A hidden machine is left out of other machines' lists. A public address is stored only after the owner turns on direct internet and types the host. Your files never touch our servers. Folder lists, passwords, phone codes, and pair tokens are not uploaded. There is no relay. If a relay is ever added, it has to be end-to-end encrypted. This version does not have one.
 
 ## Sign in
 
@@ -14,19 +14,28 @@ Signing in registers this machine. It repeats about once a minute while Drivebay
 
 ## My machines
 
-Settings lists every machine on the login, with online or offline, and Connect. The address is the Tailscale address when the machine has one, then the LAN address. The public address is used only when that machine turned on direct internet. Connect over the public internet shows this warning and waits for a separate click:
+Settings lists every machine on the login, with online or offline, Join, Connect, and Forget. The address is the Tailscale address when the machine has one, then the LAN address. The public address is used only when that machine turned on direct internet. Connect over the public internet shows this warning and waits for a separate click:
 
 Direct internet opens this port on the public network. Anyone who can reach that port can try to connect. Your files stay on this machine and do not pass through Mesa and Moon servers. This is less safe than Tailscale. Turn it on only if you forwarded the port yourself.
 
-## Shared folders
+## Join password and trusted machines
 
-Nothing is shared until you add a folder. Each folder is read-only or read-write. **Hidden** keeps this machine off the other machines' lists. The WebDAV server on this PC (`/dav/`) checks the list itself. A folder that is not on the list is not listed and is not readable. A read-only folder rejects upload, delete, and rename.
+Your own machines on the same login see each other's whole drives, the same drives the local file browser shows (and honoring Drive access and the server lock). Getting there takes two things at once:
 
-## Pairing
+1. **The join password.** Set it once on the first trusted device (Settings, My machines, Set a join password). It is the account passphrase that already encrypts the machine list. It is never stored or sent in plaintext. A new device unlocks the account key with it, then proves it holds that key with an HMAC bound to the host machine, its own machine id, and a one-time request secret. It also signs the request with its own device key, and the host checks that signature against the public key in the account directory.
+2. **An approval on a trusted device.** The host shows "<name> wants to join" under Join requests. Nothing is granted until someone on that machine clicks Approve.
 
-The account list is not permission to open a drive. The first connection needs a 6-digit code shown on the other machine, or Approve on that machine. Drivebay then keeps a pair token in `linked-tokens.json` on this PC only. The other machine stores a hash of that token in `pair-state.json`. A stolen Mesa and Moon login can see addresses. It cannot mount a drive without the code or the approval.
+After that the new device holds a durable trusted-device grant on that host. The grant is tied to the device key, a pair token whose hash the host keeps in `pair-state.json`, and the host checks it on every WebDAV request, only for Tailscale or LAN peers. Settings lists trusted devices under My machines. **Forget** deletes the grant and the next request is refused.
 
-Phones still use the phone-as-drive code as the WebDAV password. Desktop machines exchange that code once for a longer token.
+A device that joined only with a 6-digit code, or from outside Tailscale and the LAN, gets the shared folders and nothing else.
+
+## Shared folders (for everyone else)
+
+Nothing is shared with people who are not your own trusted machines until you add a folder. Each folder is read-only or read-write. **Hide this machine** keeps it off the other machines' lists. The WebDAV server on this PC (`/dav/`) checks the list itself. A folder that is not on the list is not listed and is not readable. A read-only folder rejects upload, delete, and rename. Remote access (port forward, read-only or read-and-write, time limit) is unchanged.
+
+## 6-digit code
+
+The code still works for sharing the shared folders with someone else's device. It expires in 10 minutes and locks after five wrong tries. It never grants whole-drive access.
 
 ## Mounts
 

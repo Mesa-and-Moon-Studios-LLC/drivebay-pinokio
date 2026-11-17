@@ -463,13 +463,25 @@ export function decodePhoneName(raw) {
   }
 }
 
-/** Explorer's MountPoints2 key for a WebDAV drive, e.g. ##100.70.170.22@8780#DavWWWRoot. */
-export function mountPointsKey(url, allowPublic = false) {
+/** Explorer's MountPoints2 keys for a WebDAV drive, including the path and DavWWWRoot forms. */
+export function mountPointsKeys(url, allowPublic = false) {
   const parsed = cleanUrl(url, allowPublic);
-  if (!parsed) return null;
+  if (!parsed) return [];
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
   const ssl = parsed.protocol === "https:" ? "@SSL" : "";
-  return `##${parsed.hostname}${ssl}@${port}#DavWWWRoot`;
+  const base = `##${parsed.hostname}${ssl}@${port}`;
+  const keys = [`${base}#DavWWWRoot`];
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  if (parts.length) {
+    keys.push(`${base}#${parts.join("#")}`);
+    keys.push(`${base}#DavWWWRoot#${parts.join("#")}`);
+  }
+  return [...new Set(keys)];
+}
+
+/** Explorer's MountPoints2 key for a WebDAV drive, e.g. ##100.70.170.22@8780#DavWWWRoot. */
+export function mountPointsKey(url, allowPublic = false) {
+  return mountPointsKeys(url, allowPublic)[0] || null;
 }
 
 const MOUNT_POINTS = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\MountPoints2";
@@ -488,16 +500,22 @@ function runReg(args) {
 
 /** Shows [label] for the mapped phone in File Explorer. Windows only; failure is ignored. */
 export async function setDriveLabel(url, label, platform = process.platform, allowPublic = false) {
-  const key = mountPointsKey(url, allowPublic);
+  const keys = mountPointsKeys(url, allowPublic);
   const name = pcName(label);
-  if (platform !== "win32" || !key || !name) return false;
-  return runReg(["add", `${MOUNT_POINTS}\\${key}`, "/v", "_LabelFromReg", "/t", "REG_SZ", "/d", name, "/f"]);
+  if (platform !== "win32" || !keys.length || !name) return false;
+  const results = await Promise.all(
+    keys.map((key) => runReg(["add", `${MOUNT_POINTS}\\${key}`, "/v", "_LabelFromReg", "/t", "REG_SZ", "/d", name, "/f"])),
+  );
+  return results.some(Boolean);
 }
 
 export async function clearDriveLabel(url, platform = process.platform) {
-  const key = mountPointsKey(url);
-  if (platform !== "win32" || !key) return false;
-  return runReg(["delete", `${MOUNT_POINTS}\\${key}`, "/v", "_LabelFromReg", "/f"]);
+  const keys = mountPointsKeys(url);
+  if (platform !== "win32" || !keys.length) return false;
+  const results = await Promise.all(
+    keys.map((key) => runReg(["delete", `${MOUNT_POINTS}\\${key}`, "/v", "_LabelFromReg", "/f"])),
+  );
+  return results.some(Boolean);
 }
 
 /** Tells the phone this PC's hostname. Failure leaves the mount itself alone. */

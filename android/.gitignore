@@ -16,3 +16,6 @@ keystore.properties
 /dist/
 *.apk
 *.ap_
+
+# Client Firebase config is local to a build. Never commit it.
+/app/src/main/assets/mesa-firebase.json

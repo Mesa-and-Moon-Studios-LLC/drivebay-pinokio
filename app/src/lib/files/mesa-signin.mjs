@@ -137,3 +137,46 @@ export function emailSession(body) {
     email: String(body.email || ""),
   };
 }
+
+/**
+ * Google and Apple only return to https pages they know. Drivebay sends Google and Apple sign-in
+ * through a small page on the Firebase project's own domain, which runs the Firebase handler
+ * (https://<authDomain>/__/auth/handler) and hands the session back to Drivebay.
+ */
+export function signinBridgeUrl(config) {
+  const explicit = String(config?.signinBridge || "").trim();
+  if (explicit) {
+    try {
+      const url = new URL(explicit);
+      if (url.protocol === "https:") return url.toString();
+    } catch {
+      // fall through to the default
+    }
+  }
+  const domain = String(config?.authDomain || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!domain) return "";
+  return `https://${domain}/drivebay-signin.html`;
+}
+
+/** The page Drivebay opens for Google or Apple. `returnTo` is "android" or this machine's /settings URL. */
+export function bridgeStartUrl({ bridge, provider, state, returnTo }) {
+  const url = new URL(bridge);
+  url.searchParams.set("provider", provider);
+  url.searchParams.set("state", state);
+  url.searchParams.set("return", returnTo);
+  return url.toString();
+}
+
+/** The session the bridge put in the fragment of /settings, or null. */
+export function readSessionFragment(fragment) {
+  const text = String(fragment || "").replace(/^#/, "");
+  if (!text) return null;
+  const params = new URLSearchParams(text);
+  if (params.get("mesa_session") !== "1") return null;
+  const idToken = params.get("id_token") || "";
+  const refreshToken = params.get("refresh_token") || "";
+  const state = params.get("state") || "";
+  if (!idToken || !refreshToken || !state) return null;
+  const expiresIn = Math.max(60, Math.min(86400, Number(params.get("expires_in")) || 3600));
+  return { idToken, refreshToken, state, expiresIn, email: params.get("email") || "" };
+}

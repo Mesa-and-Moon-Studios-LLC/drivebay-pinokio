@@ -138,48 +138,73 @@ function hostLiteral(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
+function isIpv6Host(host) {
+  return String(host || "").includes(":");
+}
+
 /**
- * Tailscale, then LAN. A public address is used only when this machine
- * recorded that the owner opened the port.
+ * Every reachable address, IPv4 Tailscale first, then IPv6 Tailscale, then LAN.
+ * A public address is used only when this machine recorded that the owner opened the port.
  */
-export function connectionUrl(machine) {
-  const clean = sanitizeRegistration(machine);
-  if (!clean.ok) return { url: "", via: "", risk: false };
+export function connectionCandidates(machine) {
+  const rawAddresses = Array.isArray(machine?.addresses) ? machine.addresses : [];
+  const rest = machine && typeof machine === "object" ? { ...machine } : machine;
+  if (rest && typeof rest === "object") delete rest.addresses;
+  const clean = sanitizeRegistration(rest);
+  if (!clean.ok) return [];
   const row = clean.machine;
   const pathName = row.type === "phone" ? "/" : "/dav/";
-  let host = "";
-  let via = "";
-  if (row.tailscaleHost) {
-    host = row.tailscaleHost;
-    via = "tailscale";
-  } else if (row.lanAddress) {
-    host = row.lanAddress;
-    via = "lan";
-  } else if (row.directInternet && row.publicHost) {
-    host = row.publicHost;
-    via = "public";
-  }
-  if (!host) return { url: "", via: "", risk: false };
-  return {
-    url: `http://${hostLiteral(host)}:${row.port}${pathName}`,
-    via,
-    risk: via === "public",
+  const classified = classifyAddresses(rawAddresses);
+  const seen = new Set();
+  const out = [];
+  const add = (host, via, risk = false) => {
+    const cleaned = cleanHost(host) || String(host || "").trim();
+    if (!cleaned || seen.has(cleaned)) return;
+    seen.add(cleaned);
+    out.push({
+      url: `http://${hostLiteral(cleaned)}:${row.port}${pathName}`,
+      via,
+      risk: risk === true,
+      host: cleaned,
+    });
   };
+  const tailscale = [row.tailscaleHost, classified.tailscaleHost, ...rawAddresses]
+    .map((host) => cleanHost(host) || String(host || "").trim())
+    .filter((host) => host && isTailnetAddress(host));
+  for (const host of tailscale.filter((item) => !isIpv6Host(item))) add(host, "tailscale");
+  for (const host of tailscale.filter((item) => isIpv6Host(item))) add(host, "tailscale");
+  const lan = [row.lanAddress, classified.lanAddress, ...rawAddresses]
+    .map((host) => cleanHost(host) || String(host || "").trim())
+    .filter((host) => host && isLan(host));
+  for (const host of lan) add(host, "lan");
+  if (row.directInternet && row.publicHost) add(row.publicHost, "public", true);
+  return out;
+}
+
+/**
+ * Tailscale, then LAN. A public address is used only when this machine
+ * recorded that the owner opened the port. Prefers an IPv4 Tailscale address
+ * when both v4 and v6 are listed, because some peers cannot reach the v6 path.
+ */
+export function connectionUrl(machine) {
+  return connectionCandidates(machine)[0] || { url: "", via: "", risk: false };
 }
 
 export function classifyAddresses(addresses) {
   let tailscaleHost = "";
+  let tailscaleV6 = "";
   let lanAddress = "";
   for (const raw of addresses || []) {
     const host = cleanHost(raw);
     if (!host) continue;
-    if (!tailscaleHost && isTailnetAddress(host)) {
-      tailscaleHost = host;
+    if (isTailnetAddress(host)) {
+      if (!isIpv6Host(host) && !tailscaleHost) tailscaleHost = host;
+      else if (isIpv6Host(host) && !tailscaleV6) tailscaleV6 = host;
       continue;
     }
     if (!lanAddress && isLan(host)) lanAddress = host;
   }
-  return { tailscaleHost, lanAddress };
+  return { tailscaleHost: tailscaleHost || tailscaleV6, lanAddress };
 }
 
 function isLan(host) {
@@ -292,7 +317,7 @@ export function redeemCode(state, { code, peerId, name, now, token, tokenSalt })
   return { ok: true, token: String(token), state: { ...granted, code: null } };
 }
 
-function addGrant(state, { peerId, name, token, tokenSalt, now }) {
+export function addGrant(state, { peerId, name, token, tokenSalt, now, scope = "shares", publicKey = "" }) {
   return {
     ...state,
     grants: {
@@ -302,9 +327,34 @@ function addGrant(state, { peerId, name, token, tokenSalt, now }) {
         salt: String(tokenSalt),
         name: cleanText(name, 80),
         createdAt: Number(now) || Date.now(),
+        // "full" = every drive this machine shows locally (own machines that joined with the
+        // join password and were approved). "shares" = only the shared-folder list.
+        scope: scope === "full" ? "full" : "shares",
+        publicKey: scope === "full" ? cleanText(publicKey, 4096) : "",
       },
     },
   };
+}
+
+export const GRANT_SCOPES = ["shares", "full"];
+
+/** Which grant a pair token belongs to, or null. */
+export function grantForToken(state, token) {
+  for (const [peerId, grant] of Object.entries(state?.grants || {})) {
+    if (!grant?.salt || !grant.tokenHash) continue;
+    if (secretsEqual(hashSecret(token, grant.salt), grant.tokenHash)) {
+      return { peerId, scope: grant.scope === "full" ? "full" : "shares", name: grant.name || "", publicKey: grant.publicKey || "" };
+    }
+  }
+  return null;
+}
+
+/** Forget a trusted or paired machine. Its token stops working on the next request. */
+export function revokeGrant(state, peerId) {
+  const grants = { ...(state?.grants || {}) };
+  if (!Object.prototype.hasOwnProperty.call(grants, peerId)) return { ok: false, error: "That machine is not paired.", state };
+  delete grants[peerId];
+  return { ok: true, state: { ...state, grants } };
 }
 
 export function verifyPairToken(state, token) {
@@ -316,7 +366,7 @@ export function verifyPairToken(state, token) {
   return false;
 }
 
-export function startRequest(state, { id, fromId, name, secret, salt, now }) {
+export function startRequest(state, { id, fromId, name, secret, salt, now, verified = false, publicKey = "" }) {
   const pending = (state.pending || []).filter((row) => Number(now) - Number(row.at) < CODE_TTL_MS).slice(-19);
   pending.push({
     id: cleanText(id, 64),
@@ -327,6 +377,9 @@ export function startRequest(state, { id, fromId, name, secret, salt, now }) {
     at: Number(now),
     token: "",
     tokenSalt: "",
+    // True only when the join password proof and the device key were checked on this host.
+    verified: verified === true,
+    publicKey: verified === true ? cleanText(publicKey, 4096) : "",
   });
   return { ...state, pending };
 }
@@ -338,28 +391,43 @@ export function approveRequest(state, id, { token, tokenSalt, now }) {
   });
   const row = pending.find((item) => item.id === id && item.token === String(token));
   if (!row) return { ok: false, error: "That approval request is gone.", state };
-  const granted = addGrant({ ...state, pending }, {
+  const scope = row.verified === true ? "full" : "shares";
+  const granted = addGrant({ ...state, pending: pending.map((item) => (item === row ? { ...item, scope } : item)) }, {
     peerId: row.fromId || id,
     name: row.name,
     token,
     tokenSalt,
     now,
+    scope,
+    publicKey: row.publicKey,
   });
   return { ok: true, state: granted };
 }
 
+export function denyRequest(state, id) {
+  const pending = state?.pending || [];
+  const row = pending.find((item) => item.id === id && !item.token);
+  if (!row) return { ok: false, error: "That approval request is gone.", state };
+  return { ok: true, state: { ...state, pending: pending.filter((item) => item !== row) } };
+}
+
 export function pollRequest(state, { id, secret }) {
+  if (!(state.pending || []).some((row) => row.id === id)) {
+    return { ok: false, missing: true, error: "That approval request is gone.", state };
+  }
   let token = "";
+  let scope = "shares";
   const pending = [];
   for (const row of state.pending || []) {
     if (row.id === id && row.token && secretsEqual(hashSecret(secret, row.salt), row.secretHash)) {
       token = row.token;
+      scope = row.scope === "full" ? "full" : "shares";
       continue;
     }
     pending.push(row);
   }
   if (!token) return { ok: false, error: "This machine has not approved that request yet.", state };
-  return { ok: true, token, state: { ...state, pending } };
+  return { ok: true, token, scope, state: { ...state, pending } };
 }
 
 export function publicPairState(state) {
@@ -367,11 +435,12 @@ export function publicPairState(state) {
     codeActive: Boolean(state?.code) && state.code.failures < MAX_CODE_FAILURES,
     pending: (state?.pending || [])
       .filter((row) => !row.token)
-      .map((row) => ({ id: row.id, fromId: row.fromId, name: row.name, at: row.at })),
+      .map((row) => ({ id: row.id, fromId: row.fromId, name: row.name, at: row.at, join: row.verified === true })),
     grants: Object.entries(state?.grants || {}).map(([id, grant]) => ({
       id,
       name: grant.name || "",
       createdAt: grant.createdAt || 0,
+      scope: grant.scope === "full" ? "full" : "shares",
     })),
   };
 }
@@ -421,15 +490,21 @@ export function randomRequestId() {
 const DRIVE_LETTERS = "PQRSTUVWXYZDEFGHIJKLMNOAB";
 
 /** Each linked machine gets its own Windows letter. C is never used. */
-export function pickDriveLetter(records, machineId, requested = "P") {
-  const used = new Set();
+export function pickDriveLetter(records, machineId, requested = "P", blocked = []) {
+  const used = new Set(
+    [...(blocked || [])]
+      .map((item) => String(item || "").toUpperCase().replace(":", "").slice(0, 1))
+      .filter((letter) => /^[A-Z]$/.test(letter)),
+  );
+  used.add("C");
   for (const [id, row] of Object.entries(records || {})) {
     if (id === machineId) continue;
     const letter = String(row?.letter || "").toUpperCase().replace(":", "").slice(0, 1);
     if (/^[A-Z]$/.test(letter)) used.add(letter);
   }
-  const want = String(requested || "P").toUpperCase().replace(":", "").slice(0, 1);
-  if (/^[A-Z]$/.test(want) && want !== "C" && !used.has(want)) return want;
+  const requestedText = String(requested || "P").toUpperCase().replace(":", "").trim();
+  const want = requestedText.length === 1 ? requestedText : "P";
+  if (/^[A-Z]$/.test(want) && !used.has(want)) return want;
   for (const letter of DRIVE_LETTERS) {
     if (!used.has(letter)) return letter;
   }

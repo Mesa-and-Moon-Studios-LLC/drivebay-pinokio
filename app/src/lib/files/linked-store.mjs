@@ -58,6 +58,7 @@ export function loadFirebaseConfig(home) {
     appleClientId: String(parsed.appleClientId || "").trim(),
     cloudApi: String(parsed.cloudApi || "").trim().replace(/\/$/, ""),
     authEmulator: loopbackEmulator(parsed.authEmulator),
+    signinBridge: String(parsed.signinBridge || "").trim(),
   };
   if (!config.apiKey || !config.projectId || !config.cloudApi) return { ...config, ready: false };
   return { ...config, ready: true };
@@ -76,6 +77,7 @@ export function publicFirebaseConfig(config) {
     googleClientId: config.googleClientId || "",
     appleClientId: config.appleClientId || "",
     authEmulator: config.authEmulator || "",
+    signinBridge: config.signinBridge || "",
   };
 }
 
@@ -163,5 +165,9 @@ export function publicLinks(records) {
     label: row?.label ? String(row.label) : "",
     via: row?.via ? String(row.via) : "",
     paired: Boolean(row?.token),
+    pending: Boolean(row?.pendingId),
+    scope: row?.scope === "full" ? "full" : "shares",
+    showInExplorer: row?.showInExplorer !== false,
+    localUrl: row?.localUrl ? String(row.localUrl) : "",
   }));
 }

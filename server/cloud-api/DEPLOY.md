@@ -2,7 +2,7 @@
 
 This folder is the Mesa and Moon account API for Drivebay. It is meant for HostGator shared hosting at `mesaandmoon.com`, the same style as the games' `api/*.php` scripts. Nothing in this repo deploys it. Do not point a release at it until the steps below are done.
 
-The API stores connection info only: machine id, display name, type (`pc`, `mac`, `linux`, `phone`), Tailscale address, LAN address, port, public key, last seen, a hidden flag, and a public address only when that machine says the owner opened a port. It does not store files, file lists, passwords, phone codes, or pair tokens. Drivebay does not relay file bytes through this server.
+From 3.38, the API stores an encrypted machine directory (ciphertext, nonce, last seen, and wrapped key records) after the owner locks the list. Until then it may still store connection info only, for migration: machine id, display name, type (`pc`, `mac`, `linux`, `phone`), Tailscale address, LAN address, port, public key, last seen, a hidden flag, and a public address only when that machine says the owner opened a port. It does not store files, file lists, passwords, phone codes, or pair tokens. Drivebay does not relay file bytes through this server.
 
 ## 1. Firebase
 
@@ -45,3 +45,10 @@ PHP needs PDO MySQL, OpenSSL, and either curl or `allow_url_fopen` so it can dow
 `GET api/machines.php?self=<this machine id>` returns the caller's machines. A hidden machine is omitted for the others and still returned to itself.
 
 There is no upload URL and no WebDAV proxy here. File traffic stays on Tailscale, or on a port the owner forwarded on purpose.
+
+
+## 5. 3.38.0 migration (staged, not live yet)
+
+Upload the updated PHP, then run `php migrate-33800.php` from the `drivebay` folder on the host, once, from SSH or a cron terminal (not a browser). It adds `envelope_version`, `ciphertext`, and `nonce` on `drivebay_machines` and creates `drivebay_key_wraps`. Existing plaintext rows stay until each person locks their list on a device. Do not deploy until the owner OKs it.
+
+The Firebase passkey page is `firebase-hosting/public/drivebay-passkey.html`. Deploy hosting only after the sign-in page is approved. `.well-known/assetlinks.json` currently lists the box debug-key SHA-256 (for the test-debugkey APK). Add the Play upload-key SHA-256 before a production deploy, or Play-signed phones cannot use passkeys on this domain.

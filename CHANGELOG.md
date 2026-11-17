@@ -2,6 +2,24 @@
 
 All user-facing Drivebay versions. Newest first.
 
+## 3.38.1
+- The remote-access banner is titled "Unprotected port forward on — reachable from the internet, outside Tailscale," with the mode, time left, and an Off now button. The description says the open port uses plain HTTP, so traffic is not encrypted, and that opening files still takes a signed-in DriveBay account, a paired device, or an API token. Mesa and Moon cannot see your transfers or your devices.
+- A signed-in session can read that banner status without being the PC's own browser, so a phone opening the computer in the web UI can see it. WebDAV and `/api/link` refuse public-internet requests while the toggle is off in Both mode, even if direct internet sharing is on.
+- Android 3.38.1 (versionCode 33801). The Windows installer, the macOS disk image, and the Linux archive report 3.38.1.
+
+## 3.38.0
+- The signed-in machine list is encrypted on your devices. Each device creates a key and locks public keys, names, addresses, ports, and the hidden flag with AES-256-GCM. Mesa and Moon's server only stores the Firebase account id, an opaque machine id, ciphertext, a nonce, last-seen (so others can see if a machine is online), and wrapped copies of that key. A recovery passphrase (Argon2id) is required. You can also save a passkey (WebAuthn PRF). A one-time recovery key is shown once. Mesa and Moon cannot recover the list if those are lost. Existing plaintext rows are rewritten the first time you lock the list.
+- From a signed-in device already on your Tailscale network, turn another computer's regular internet / port-forward path on or off, with a 15 minute, 1 hour, 4 hour, or 24 hour time limit and read-only or read-and-write. Both devices show a "Remote access is on" banner with a countdown. Pairing is still required. Tailscale-only computers stay Tailscale-only until they are set to Both.
+- Android 3.38.0 (versionCode 33800) generates a real Ed25519 keypair and keeps the private key on the phone. The PHP API and the Firebase passkey page are staged in the repo and are not deployed until you say so. The Windows installer, the macOS disk image, and the Linux archive report 3.38.0.
+
+## 3.37.2
+- Google and Apple sign-in go through an https page on the Firebase project's own domain (`https://<authDomain>/drivebay-signin.html`), which runs Firebase's handler at `/__/auth/handler`. Android no longer sends Google a `drivebay://` return address (Google answered Error 400 invalid_request), and the Mac no longer gives Apple a plain http return address. The page hands the session back to the Android app or to Settings on this computer only. Email sign-in is unchanged.
+- The file browser has a menu bar with File, Edit, View and Organize dropdowns. The main bar and the menu bar stay pinned at the top on phones and computers. Only the file list scrolls.
+- Long press a file or folder on a phone, or right-click it on a computer, for Open, Select, Cut, Copy, Paste, Rename, Delete (it asks first) and Send to. Ctrl or Cmd click selects more than one. Ctrl X, Ctrl C and Ctrl V work too.
+- After Cut or Copy, a paste bar stays under the menu bar while you open other folders. It shows what is waiting, such as 2 items cut, with Paste here and Cancel. It goes away after you paste or cancel. Paste never overwrites: a name that is taken gets " (copy)". Cut follows the rename and move switches in Settings. Copy follows the upload switches.
+- Send to opens the Android share sheet in the app, the system share sheet in browsers that have one, and otherwise downloads the file.
+- Android 3.37.2 (versionCode 33702). The Windows installer, the macOS disk image, and the Linux archive report 3.37.2.
+
 ## 3.37.1
 - Settings can sign in with email and a password, next to Continue with Google and Continue with Apple. Create account, sign in, sign out, and the password reset email use Firebase email/password. The password is not stored. Drivebay stores the Firebase ID token and refresh token the same way it stores Google and Apple. An email that already belongs to Google or Apple is not given a second user and is not given a password from this screen. Drivebay tells you to use that button, so it stays one Mesa and Moon account and the same machine list.
 - A mounted machine or phone is named from that computer's display name, such as Aaron's Mac Mini. The name stays short. A second machine with the same name gets a number. Windows still chooses a drive letter for net use. Drivebay does not show the letter. Explorer shows the computer name in `_LabelFromReg`. macOS uses that name with `mount_webdav -v` or rclone `--volname`, in `~/Drivebay/<name>`. Linux gio shows the WebDAV display name, which is the computer name. rclone uses the same folder name.

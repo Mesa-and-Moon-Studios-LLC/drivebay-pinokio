@@ -31,6 +31,7 @@ object MesaCloud {
         val appleClientId: String,
         val cloudApi: String,
         val authEmulator: String = "",
+        val signinBridge: String = "",
     ) {
         val ready: Boolean
             get() = apiKey.isNotBlank() && projectId.isNotBlank() && cloudApi.isNotBlank()
@@ -47,6 +48,7 @@ object MesaCloud {
                 appleClientId = json.optString("appleClientId").trim(),
                 cloudApi = json.optString("cloudApi").trim().trimEnd('/'),
                 authEmulator = loopbackEmulator(json.optString("authEmulator")),
+                signinBridge = json.optString("signinBridge").trim(),
             )
         } catch (_: Exception) {
             null
@@ -82,13 +84,16 @@ object MesaCloud {
 
     fun classify(addresses: List<String>): Pair<String, String> {
         var tailscale = ""
+        var tailscaleV6 = ""
         var lan = ""
         for (raw in addresses) {
             val host = raw.trim().substringBefore('%')
-            if (tailscale.isEmpty() && isTailscale(host)) tailscale = host
-            else if (lan.isEmpty() && isLan(host)) lan = host
+            if (isTailscale(host)) {
+                if (!host.contains(":") && tailscale.isEmpty()) tailscale = host
+                else if (host.contains(":") && tailscaleV6.isEmpty()) tailscaleV6 = host
+            } else if (lan.isEmpty() && isLan(host)) lan = host
         }
-        return tailscale to lan
+        return (tailscale.ifEmpty { tailscaleV6 }) to lan
     }
 
     fun connectionUrl(machine: JSONObject): String {
@@ -135,6 +140,52 @@ object MesaCloud {
             "&response_type=id_token&response_mode=fragment&scope=" + enc("name email") +
             "&nonce=" + enc(nonce) +
             "&state=" + enc("apple.$nonce")
+    }
+
+    /** Session handed back by the sign-in page: drivebay://mesa?mesa_session=1&state=..&id_token=.. */
+    data class BridgeSession(
+        val state: String,
+        val idToken: String,
+        val refreshToken: String,
+        val email: String,
+        val expiresIn: Int,
+    )
+
+    /**
+     * Google and Apple only return to https pages they know, so Google and Apple sign-in goes
+     * through a page on the Firebase project's own domain. It runs the Firebase handler
+     * (https://<authDomain>/__/auth/handler) and opens Drivebay again with the session.
+     */
+    fun signinBridgeUrl(config: Config): String {
+        val explicit = config.signinBridge.trim()
+        if (explicit.startsWith("https://")) return explicit
+        val domain = config.authDomain.trim()
+            .removePrefix("https://").removePrefix("http://")
+            .substringBefore('/')
+        if (domain.isEmpty()) return ""
+        return "https://$domain/drivebay-signin.html"
+    }
+
+    fun bridgeStartUrl(bridge: String, provider: String, state: String, returnTo: String = "android"): String {
+        val sep = if (bridge.contains('?')) "&" else "?"
+        return bridge + sep + "provider=" + enc(provider) + "&state=" + enc(state) + "&return=" + enc(returnTo)
+    }
+
+    fun readBridgeSession(uri: String): BridgeSession? {
+        val parsed = runCatching { java.net.URI(uri) }.getOrNull() ?: return null
+        if (parsed.scheme != "drivebay" || parsed.host != "mesa") return null
+        val query = parsed.rawQuery ?: return null
+        val params = query.split('&').mapNotNull { part ->
+            val cut = part.indexOf('=')
+            if (cut <= 0) null else part.substring(0, cut) to java.net.URLDecoder.decode(part.substring(cut + 1), "UTF-8")
+        }.toMap()
+        if (params["mesa_session"] != "1") return null
+        val state = params["state"].orEmpty()
+        val token = params["id_token"].orEmpty()
+        val refresh = params["refresh_token"].orEmpty()
+        if (state.isBlank() || token.isBlank() || refresh.isBlank()) return null
+        val expires = (params["expires_in"]?.toIntOrNull() ?: 3600).coerceIn(60, 86400)
+        return BridgeSession(state, token, refresh, params["email"].orEmpty(), expires)
     }
 
     fun readFragment(uri: String): Triple<String, String, String>? {

@@ -55,6 +55,48 @@ class MesaCloudTest {
         assertEquals("192.168.0.5", lan)
     }
 
+    @Test fun googleAndAppleGoThroughTheHttpsSignInPage() {
+        val config = MesaCloud.Config(
+            apiKey = "k",
+            authDomain = "mesa-and-moon-drivebay.firebaseapp.com",
+            projectId = "mesa-and-moon-drivebay",
+            googleClientId = "g",
+            appleClientId = "a",
+            cloudApi = "https://example.test/api",
+        )
+        val bridge = MesaCloud.signinBridgeUrl(config)
+        assertEquals("https://mesa-and-moon-drivebay.firebaseapp.com/drivebay-signin.html", bridge)
+        val start = MesaCloud.bridgeStartUrl(bridge, "google", "nonce-1234567890abcdef")
+        assertTrue(start.startsWith("https://"))
+        assertFalse(start.contains("drivebay%3A%2F%2F"))
+        assertTrue(start.contains("return=android"))
+        assertEquals("https://x.test/p", MesaCloud.signinBridgeUrl(config.copy(signinBridge = "https://x.test/p")))
+        assertEquals(bridge, MesaCloud.signinBridgeUrl(config.copy(signinBridge = "http://insecure.test/p")))
+
+        val back = MesaCloud.readBridgeSession(
+            "drivebay://mesa?mesa_session=1&state=nonce-1234567890abcdef&id_token=aaa.bbb.ccc&refresh_token=rrr&expires_in=3599&email=a%40b.co",
+        )
+        assertEquals("nonce-1234567890abcdef", back?.state)
+        assertEquals("aaa.bbb.ccc", back?.idToken)
+        assertEquals("rrr", back?.refreshToken)
+        assertEquals("a@b.co", back?.email)
+        assertEquals(3599, back?.expiresIn)
+        assertEquals(null, MesaCloud.readBridgeSession("drivebay://mesa?state=x&id_token=y&refresh_token=z"))
+        assertEquals(null, MesaCloud.readBridgeSession("https://evil.test/mesa?mesa_session=1&state=x&id_token=y&refresh_token=z"))
+    }
+
+    @Test fun sendToKeepsNamesInsideTheShareFolder() {
+        val items = PhoneSend.parse(
+            """[{"url":"http://100.64.0.2:8765/api/download?path=%2Fa","name":"../../etc/passwd","size":5},
+               {"url":"file:///sdcard/x","name":"x"},{"url":"http://h/api/download","name":"photo.jpg","size":7}]""",
+        )
+        assertEquals(2, items.size)
+        assertEquals("passwd", items[0].name)
+        assertEquals(listOf("a.jpg", "A (2).jpg", "b"), PhoneSend.dedupe(listOf("a.jpg", "A.jpg", "b")))
+        assertEquals("image/*", PhoneSend.commonMime(listOf("image/jpeg", "image/png")))
+        assertEquals("*/*", PhoneSend.commonMime(listOf("image/jpeg", "application/pdf")))
+    }
+
     @Test fun emailUsesTheSameProjectAndDoesNotKeepThePassword() {
         val config = MesaCloud.parseConfig(
             """{"apiKey":"key","authDomain":"mesa.firebaseapp.com","projectId":"mesa","cloudApi":"https://mesaandmoon.com/drivebay/api","authEmulator":"https://evil.example"}"""

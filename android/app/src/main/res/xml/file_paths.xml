@@ -5,4 +5,5 @@
     <cache-path name="uploads" path="uploads/" />
     <cache-path name="open" path="open/" />
     <cache-path name="updates" path="updates/" />
+    <cache-path name="share" path="share/" />
 </paths>

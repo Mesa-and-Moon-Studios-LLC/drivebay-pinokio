@@ -4,10 +4,10 @@
     <string name="server_url_hint">http://100.x.x.x:8765</string>
     <string name="connect">Connect</string>
     <string name="settings">App settings</string>
-    <string name="app_settings_note">This screen changes the server address and Wi-Fi downloads. Server settings stay on the PC.</string>
+    <string name="app_settings_note">Set the address of your Drivebay PC, your Mesa and Moon account, your own machines, and what this phone shares. Server settings stay on the PC.</string>
     <string name="save_connect">Save and Connect</string>
     <string name="url_label">DriveBay URL</string>
-    <string name="url_help">Tailscale or LAN address of the Drivebay PC. Include http:// and the port. 8765 is the usual port. 8766 is also common.</string>
+    <string name="url_help">Address of the Drivebay PC. Include http:// and the port. 8765 is the usual port. 8766 is also common.</string>
     <string name="missing_url">Enter a server URL first</string>
     <string name="tailscale_title">Tailscale</string>
     <string name="tailscale_help">Tailscale is not installed. Download it from the Play Store and sign in to the same account as your PC, or skip and connect with a local address.</string>
@@ -54,7 +54,7 @@
     <string name="download_pause">Pause</string>
     <string name="download_cancel">Cancel</string>
     <string name="phone_share_title">Phone as a drive</string>
-    <string name="phone_share_section">Phone-as-drive</string>
+    <string name="phone_share_section">Sharing this phone</string>
     <string name="phone_share_help">Off until you turn it on. Shares the folders you pick, or all of internal storage if you opt in, and only on Tailscale or your home network. An owner password is required to start sharing or to pair and revoke PCs. Each PC gets its own 6-digit code and token. Several PCs can be connected at the same time. Revoke drops that PC immediately. A PC that was already paired stays connected after either side restarts. Paired PCs is under the share banner and in this section. Owner password sets or changes that password, and changing it asks for the current one.</string>
     <string name="phone_share_toggle">Share this phone as a drive</string>
     <string name="phone_share_on">This phone is shared as a drive</string>
@@ -101,6 +101,10 @@
     <string name="upload_started">Uploading to the PC</string>
     <string name="upload_done">Uploaded to the PC</string>
     <string name="upload_failed">The upload did not finish</string>
+    <string name="share_title">Send to</string>
+    <string name="share_preparing">Getting the files ready to send…</string>
+    <string name="share_failed">Those files could not be sent</string>
+    <string name="share_too_large">That is over 1 GB. Download it first, then share it from Downloads.</string>
     <string name="phone_share_err_folder">Drivebay can\'t open the chosen folders anymore. Choose them again.</string>
     <string name="phone_share_err_port">Port %1$d is already in use on this phone. Phone sharing is off.</string>
     <string name="phone_share_err_permission">Android blocked phone sharing. Open Drivebay and try again.</string>
@@ -110,15 +114,15 @@
     <string name="error_log_share">Share</string>
     <string name="error_log_clear">Clear</string>
     <string name="error_log_new">Drivebay hit an error last time. Settings › Error log has the details.</string>
-    <string name="mesa_section">Mesa and Moon</string>
-    <string name="mesa_help">Optional. Drivebay works without an account. Your files never touch Mesa and Moon servers. Continue with Google, Apple, or email. The password is not saved on this phone.</string>
+    <string name="mesa_section">Account</string>
+    <string name="mesa_help">Optional. Drivebay works without an account. Your files never touch Mesa and Moon servers. Sign in to see your other machines. The password is not saved on this phone.</string>
     <string name="mesa_google">Continue with Google</string>
     <string name="mesa_apple">Continue with Apple</string>
     <string name="mesa_email">Continue with email</string>
     <string name="mesa_sign_out">Sign out</string>
     <string name="mesa_email_title">Mesa and Moon email</string>
-    <string name="mesa_machines">My machines</string>
-    <string name="mesa_hidden">Hidden. Other machines on this login do not see this phone.</string>
+    <string name="mesa_machines">Open my machines</string>
+    <string name="mesa_hidden">Hide this phone from my other machines</string>
     <string name="mesa_signed_out">Not signed in. Drivebay still works.</string>
     <string name="mesa_signed_in">Signed in as %1$s</string>
     <string name="mesa_connect">Connect</string>
@@ -126,4 +130,9 @@
     <string name="mesa_code_hint">6-digit code from that machine</string>
     <string name="folder_read_only">Read-only</string>
     <string name="folder_read_write">Read-write</string>
+    <string name="section_connection">Connection</string>
+    <string name="section_my_machines">My machines</string>
+    <string name="section_my_machines_help">Your own machines on the same login. Enter your join password once, then tap Join on a machine. A trusted device on that machine approves this phone, and you can then browse all of its drives. The 6-digit code is only for someone else opening shared folders, not for your own machines.</string>
+    <string name="section_updates">Updates and downloads</string>
+    <string name="section_updates_help">Check for a newer Drivebay app, and see your downloads.</string>
 </resources>

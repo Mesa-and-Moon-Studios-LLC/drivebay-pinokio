@@ -33,7 +33,7 @@ test("server lock writes are loopback-only and the settings page can edit them",
   assert.equal(host.includes("xForwardedFor"), false);
 
   const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
-  assert.match(settings, /Save server lock/);
+  assert.match(settings, /Server lock/);
   assert.match(settings, /Restart Drivebay/);
   assert.match(settings, /Max upload \(MB\)/);
   assert.match(settings, /All drives/);

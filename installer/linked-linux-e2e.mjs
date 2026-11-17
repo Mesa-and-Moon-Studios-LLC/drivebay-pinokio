@@ -129,7 +129,7 @@ async function main() {
 
   function prepare(home, port, machineId, displayName, username) {
     fs.mkdirSync(home, { recursive: true });
-    fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ port, mode: "regular", version: "3.37.1" }));
+    fs.writeFileSync(path.join(home, "config.json"), JSON.stringify({ port, mode: "regular", version: "3.38.1" }));
     fs.writeFileSync(path.join(home, "drivebay.port"), String(port));
     fs.writeFileSync(path.join(home, "pending-account.json"), JSON.stringify({ username, password }));
     writePrivate(path.join(home, "mesa-firebase.json"), {
@@ -178,13 +178,13 @@ async function main() {
       const res = await fetch(`${originA}/api/health`);
       if (!res.ok) return null;
       const body = await res.json();
-      return body.version === "3.37.1" ? body : null;
+      return body.version === "3.38.1" ? body : null;
     }, 90_000);
     const healthB = await waitFor(async () => {
       const res = await fetch(`${originB}/api/health`);
       if (!res.ok) return null;
       const body = await res.json();
-      return body.version === "3.37.1" ? body : null;
+      return body.version === "3.38.1" ? body : null;
     }, 90_000);
     console.log(`health ${healthA.version} and ${healthB.version}`);
 

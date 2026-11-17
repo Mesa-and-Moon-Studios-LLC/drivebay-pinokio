@@ -6,15 +6,25 @@ import { authClient, signOut } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { RedirectToSignIn } from "@/lib/auth/gates";
 import { emailToUsername } from "@/lib/files/identity";
-import { getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveRemoteActions, saveServerLock } from "@/lib/files/api.functions";
+import { getRemoteAccessStatus, getRouterHelp, getSettings, restartDrivebay, saveDriveAccess, savePortSettings, savePublicAccess, saveRemoteActions, saveServerLock } from "@/lib/files/api.functions";
 import { isAndroidApp, settingsOnThisPc } from "@/lib/files/client-surface.mjs";
 import { ANDROID_APK_URL, APP_VERSION, FEATURE_REQUEST_URL, PLAY_STORE_URL } from "@/lib/version";
 import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs";
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { PhoneDriveMount } from "@/components/settings/phone-drive";
-import { LinkedMachines } from "@/components/settings/linked-machines";
+import {
+  JoinRequestsBanner,
+  LinkedProvider,
+  MesaAccountSection,
+  MyMachinesSection,
+  SharingSection,
+  SignInSetupNote,
+  ThisMachineSection,
+} from "@/components/settings/linked-machines";
+import { Disclosure, SettingsGroup, SettingsNav } from "@/components/settings/settings-group";
 import { DonateMenu } from "@/components/settings/donate-menu";
 import { SupportBanner } from "@/components/support-banner";
+import { RemoteAccessBanner } from "@/components/remote-access-banner";
 import { HowToGuide } from "@/components/settings/how-to";
 import { UPDATE_STATUS_EVENT } from "@/components/update-notice";
 import { Button } from "@/components/ui/button";
@@ -73,6 +83,14 @@ function SettingsPage() {
     enabled: boolean;
     offAt: number | null;
     canEdit: boolean;
+  } | null>(null);
+  const [remoteAccess, setRemoteAccess] = useState<{
+    enabled?: boolean;
+    offAt?: number | null;
+    mode?: string;
+    source?: string;
+    byName?: string;
+    canEdit?: boolean;
   } | null>(null);
   const [publicHours, setPublicHours] = useState<0 | 1 | 4 | 24>(1);
   const [savingPublic, setSavingPublic] = useState(false);
@@ -140,9 +158,17 @@ function SettingsPage() {
         setLocalIp(help.localIp || "");
         setPublicIp(help.publicIp || "");
         setPublicAccess(help.publicAccess ?? null);
+        setRemoteAccess(help.remoteAccess ?? null);
       })
       .catch(() => {
         /* Settings still load when the router note cannot. */
+      });
+    getRemoteAccessStatus()
+      .then((status) => {
+        if (alive) setRemoteAccess(status);
+      })
+      .catch(() => {
+        /* The file browser still works if this status call fails. */
       });
     return () => {
       alive = false;
@@ -378,6 +404,7 @@ function SettingsPage() {
   return (
     <div className="flex min-h-dvh flex-col bg-bg text-fg">
       <SupportBanner />
+      <RemoteAccessBanner access={remoteAccess} machineId="self" canEdit={remoteAccess?.canEdit !== false} onChange={() => void getRemoteAccessStatus().then((status) => setRemoteAccess(status))} />
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 md:px-4">
         {onThisPc ? null : (
           <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={() => void navigate({ to: "/" })}>
@@ -399,51 +426,23 @@ function SettingsPage() {
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 px-4 py-8">
         {onThisPc ? (
         <>
+        <SettingsNav />
+        <LinkedProvider>
+        <JoinRequestsBanner />
+        <SettingsGroup id="account" title="Account" hint="Who you are on this machine and on Mesa and Moon.">
         <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Account</p>
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Drivebay lock</p>
           <div className="rounded-md border border-border bg-bg-elevated p-4">
             <Label htmlFor="username">Username</Label>
             <Input id="username" className="mt-1.5" value={ownerName} readOnly />
             <p className="mt-2 text-xs text-fg-muted">
-              This lock stays after Update. It is stored in a data folder outside the files Git replaces.
+              This is the lock on this machine. It stays after an update.
             </p>
           </div>
         </section>
 
         <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Other devices</p>
-          <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4">
-            <p className="text-xs text-fg-muted">
-              This PC can always delete, upload, and rename. Phones and other computers follow these switches.
-              Rename is also how a file is moved. Both start on.
-            </p>
-            <label htmlFor="remote-delete" className="flex items-center gap-3 text-sm">
-              <input
-                id="remote-delete"
-                type="checkbox"
-                className="size-4 accent-fg"
-                checked={remoteDelete}
-                disabled={!loaded || savingRemote}
-                onChange={(e) => void onSaveRemote(e.target.checked, remoteUpload)}
-              />
-              Allow delete from other devices
-            </label>
-            <label htmlFor="remote-upload" className="flex items-center gap-3 text-sm">
-              <input
-                id="remote-upload"
-                type="checkbox"
-                className="size-4 accent-fg"
-                checked={remoteUpload}
-                disabled={!loaded || savingRemote}
-                onChange={(e) => void onSaveRemote(remoteDelete, e.target.checked)}
-              />
-              Allow upload/rename from other devices
-            </label>
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Password</p>
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Change lock password</p>
           <form className="space-y-3 rounded-md border border-border bg-bg-elevated p-4" onSubmit={onChangePassword}>
             <div>
               <Label htmlFor="current">Current password</Label>
@@ -485,12 +484,17 @@ function SettingsPage() {
           </form>
         </section>
 
+          <MesaAccountSection />
+        </SettingsGroup>
+
+        <SettingsGroup id="this-machine" title="This machine" hint="How this machine appears and what it exposes on this device.">
+          <ThisMachineSection />
+
         <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Drive access</p>
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Drives</p>
           <form className="space-y-3 rounded-md border border-border bg-bg-elevated p-4" onSubmit={onSaveDrives}>
             <p className="text-xs text-fg-muted">
-              On Start / Settings load, Drivebay scans every drive on this PC. Turn any drive off to hide it from the
-              sidebar and block browse/download/upload there. Saved in data so Update keeps your choices.
+              Turn a drive off to hide it here and to block browsing, downloading, and uploading there, including from your own other machines. Your choices stay after an update.
             </p>
             {driveRows.length ? (
               <ul className="space-y-2">
@@ -522,13 +526,201 @@ function SettingsPage() {
             ) : null}
             <Button type="submit" disabled={!loaded || savingDrives || !driveRows.length}>
               {savingDrives ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              Save drive access
+              Save
             </Button>
           </form>
         </section>
+        </SettingsGroup>
+
+        <SettingsGroup id="my-machines" title="My machines" hint="Machines on your own Mesa and Moon login. Trusted ones see each other's whole drives.">
+          <MyMachinesSection />
+
+          <PhoneDriveMount />
+        </SettingsGroup>
+
+        <SettingsGroup id="sharing" title="Sharing with others" hint="Anyone who is not one of your own trusted machines only gets what you allow here.">
+          <SharingSection />
 
         <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Server lock (host only)</p>
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">What other devices may do</p>
+          <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4">
+            <p className="text-xs text-fg-muted">
+              This machine can always delete, upload, and rename. Other devices follow these switches. Rename is also how a file is moved.
+            </p>
+            <label htmlFor="remote-delete" className="flex items-center gap-3 text-sm">
+              <input
+                id="remote-delete"
+                type="checkbox"
+                className="size-4 accent-fg"
+                checked={remoteDelete}
+                disabled={!loaded || savingRemote}
+                onChange={(e) => void onSaveRemote(e.target.checked, remoteUpload)}
+              />
+              Allow delete from other devices
+            </label>
+            <label htmlFor="remote-upload" className="flex items-center gap-3 text-sm">
+              <input
+                id="remote-upload"
+                type="checkbox"
+                className="size-4 accent-fg"
+                checked={remoteUpload}
+                disabled={!loaded || savingRemote}
+                onChange={(e) => void onSaveRemote(remoteDelete, e.target.checked)}
+              />
+              Allow upload/rename from other devices
+            </label>
+          </div>
+        </section>
+
+        {reachMode === "both" && publicAccess ? (
+          <section className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Public access</p>
+            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
+              <p className="text-sm text-fg">Public access: {publicAccess.enabled ? "On" : "Off"}</p>
+              <p>
+                {publicAccess.enabled
+                  ? "Devices that are not on this PC and not on Tailscale can open the sign-in page."
+                  : "Devices that are not on this PC and not on Tailscale see a refusal page. They do not get a sign-in page. Tailscale still reaches Drivebay."}
+              </p>
+              {publicAccess.enabled && publicAccess.offAt ? (
+                <p>Turns off at {new Date(publicAccess.offAt).toLocaleString()}.</p>
+              ) : null}
+              {publicAccess.canEdit ? (
+                <div className="space-y-3">
+                  {publicAccess.enabled ? null : (
+                    <div>
+                      <Label htmlFor="public-hours">Turn off after</Label>
+                      <select
+                        id="public-hours"
+                        className="mt-1.5 block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg"
+                        value={publicHours}
+                        onChange={(e) => setPublicHours(Number(e.target.value) as 0 | 1 | 4 | 24)}
+                      >
+                        <option value={0}>Stay on until you turn it off</option>
+                        <option value={1}>1 hour</option>
+                        <option value={4}>4 hours</option>
+                        <option value={24}>24 hours</option>
+                      </select>
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    disabled={savingPublic}
+                    onClick={() => void onSavePublic(!publicAccess.enabled)}
+                  >
+                    {savingPublic ? <Loader2 className="size-4 animate-spin" /> : null}
+                    {publicAccess.enabled ? "Turn public access off" : "Turn public access on"}
+                  </Button>
+                </div>
+              ) : (
+                <p>Public access can only be changed on this PC.</p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+          <Disclosure title="Forward a port on your router">
+        {reachMode === "regular" || reachMode === "both" ? (
+          <section className="space-y-3">
+            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
+              {reachMode === "both" ? "Tailscale + Local (Both)" : "No Tailscale (Regular mode)"}
+            </p>
+            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
+              <p>Other devices outside your network reach this PC only after the router forwards the port.</p>
+              {reachMode === "both" ? (
+                <p>Public access starts off. These steps matter when you turn that path on. Tailscale keeps working either way.</p>
+              ) : null}
+              <ol className="list-decimal space-y-2 pl-5">
+                <li>
+                  This PC&apos;s local IP is{" "}
+                  <span className="font-mono text-fg">{localIp || "not found. Run ipconfig and use the IPv4 address."}</span>.
+                </li>
+                <li>
+                  Log in to the router. The page is usually{" "}
+                  <span className="font-mono text-fg">http://192.168.0.1</span> or{" "}
+                  <span className="font-mono text-fg">http://192.168.1.1</span>.
+                </li>
+                <li>
+                  Add a port forward for TCP <span className="font-mono text-fg">{port || "the port"}</span> to that local IP.
+                </li>
+                <li>Give this PC a reserved or static IP in the router&apos;s DHCP settings so the address does not change.</li>
+                <li>
+                  This PC&apos;s public IP is{" "}
+                  <span className="font-mono text-fg">{publicIp || "not found. Search the web for what is my ip."}</span>.
+                  From outside the network, open{" "}
+                  <span className="font-mono text-fg">
+                    {publicIp ? `http://${publicIp}:${port || "port"}/` : `http://<public-ip>:${port || "port"}/`}
+                  </span>
+                  .
+                </li>
+                <li>Some ISPs use CGNAT and block this. Tailscale is the easy fallback.</li>
+              </ol>
+              <p className="text-fg">Use a strong password. It is the lock for every drive on this PC.</p>
+            </div>
+          </section>
+        ) : null}
+          </Disclosure>
+        </SettingsGroup>
+
+        <SettingsGroup id="updates" title="Updates" hint="Version, new releases, and the phone app.">
+          <section className="space-y-3">
+            <div className="rounded-md border border-border bg-bg-elevated p-4">
+              <p className="text-sm text-fg">Drivebay {APP_VERSION}</p>
+              {onThisPc ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <Button type="button" variant="outline" size="sm" onClick={() => void checkForUpdates()}>
+                    Check for updates
+                  </Button>
+                  {updateNote ? <span className="text-xs text-fg-muted">{updateNote}</span> : null}
+                </div>
+              ) : null}
+              <a
+                href={FEATURE_REQUEST_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                Request a feature
+                <ExternalLink className="size-3.5" />
+              </a>
+            </div>
+          </section>
+
+        <section className="space-y-3">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Android app</p>
+          <div className="rounded-md border border-border bg-bg-elevated p-4">
+            <p className="text-xs text-fg-muted">
+              Install Drivebay on a phone. The APK is on the latest GitHub release.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <a
+                href={ANDROID_APK_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                Android APK
+                <ExternalLink className="size-3.5" />
+              </a>
+              {PLAY_STORE_URL ? (
+                <Button asChild variant="outline" size="sm">
+                  <a href={PLAY_STORE_URL} target="_blank" rel="noreferrer">
+                    Google Play
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+          <DonateMenu />
+        </SettingsGroup>
+
+        <SettingsGroup id="advanced" title="Advanced" hint="Rarely needed. Safe to leave alone.">
+          <Disclosure title="Show advanced settings">
+            <SignInSetupNote />
+        <section className="space-y-3">
+          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Server lock</p>
           {canEditLock && serverLock ? (
             <form className="space-y-3 rounded-md border border-border bg-bg-elevated p-4" onSubmit={(e) => void onSaveLock(e)}>
               <p className="text-xs text-fg-muted">
@@ -643,7 +835,7 @@ function SettingsPage() {
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={!loaded || savingLock}>
                   {savingLock ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                  Save server lock
+                  Save
                 </Button>
                 {needsRestart ? (
                   <Button type="button" variant="outline" disabled={restarting} onClick={() => void onRestart()}>
@@ -736,167 +928,22 @@ function SettingsPage() {
               disabled={!loaded || savingPort || serverLock?.allowPortChangeFromUi === false}
             >
               {savingPort ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-              {serverLock?.allowPortChangeFromUi === false ? "Port locked on server" : "Save port"}
+              {serverLock?.allowPortChangeFromUi === false ? "Port locked on server" : "Save"}
             </Button>
           </form>
         </section>
 
-        {reachMode === "both" && publicAccess ? (
-          <section className="space-y-3">
-            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Public access</p>
-            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
-              <p className="text-sm text-fg">Public access: {publicAccess.enabled ? "On" : "Off"}</p>
-              <p>
-                {publicAccess.enabled
-                  ? "Devices that are not on this PC and not on Tailscale can open the sign-in page."
-                  : "Devices that are not on this PC and not on Tailscale see a refusal page. They do not get a sign-in page. Tailscale still reaches Drivebay."}
-              </p>
-              {publicAccess.enabled && publicAccess.offAt ? (
-                <p>Turns off at {new Date(publicAccess.offAt).toLocaleString()}.</p>
-              ) : null}
-              {publicAccess.canEdit ? (
-                <div className="space-y-3">
-                  {publicAccess.enabled ? null : (
-                    <div>
-                      <Label htmlFor="public-hours">Turn off after</Label>
-                      <select
-                        id="public-hours"
-                        className="mt-1.5 block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg"
-                        value={publicHours}
-                        onChange={(e) => setPublicHours(Number(e.target.value) as 0 | 1 | 4 | 24)}
-                      >
-                        <option value={0}>Stay on until you turn it off</option>
-                        <option value={1}>1 hour</option>
-                        <option value={4}>4 hours</option>
-                        <option value={24}>24 hours</option>
-                      </select>
-                    </div>
-                  )}
-                  <Button
-                    type="button"
-                    disabled={savingPublic}
-                    onClick={() => void onSavePublic(!publicAccess.enabled)}
-                  >
-                    {savingPublic ? <Loader2 className="size-4 animate-spin" /> : null}
-                    {publicAccess.enabled ? "Turn public access off" : "Turn public access on"}
-                  </Button>
-                </div>
-              ) : (
-                <p>Public access can only be changed on this PC.</p>
-              )}
-            </div>
-          </section>
-        ) : null}
+            <ApiTokens />
 
-        {reachMode === "regular" || reachMode === "both" ? (
-          <section className="space-y-3">
-            <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">
-              {reachMode === "both" ? "Tailscale + Local (Both)" : "No Tailscale (Regular mode)"}
-            </p>
-            <div className="space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-xs text-fg-muted">
-              <p>Other devices outside your network reach this PC only after the router forwards the port.</p>
-              {reachMode === "both" ? (
-                <p>Public access starts off. These steps matter when you turn that path on. Tailscale keeps working either way.</p>
-              ) : null}
-              <ol className="list-decimal space-y-2 pl-5">
-                <li>
-                  This PC&apos;s local IP is{" "}
-                  <span className="font-mono text-fg">{localIp || "not found. Run ipconfig and use the IPv4 address."}</span>.
-                </li>
-                <li>
-                  Log in to the router. The page is usually{" "}
-                  <span className="font-mono text-fg">http://192.168.0.1</span> or{" "}
-                  <span className="font-mono text-fg">http://192.168.1.1</span>.
-                </li>
-                <li>
-                  Add a port forward for TCP <span className="font-mono text-fg">{port || "the port"}</span> to that local IP.
-                </li>
-                <li>Give this PC a reserved or static IP in the router&apos;s DHCP settings so the address does not change.</li>
-                <li>
-                  This PC&apos;s public IP is{" "}
-                  <span className="font-mono text-fg">{publicIp || "not found. Search the web for what is my ip."}</span>.
-                  From outside the network, open{" "}
-                  <span className="font-mono text-fg">
-                    {publicIp ? `http://${publicIp}:${port || "port"}/` : `http://<public-ip>:${port || "port"}/`}
-                  </span>
-                  .
-                </li>
-                <li>Some ISPs use CGNAT and block this. Tailscale is the easy fallback.</li>
-              </ol>
-              <p className="text-fg">Use a strong password. It is the lock for every drive on this PC.</p>
-            </div>
-          </section>
-        ) : null}
+            <HowToGuide />
 
-        <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Get the Android app</p>
-          <div className="rounded-md border border-border bg-bg-elevated p-4">
-            <p className="text-xs text-fg-muted">
-              Install Drivebay on a phone. The APK is on the latest GitHub release.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <a
-                href={ANDROID_APK_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-              >
-                Android APK
-                <ExternalLink className="size-3.5" />
-              </a>
-              {PLAY_STORE_URL ? (
-                <Button asChild variant="outline" size="sm">
-                  <a href={PLAY_STORE_URL} target="_blank" rel="noreferrer">
-                    Google Play
-                  </a>
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        <LinkedMachines />
-
-        <PhoneDriveMount />
-
-        <ApiTokens />
-
-        <HowToGuide />
-
-        <DonateMenu />
-
-        <section className="space-y-3">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">About</p>
-          <div className="rounded-md border border-border bg-bg-elevated p-4">
-            <p className="text-sm text-fg">Drivebay {APP_VERSION}</p>
-            {onThisPc ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <Button type="button" variant="outline" size="sm" onClick={() => void checkForUpdates()}>
-                  Check for updates
-                </Button>
-                {updateNote ? <span className="text-xs text-fg-muted">{updateNote}</span> : null}
-              </div>
-            ) : null}
-            <p className="mt-1 text-xs text-fg-muted">
-              Password-locked file browser for this machine. Feature ideas go to GitHub so they stay in one place.
-            </p>
-            <a
-              href={FEATURE_REQUEST_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex items-center gap-1.5 text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline"
-            >
-              Request a feature
-              <ExternalLink className="size-3.5" />
-            </a>
-            <p className="mt-2 break-all font-mono text-[11px] text-fg-subtle">{dataDir || "…"}</p>
-            {onThisPc ? null : (
-              <Link to="/" className="mt-4 inline-flex text-sm text-fg-muted underline-offset-4 hover:text-fg hover:underline">
-                Back to files
-              </Link>
-            )}
-          </div>
-        </section>
+            <section className="space-y-1">
+              <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Data folder</p>
+              <p className="break-all font-mono text-[11px] text-fg-subtle">{dataDir || "…"}</p>
+            </section>
+          </Disclosure>
+        </SettingsGroup>
+        </LinkedProvider>
         </>
         ) : (
           <section className="space-y-3">

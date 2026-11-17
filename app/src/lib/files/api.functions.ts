@@ -191,6 +191,7 @@ export const getRouterHelp = createServerFn({ method: "GET" })
     const port = settings.readPortSettings().port;
     const showRouter = mode === "regular" || mode === "both";
     const access = mode === "both" ? settings.readPublicAccess() : null;
+    const remote = settings.readRemoteAccess();
     return {
       mode,
       port,
@@ -203,6 +204,30 @@ export const getRouterHelp = createServerFn({ method: "GET" })
             canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
           }
         : null,
+      remoteAccess: {
+        enabled: remote.enabled === true,
+        offAt: remote.offAt,
+        mode: remote.mode || "",
+        source: remote.source || "",
+        byName: remote.byName || "",
+        canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
+      },
+    };
+  });
+
+export const getRemoteAccessStatus = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async () => {
+    const host = await import("./host-request.server");
+    const settings = await import("./settings.server");
+    const remote = settings.readRemoteAccess();
+    return {
+      enabled: remote.enabled === true,
+      offAt: remote.offAt,
+      mode: remote.mode || "",
+      source: remote.source || "",
+      byName: remote.byName || "",
+      canEdit: host.isLoopbackRequest() || host.isTailnetRequest(),
     };
   });
 
@@ -419,4 +444,38 @@ export const decideApiApproval = createServerFn({ method: "POST" })
       data.allow ? data.minutes : 0,
       Date.now(),
     );
+  });
+
+export const pasteEntries = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      sources: z.array(z.string().min(1)).min(1).max(500),
+      dest: z.string().min(1),
+      mode: z.enum(["cut", "copy"]),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const fs = await import("./fs.server");
+    const lock = await import("./server-lock.server");
+    const access = await import("./drive-access.server");
+    const remote = await import("./remote-actions.server");
+    if (data.mode === "cut") {
+      // Moving is a rename across folders, so it follows the rename and move switches.
+      lock.assertPolicy("allowRename");
+      remote.assertRemoteAction("move");
+    } else {
+      // A copy writes new files, so it follows the upload switches.
+      lock.assertPolicy("allowUpload");
+      remote.assertRemoteAction("upload");
+    }
+    const dest = fs.resolveSafePath(data.dest);
+    lock.assertPathAllowed(dest);
+    await access.assertPathAllowedByDriveAccess(dest);
+    for (const source of data.sources) {
+      const resolved = fs.resolveSafePath(source);
+      lock.assertPathAllowed(resolved);
+      await access.assertPathAllowedByDriveAccess(resolved);
+    }
+    return fs.pasteEntries(data.sources, data.dest, data.mode);
   });
