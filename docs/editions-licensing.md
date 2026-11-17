@@ -161,7 +161,7 @@ Kit in `server/enterprise/` (see its README for the short admin guide): `install
 
 ## 9. Privacy and licence notes
 
-- Activation sends the code or key, a SHA-256 of the machine id, the device name, platform and app version, and the IP address to `mesaandmoon.com`. It never sends file names or contents. The privacy page `privacy.html` does not mention this yet. Suggested paragraph: *"If you activate a paid edition, Drivebay sends your license code, a one-way hash of a random device id, the device's name and your IP address to Mesa and Moon so we can count devices and prevent sharing. We keep it for as long as the license is active. We never receive your file names or file contents."*
+- Activation sends the code or key, a SHA-256 of the machine id, the device name, platform and app version to `mesaandmoon.com` (the web server sees the IP like any request, and the license database keeps only a hash of it for rate limiting). It never sends file names or contents. The privacy page `privacy.html` does not mention this yet. Suggested paragraph: *"If you activate a paid edition, Drivebay sends your license code, a one-way hash of a random device id, the device's name and (as with any web request) your IP address to Mesa and Moon so we can count devices and prevent sharing. We keep it for as long as the license is active. We never receive your file names or file contents."*
 - Order emails and payment details sit with the payment provider. The webhook stores order id, email, SKU and the minted code (hashed).
 - Check the Community License wording before launch: paid editions must be consistent with what it says about commercial use and redistribution.
 
