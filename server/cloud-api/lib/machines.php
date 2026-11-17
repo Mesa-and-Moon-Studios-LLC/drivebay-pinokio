@@ -186,26 +186,7 @@ function drivebay_list_machines(PDO $pdo, $uid, $selfId) {
 }
 
 function drivebay_upsert_machine(PDO $pdo, $uid, $machine) {
-    $stmt = $pdo->prepare(
-        'INSERT INTO drivebay_machines
-          (uid, machine_id, display_name, machine_type, tailscale_host, lan_address, port, public_key, last_seen, hidden, direct_internet, public_host, envelope_version, ciphertext, nonce)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-          display_name = VALUES(display_name),
-          machine_type = VALUES(machine_type),
-          tailscale_host = VALUES(tailscale_host),
-          lan_address = VALUES(lan_address),
-          port = VALUES(port),
-          public_key = VALUES(public_key),
-          last_seen = VALUES(last_seen),
-          hidden = VALUES(hidden),
-          direct_internet = VALUES(direct_internet),
-          public_host = VALUES(public_host),
-          envelope_version = VALUES(envelope_version),
-          ciphertext = VALUES(ciphertext),
-          nonce = VALUES(nonce)'
-    );
-    // SQLite has no ON DUPLICATE KEY UPDATE. Use a portable two-step.
+    // SQLite uses ON CONFLICT; MySQL uses ON DUPLICATE KEY. Prepare only the statement for the active driver.
     $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
     $values = [
         $uid,
@@ -243,6 +224,27 @@ function drivebay_upsert_machine(PDO $pdo, $uid, $machine) {
               envelope_version = excluded.envelope_version,
               ciphertext = excluded.ciphertext,
               nonce = excluded.nonce'
+        );
+    }
+    if ($driver !== 'sqlite') {
+        $stmt = $pdo->prepare(
+            'INSERT INTO drivebay_machines
+              (uid, machine_id, display_name, machine_type, tailscale_host, lan_address, port, public_key, last_seen, hidden, direct_internet, public_host, envelope_version, ciphertext, nonce)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE
+              display_name = VALUES(display_name),
+              machine_type = VALUES(machine_type),
+              tailscale_host = VALUES(tailscale_host),
+              lan_address = VALUES(lan_address),
+              port = VALUES(port),
+              public_key = VALUES(public_key),
+              last_seen = VALUES(last_seen),
+              hidden = VALUES(hidden),
+              direct_internet = VALUES(direct_internet),
+              public_host = VALUES(public_host),
+              envelope_version = VALUES(envelope_version),
+              ciphertext = VALUES(ciphertext),
+              nonce = VALUES(nonce)'
         );
     }
     $stmt->execute($values);
