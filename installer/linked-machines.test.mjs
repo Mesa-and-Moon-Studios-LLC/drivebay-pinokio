@@ -550,3 +550,21 @@ test("the PHP token check accepts an email provider and refuses an anonymous one
   assert.equal(php.status, 0, php.stderr);
   assert.equal(php.stdout.trim(), "email google apple no-anon missing");
 });
+
+test("own machines in My machines join with a password, not a 6-digit code", () => {
+  const ui = fs.readFileSync(path.join(root, "app/src/components/settings/linked-machines.tsx"), "utf8");
+  const start = ui.indexOf("export function MyMachinesSection");
+  const end = ui.indexOf("export function SharingSection");
+  assert.ok(start >= 0 && end > start);
+  const mine = ui.slice(start, end);
+  const sharing = ui.slice(end);
+  assert.match(mine, /data-testid="own-machine-join"/);
+  assert.match(mine, /Join/);
+  assert.equal(mine.includes("pair-code"), false);
+  assert.equal(mine.includes("6-digit code from the other machine"), false);
+  assert.equal(/onClick=\{\(\) => void connect\(machine/.test(mine), false);
+  assert.match(sharing, /Show a 6-digit code/);
+  const panel = fs.readFileSync(path.join(root, "android/app/src/main/java/com/lordstryfe/drivebay/MesaPanel.kt"), "utf8");
+  assert.match(panel, /approvePending/);
+  assert.equal(panel.includes("with a code (shared folders only)"), false);
+});

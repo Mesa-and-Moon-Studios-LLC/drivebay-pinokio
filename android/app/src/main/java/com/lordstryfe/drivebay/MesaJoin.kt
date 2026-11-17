@@ -49,6 +49,15 @@ object MesaJoin {
     fun forgetSignature(privateKeyB64: String, fromId: String, peerId: String, issuedAt: String): String =
         sign(privateKeyB64, forgetMessage(fromId, peerId, issuedAt))
 
+    fun approvalMessage(approverId: String, joinerId: String, requestId: String, hostId: String, issuedAt: String): ByteArray =
+        "drivebay-approval-v1\u0000$approverId\u0000$joinerId\u0000$requestId\u0000$hostId\u0000$issuedAt".toByteArray(Charsets.UTF_8)
+
+    fun approvalProof(dek: ByteArray, approverId: String, joinerId: String, requestId: String): String =
+        proof(dek, approverId, joinerId, "approve:$requestId")
+
+    fun approvalSignature(privateKeyB64: String, approverId: String, joinerId: String, requestId: String, hostId: String, issuedAt: String): String =
+        sign(privateKeyB64, approvalMessage(approverId, joinerId, requestId, hostId, issuedAt))
+
     fun sign(privateKeyB64: String, msg: ByteArray): String {
         val der = MesaVault.fromB64(privateKeyB64)
         require(der.size >= 32) { "Device key is too short." }

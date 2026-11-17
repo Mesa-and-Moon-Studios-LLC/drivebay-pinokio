@@ -28,11 +28,23 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
     const listed = store.loadAccount(home)?.uid
       ? await cloud.fetchVault(home).catch((err: Error) => ({ ok: false as const, wraps: [], locked: false, error: err?.message || "Could not reach the lock records." }))
       : null;
+    const localPairs = machines.publicPairState(store.loadPairState(home));
+    const sponsor = await import("./linked-sponsor.mjs");
+    const remotePending = await sponsor.listRemotePending(home).catch(() => []);
+    const hostId = identity?.machineId || "";
+    const pending = [
+      ...localPairs.pending.map((row: { id: string; fromId?: string; name?: string; at?: number; join?: boolean }) => ({
+        ...row,
+        hostId,
+        hostName: "this machine",
+      })),
+      ...remotePending,
+    ];
     return {
       account: store.publicAccount(store.loadAccount(home)),
       config: store.publicFirebaseConfig(store.loadFirebaseConfig(home)),
       shares: store.loadShares(home),
-      pairs: machines.publicPairState(store.loadPairState(home)),
+      pairs: { ...localPairs, pending },
       links: store.publicLinks(store.loadLinkedTokens(home)),
       self: identity?.machineId
         ? { machineId: identity.machineId, displayName: identity.displayName || "", publicKey: identity.publicKey || "" }
@@ -170,12 +182,65 @@ export const createLinkedCode = createServerFn({ method: "POST" })
 
 export const approveLinkedRequest = createServerFn({ method: "POST" })
   .middleware([authMiddleware])
-  .validator(z.object({ id: z.string().min(8).max(200) }))
+  .validator(
+    z.object({
+      id: z.string().min(8).max(200),
+      hostId: z.string().min(8).max(64).optional(),
+      fromId: z.string().max(64).optional(),
+      name: z.string().max(80).optional(),
+    }),
+  )
   .handler(async ({ data }) => {
     const home = await adminHome();
     const http = await import("./linked-http.mjs");
+    const sponsor = await import("./linked-sponsor.mjs");
+    const store = await import("./linked-store.mjs");
+    const vault = await import("./linked-vault.mjs");
+    const self = store.loadIdentity(home);
+    const dek = vault.loadDek(home);
+    if (data.hostId && self?.machineId && data.hostId !== self.machineId) {
+      const remote = await approveOnTrustedHost(home, data);
+      return remote.ok ? { ok: true as const } : { ok: false as const, message: remote.error || "Could not approve on that machine." };
+    }
+    const state = store.loadPairState(home);
+    const row = (state.pending || []).find((item: { id?: string }) => item.id === data.id);
     const result = http.approveLocalRequest(home, data.id);
-    return result.ok ? { ok: true as const } : { ok: false as const, message: result.error || "Could not approve." };
+    if (!result.ok) return { ok: false as const, message: result.error || "Could not approve." };
+    if (dek && self?.privateKey && self.machineId) {
+      const attestation = sponsor.makeAttestation({
+        dek,
+        privateKey: self.privateKey,
+        approverId: self.machineId,
+        joinerId: String(row?.fromId || data.fromId || ""),
+        joinerName: String(row?.name || data.name || ""),
+        joinerPublicKey: String(row?.publicKey || ""),
+        requestId: data.id,
+        hostId: self.machineId,
+      });
+      await sponsor.spreadHonoredApproval(home, attestation).catch(() => {});
+    }
+    return { ok: true as const };
+  });
+
+export const denyLinkedRequest = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      id: z.string().min(8).max(200),
+      hostId: z.string().min(8).max(64).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const http = await import("./linked-http.mjs");
+    const store = await import("./linked-store.mjs");
+    const self = store.loadIdentity(home);
+    if (data.hostId && self?.machineId && data.hostId !== self.machineId) {
+      const remote = await denyOnTrustedHost(home, data);
+      return remote.ok ? { ok: true as const } : { ok: false as const, message: remote.error || "Could not deny on that machine." };
+    }
+    const result = http.denyLocalRequest(home, data.id);
+    return result.ok ? { ok: true as const } : { ok: false as const, message: result.error || "Could not deny." };
   });
 
 export const revokeLinkedGrant = createServerFn({ method: "POST" })
@@ -319,7 +384,7 @@ export const connectLinkedMachine = createServerFn({ method: "POST" })
           : "Waiting for approval on that machine.",
       };
     }
-    if (!token) return { ok: false as const, message: "Enter the 6-digit code from that machine, or ask it to approve." };
+    if (!token) return { ok: false as const, message: "Join this machine with your join password. The 6-digit code is only for someone else opening shared folders." };
     return mountSaved(home, data.machineId, token, machine, letter, (saved?.token && !data.code ? saved.scope : "shares") === "full" ? "full" : "shares");
   });
 
@@ -510,6 +575,62 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
 
 
 /** After a new machine unlocks with the account join password, ask a trusted computer to approve it. */
+async function approveOnTrustedHost(home: string, data: { id: string; hostId?: string; fromId?: string; name?: string }) {
+  const store = await import("./linked-store.mjs");
+  const vault = await import("./linked-vault.mjs");
+  const sponsor = await import("./linked-sponsor.mjs");
+  const records = store.loadLinkedTokens(home);
+  const row = data.hostId ? records[data.hostId] : null;
+  if (!row?.token || row.scope !== "full" || !row.url) {
+    return { ok: false, error: "This device does not have a trusted connection to that machine." };
+  }
+  const dek = vault.loadDek(home);
+  const self = store.loadIdentity(home);
+  if (!dek || !self?.privateKey || !self.machineId) {
+    return { ok: false, error: "Unlock the machine list on this device first." };
+  }
+  let origin = "";
+  try { origin = new URL(row.url).origin; } catch { return { ok: false, error: "That machine address is not valid." }; }
+  const attestation = sponsor.makeAttestation({
+    dek,
+    privateKey: self.privateKey,
+    approverId: self.machineId,
+    joinerId: String(data.fromId || ""),
+    joinerName: String(data.name || ""),
+    requestId: data.id,
+    hostId: data.hostId || "",
+  });
+  const res = await fetch(`${origin}/api/link/approve`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${row.token}`, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ id: data.id, attestation }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || "That machine did not accept the approval." };
+  if (data.fromId) sponsor.issueLocalSponsoredGrant(home, { joinerId: data.fromId, joinerName: data.name || "" });
+  await sponsor.spreadHonoredApproval(home, attestation).catch(() => {});
+  return { ok: true };
+}
+
+async function denyOnTrustedHost(home: string, data: { id: string; hostId?: string }) {
+  const store = await import("./linked-store.mjs");
+  const records = store.loadLinkedTokens(home);
+  const row = data.hostId ? records[data.hostId] : null;
+  if (!row?.token || row.scope !== "full" || !row.url) {
+    return { ok: false, error: "This device does not have a trusted connection to that machine." };
+  }
+  let origin = "";
+  try { origin = new URL(row.url).origin; } catch { return { ok: false, error: "That machine address is not valid." }; }
+  const res = await fetch(`${origin}/api/link/deny`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${row.token}`, "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ id: data.id }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: body.error || "That machine did not accept the denial." };
+  return { ok: true };
+}
+
 async function requestJoinOnTrustedPeers(home: string): Promise<{ asked: number; names: string[] }> {
   try {
     const cloud = await import("./linked-cloud.mjs");

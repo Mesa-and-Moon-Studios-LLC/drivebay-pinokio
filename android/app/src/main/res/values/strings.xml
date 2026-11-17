@@ -132,7 +132,7 @@
     <string name="folder_read_write">Read-write</string>
     <string name="section_connection">Connection</string>
     <string name="section_my_machines">My machines</string>
-    <string name="section_my_machines_help">Your own machines on the same login. Enter your join password once, then tap Join on a machine. A trusted device on that machine approves this phone, and you can then browse all of its drives. The 6-digit Connect option is for shared folders only.</string>
+    <string name="section_my_machines_help">Your own machines on the same login. Enter your join password once, then tap Join on a machine. A trusted device on that machine approves this phone, and you can then browse all of its drives. The 6-digit code is only for someone else opening shared folders, not for your own machines.</string>
     <string name="section_updates">Updates and downloads</string>
     <string name="section_updates_help">Check for a newer Drivebay app, and see your downloads.</string>
 </resources>

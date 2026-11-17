@@ -166,7 +166,7 @@ object MesaReciprocal {
         prefs.edit().putString(PEERS, next.toString()).apply()
     }
 
-    private fun originOf(machine: JSONObject): String? {
+    fun originOf(machine: JSONObject): String? {
         val saved = machine.optString("origin")
         if (saved.startsWith("http://") || saved.startsWith("https://")) return saved.trimEnd('/')
         val url = MesaCloud.connectionUrl(machine)

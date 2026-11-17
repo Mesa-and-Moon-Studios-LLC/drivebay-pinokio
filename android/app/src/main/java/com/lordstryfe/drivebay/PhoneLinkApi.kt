@@ -17,6 +17,15 @@ object PhoneLinkApi {
         onForget: (String) -> Unit,
     ): DavResponse? {
         val pathname = path.substringBefore('?')
+        if (pathname == "/api/link/honor-approval" && method == "POST") {
+            if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
+                return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")
+            }
+            val payload = runCatching { JSONObject(body.toString(Charsets.UTF_8).ifBlank { "{}" }) }.getOrNull() ?: JSONObject()
+            val attestation = payload.optJSONObject("attestation") ?: payload
+            val error = MesaSponsor.honorInbound(attestation)
+            return if (error == null) json(200, """{"ok":true}""") else json(403, JSONObject().put("error", error).toString())
+        }
         if (pathname != "/api/link/forget" || method != "POST") return null
         if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
             return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")

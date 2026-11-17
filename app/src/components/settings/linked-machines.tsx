@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   approveLinkedRequest,
+  denyLinkedRequest,
   connectLinkedMachine,
   createLinkedCode,
   disconnectLinkedMachine,
@@ -64,10 +65,10 @@ type Status = {
   };
   shares: { hidden: boolean; directInternet: boolean; publicHost: string; folders: ShareRow[] };
   pairs: {
-    pending: { id: string; name: string; join?: boolean }[];
+    pending: { id: string; name: string; join?: boolean; fromId?: string; hostId?: string; hostName?: string }[];
     grants: { id: string; name: string; createdAt: number; scope: "full" | "shares" }[];
   };
-  links: { machineId: string; label: string; paired: boolean; via: string; scope?: string }[];
+  links: { machineId: string; label: string; paired: boolean; pending?: boolean; via: string; scope?: string }[];
   self: { displayName: string } | null;
   warning: string;
   vault?: { ready?: boolean; unlocked?: boolean; hasPassphrase?: boolean; hasPasskey?: boolean; hasRecovery?: boolean; cannotRecover?: string };
@@ -312,10 +313,26 @@ function useLinkedState() {
     }
   }
 
-  async function join(machine: MachineRow) {
+  async function join(machine: MachineRow, acceptRisk = false) {
     setBusy(true);
     try {
-      const result = await connectLinkedMachine({ data: { machineId: machine.machineId, askApproval: true, join: true } });
+      const result = await connectLinkedMachine({
+        data: { machineId: machine.machineId, askApproval: true, join: true, acceptRisk },
+      });
+      if ("needsRisk" in result && result.needsRisk) {
+        const ok = window.confirm(`${result.message}\n\nJoin this machine over the public internet?`);
+        if (ok) {
+          setBusy(false);
+          await join(machine, true);
+          return;
+        }
+        return;
+      }
+      if ("needsPassword" in result && result.needsPassword) {
+        toast.error(result.message);
+        await refresh();
+        return;
+      }
       if (result.ok) toast.success(result.message);
       else toast.error(result.message);
       await refresh();
@@ -531,8 +548,8 @@ export function ThisMachineSection() {
 /** My machines group: join password, join requests, trusted devices, and your other machines. */
 export function MyMachinesSection() {
   const {
-    status, signedIn, machines, listNote, busy, setBusy, code, setCode, remoteMinutes, setRemoteMinutes,
-    remoteMode, setRemoteMode, browsing, setBrowsing, connect, join, finish, refresh,
+    status, signedIn, machines, listNote, busy, setBusy, remoteMinutes, setRemoteMinutes,
+    remoteMode, setRemoteMode, browsing, setBrowsing, join, finish, refresh,
   } = useLinked();
   const vaultReady = status?.vault?.ready === true;
   const pending = status?.pairs.pending || [];
@@ -551,17 +568,30 @@ export function MyMachinesSection() {
           {pending.map((row) => (
             <div key={row.id} className="flex flex-wrap items-center gap-2" data-testid="join-request">
               <span className="min-w-0 flex-1 text-xs">
-                <span className="text-sm text-fg">{row.name || "A machine"}</span> wants to join.{" "}
+                <span className="text-sm text-fg">{row.name || "A machine"}</span> wants to join
+                {row.hostName && row.hostName !== "this machine" ? ` on ${row.hostName}` : ""}.{" "}
                 {row.join ? "Its join password and device key checked out." : "It did not send the join password, so it would only see your shared folders."}
               </span>
               <Button
                 type="button"
                 size="sm"
                 onClick={() => {
-                  void approveLinkedRequest({ data: { id: row.id } }).then(() => refresh());
+                  void approveLinkedRequest({
+                    data: { id: row.id, hostId: row.hostId, fromId: row.fromId, name: row.name },
+                  }).then(() => refresh());
                 }}
               >
                 Approve
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  void denyLinkedRequest({ data: { id: row.id, hostId: row.hostId } }).then(() => refresh());
+                }}
+              >
+                Deny
               </Button>
             </div>
           ))}
@@ -599,9 +629,15 @@ export function MyMachinesSection() {
           <p className="text-xs text-fg-muted">No other machines yet. Sign in on each one.</p>
         ) : null}
         {signedIn && !vaultReady && machines.length > 0 ? (
-          <p className="text-xs text-fg-muted">Set a join password above first. Until then, machines can only connect with a 6-digit code.</p>
+          <p className="text-xs text-fg-muted">
+            Enter your join password above first, or set one if this account does not have one yet. Own machines join
+            with that password and an approval, not a 6-digit code.
+          </p>
         ) : null}
-        {machines.map((machine) => (
+        {machines.map((machine) => {
+          const link = status?.links?.find((row) => row.machineId === machine.machineId);
+          const granted = Boolean(link?.paired);
+          return (
           <div key={machine.machineId} className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
             <div className="min-w-0 flex-1">
               <p className="text-sm text-fg">
@@ -617,26 +653,20 @@ export function MyMachinesSection() {
             </div>
             {machine.self ? null : (
               <>
-                {status?.links?.some((link) => link.machineId === machine.machineId && link.paired) ? (
+                {granted ? (
                   <Button type="button" size="sm" disabled={busy} onClick={() => setBrowsing({ machineId: machine.machineId, title: machine.displayName })}>
                     Open drives
                   </Button>
-                ) : null}
-                {machine.connect?.risk ? (
-                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, true)}>
-                    Connect over the public internet
-                  </Button>
                 ) : (
-                  <Button type="button" size="sm" disabled={busy || machine.type === "phone"} onClick={() => void join(machine)}>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => void join(machine)} data-testid="own-machine-join">
                     Join
                   </Button>
                 )}
-                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, false)}>
-                  Connect
-                </Button>
-                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void finish(machine.machineId)}>
-                  Check approval
-                </Button>
+                {link?.pending && !granted ? (
+                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void finish(machine.machineId)}>
+                    Check approval
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="sm"
@@ -650,7 +680,8 @@ export function MyMachinesSection() {
               </>
             )}
           </div>
-        ))}
+          );
+        })}
         {browsing ? (
           <LinkedBrowsePanel
             machineId={browsing.machineId}
@@ -659,15 +690,10 @@ export function MyMachinesSection() {
           />
         ) : null}
         <p className="text-xs text-fg-muted">
-          <span className="text-fg">Join</span> sends your join password proof and waits for a trusted device on that
-          machine to approve. <span className="text-fg">Open drives</span> browses a machine that already approved you.
-          <span className="text-fg"> Connect</span> mounts a machine you already joined, or uses the
-          6-digit code below.
+          <span className="text-fg">Join</span> uses your join password and waits for a trusted device on that machine
+          to approve. <span className="text-fg">Open drives</span> browses a machine that already approved you. The
+          6-digit code in Sharing with others is only for someone else&apos;s device to open shared folders.
         </p>
-        <div className="space-y-1">
-          <Label htmlFor="pair-code">6-digit code from the other machine (shared folders only)</Label>
-          <Input id="pair-code" value={code} onChange={(event) => setCode(event.target.value)} />
-        </div>
       </Sub>
     </Card>
   );

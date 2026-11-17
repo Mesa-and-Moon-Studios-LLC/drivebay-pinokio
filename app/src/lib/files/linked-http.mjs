@@ -9,6 +9,8 @@ import { isLoopbackAddress } from "./loopback.mjs";
 import { isTailnetAddress } from "./tailnet.mjs";
 import {
   approveRequest,
+  denyRequest,
+  grantForToken,
   issueCode,
   pollRequest,
   randomRequestId,
@@ -23,6 +25,8 @@ import { verifyJoinRequest } from "./linked-join.mjs";
 import { handleDav } from "./linked-dav.mjs";
 import { loadIdentity, loadLinkedTokens, loadPairState, loadShares, saveLinkedTokens, savePairState } from "./linked-store.mjs";
 import { acceptReciprocalOffer, applyForget } from "./linked-reciprocal.mjs";
+import { honorAttestation, publicPendingList, makeAttestation, spreadHonoredApproval, verifyAttestation } from "./linked-sponsor.mjs";
+import { loadDek } from "./linked-vault.mjs";
 import {
   formatCountdown,
   nextRemoteAccess,
@@ -330,6 +334,72 @@ export async function handleLinkedHttp({
     return json(200, { ok: true });
   }
 
+  if (pathname === "/api/link/pending" && verb === "GET") {
+    const trusted = grantForToken(state, pairTokenFrom(headers, payload));
+    if (!trusted || trusted.scope !== "full") return json(403, { error: "Only a trusted device can read join requests." });
+    const identity = loadIdentity(home);
+    return json(200, publicPendingList(state, { hostId: identity?.machineId || "", displayName: identity?.displayName || "" }));
+  }
+
+  if (pathname === "/api/link/approve" && verb === "POST") {
+    const trusted = grantForToken(state, pairTokenFrom(headers, payload));
+    if (!trusted || trusted.scope !== "full") return json(403, { error: "Only a trusted device can approve a join request." });
+    const id = String(payload.id || "");
+    const attestation = payload.attestation && typeof payload.attestation === "object" ? payload.attestation : null;
+    if (!attestation) return json(400, { error: "This approval must be signed by a trusted device." });
+    const dek = loadDek(home);
+    const checked = verifyAttestation(attestation, { dek, approverPublicKey: trusted.publicKey });
+    if (!checked.ok) return json(403, { error: checked.error || "The approval signature did not check out." });
+    if (checked.approverId !== trusted.peerId) return json(403, { error: "That approval is not from this trusted device." });
+    if (checked.requestId !== id) return json(403, { error: "That approval is not for this join request." });
+    const result = approveLocalRequest(home, id, now);
+    if (!result.ok) return json(409, { error: result.error || "Could not approve." });
+    const identity = loadIdentity(home);
+    if (identity?.privateKey && dek) {
+      const hostAttestation = makeAttestation({
+        dek,
+        privateKey: identity.privateKey,
+        approverId: identity.machineId,
+        joinerId: checked.joinerId,
+        joinerName: String(attestation.joinerName || ""),
+        joinerPublicKey: String(attestation.joinerPublicKey || ""),
+        requestId: id,
+        hostId: identity.machineId,
+      });
+      void spreadHonoredApproval(home, hostAttestation).catch(() => {});
+    }
+    return json(200, { ok: true });
+  }
+
+  if (pathname === "/api/link/deny" && verb === "POST") {
+    const trusted = grantForToken(state, pairTokenFrom(headers, payload));
+    if (!trusted || trusted.scope !== "full") return json(403, { error: "Only a trusted device can deny a join request." });
+    const denied = denyLocalRequest(home, String(payload.id || ""));
+    if (!denied.ok) return json(409, { error: denied.error || "Could not deny." });
+    return json(200, { ok: true });
+  }
+
+  if (pathname === "/api/link/honor-approval" && verb === "POST") {
+    const vault = await import("./linked-vault.mjs");
+    const dek = vault.loadDek(home);
+    const identity = loadIdentity(home);
+    const attestation = payload.attestation && typeof payload.attestation === "object" ? payload.attestation : payload;
+    const approverId = String(attestation.approverId || "");
+    const trusted = state?.grants?.[approverId];
+    const approverPublicKey = trusted?.publicKey || "";
+    const honored = honorAttestation(state, {
+      attestation,
+      dek,
+      selfId: identity?.machineId || "",
+      approverPublicKey,
+      joinerPublicKey: String(attestation.joinerPublicKey || ""),
+      now,
+    });
+    if (!honored.ok) return json(403, { error: honored.error || "Could not honor that approval." });
+    if (!honored.already) savePairState(home, honored.state);
+    return json(200, { ok: true, already: honored.already === true, joinerId: honored.joinerId || "" });
+  }
+
   return json(404, { error: "Unknown link method." });
 }
 
@@ -337,6 +407,13 @@ export function approveLocalRequest(home, id, now = Date.now()) {
   const state = loadPairState(home);
   const token = randomToken();
   const result = approveRequest(state, id, { token, tokenSalt: randomSalt(), now });
+  if (!result.ok) return result;
+  savePairState(home, result.state);
+  return { ok: true };
+}
+
+export function denyLocalRequest(home, id) {
+  const result = denyRequest(loadPairState(home), String(id || ""));
   if (!result.ok) return result;
   savePairState(home, result.state);
   return { ok: true };

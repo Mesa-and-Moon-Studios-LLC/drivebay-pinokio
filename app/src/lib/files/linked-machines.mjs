@@ -292,7 +292,7 @@ export function redeemCode(state, { code, peerId, name, now, token, tokenSalt })
   return { ok: true, token: String(token), state: { ...granted, code: null } };
 }
 
-function addGrant(state, { peerId, name, token, tokenSalt, now, scope = "shares", publicKey = "" }) {
+export function addGrant(state, { peerId, name, token, tokenSalt, now, scope = "shares", publicKey = "" }) {
   return {
     ...state,
     grants: {
@@ -377,6 +377,13 @@ export function approveRequest(state, id, { token, tokenSalt, now }) {
     publicKey: row.publicKey,
   });
   return { ok: true, state: granted };
+}
+
+export function denyRequest(state, id) {
+  const pending = state?.pending || [];
+  const row = pending.find((item) => item.id === id && !item.token);
+  if (!row) return { ok: false, error: "That approval request is gone.", state };
+  return { ok: true, state: { ...state, pending: pending.filter((item) => item !== row) } };
 }
 
 export function pollRequest(state, { id, secret }) {

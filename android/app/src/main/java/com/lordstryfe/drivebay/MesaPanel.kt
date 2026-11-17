@@ -116,8 +116,57 @@ object MesaPanel {
                 return@thread
             }
             val list = if (directory.locked && dek != null) openLocked(dek, directory.machines) else directory.machines
+            MesaSponsor.attach(activity)
+            val pendingAll = org.json.JSONArray()
+            if (dek != null) {
+                val vault = CredentialVault(activity)
+                for (i in 0 until list.length()) {
+                    val row = list.optJSONObject(i) ?: continue
+                    val id = row.optString("machineId")
+                    if (id.isBlank() || id == machineId(activity) || row.optString("type") == "phone") continue
+                    val token = vault.load("link-$id").orEmpty()
+                    if (token.isBlank() || vault.load("link-scope-$id").orEmpty() != "full") continue
+                    val origin = MesaReciprocal.originOf(row) ?: continue
+                    val found = MesaSponsor.listPending(origin, token)
+                    for (j in 0 until found.length()) pendingAll.put(found.getJSONObject(j))
+                }
+            }
             activity.runOnUiThread {
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
+                if (pendingAll.length() > 0) {
+                    body.addView(TextView(activity).apply {
+                        text = "Join requests"
+                        textSize = 14f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setPadding(0, 8, 0, 8)
+                    })
+                    for (i in 0 until pendingAll.length()) {
+                        val req = pendingAll.getJSONObject(i)
+                        val hostLabel = req.optString("hostName").ifBlank { "a trusted computer" }
+                        body.addView(TextView(activity).apply {
+                            text = (req.optString("name").ifBlank { "A machine" }) + " wants to join " + hostLabel + "."
+                            textSize = 14f
+                            setPadding(0, 16, 0, 0)
+                        })
+                        if (req.optBoolean("join")) {
+                            body.addView(TextView(activity).apply {
+                                text = "Its join password and device key checked out."
+                                textSize = 12f
+                                alpha = 0.7f
+                            })
+                        }
+                        body.addView(MaterialButton(activity).apply {
+                            text = "Approve"
+                            isAllCaps = false
+                            setOnClickListener { approvePending(activity, req, list, directory.wraps) }
+                        })
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = "Deny"
+                            isAllCaps = false
+                            setOnClickListener { denyPending(activity, req) }
+                        })
+                    }
+                }
                 if (list.length() == 0) {
                     body.addView(TextView(activity).apply { text = "No machines on this login yet." })
                 }
@@ -165,18 +214,13 @@ object MesaPanel {
                             }
                         })
                     } else {
-                        if (directory.locked && row.optString("type") != "phone") {
+                        if (directory.locked) {
                             body.addView(MaterialButton(activity).apply {
                                 text = "Join"
                                 isAllCaps = false
                                 setOnClickListener { joinMachine(activity, row, directory.wraps) }
                             })
                         }
-                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                            text = activity.getString(R.string.mesa_connect) + " with a code (shared folders only)"
-                            isAllCaps = false
-                            setOnClickListener { connect(activity, row) }
-                        })
                     }
                     if (row.optString("tailscaleHost").isNotBlank()) {
                         body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
@@ -661,7 +705,61 @@ object MesaPanel {
      * Join a machine on this login: send the join password proof and a device-key signature,
      * then wait for a trusted device on that machine to approve. Only then does this phone get a token.
      */
+
+    private fun approvePending(activity: Activity, request: JSONObject, machines: JSONArray, wraps: JSONArray) {
+        val dek = loadDek(activity)
+        if (dek == null) {
+            askJoinPassword(activity, wraps) { approvePending(activity, request, machines, wraps) }
+            return
+        }
+        val me = machineId(activity)
+        val privateKey = CredentialVault(activity).load("mesa-machine-private").orEmpty()
+        if (privateKey.isBlank()) {
+            toast(activity, "This phone has no device key yet. Sign in again.")
+            return
+        }
+        thread(name = "mesa-approve") {
+            val hostUrl = request.optString("hostUrl")
+            val hostId = request.optString("hostId")
+            val token = CredentialVault(activity).load("link-$hostId").orEmpty()
+            val joinerId = request.optString("fromId")
+            val att = MesaSponsor.attestation(dek, privateKey, me, joinerId, request.optString("name"), request.optString("id"), hostId)
+            val error = MesaSponsor.approveOnHost(hostUrl, token, request.optString("id"), att)
+            if (error != null) {
+                activity.runOnUiThread { toast(activity, error) }
+                return@thread
+            }
+            var joiner = JSONObject().put("displayName", request.optString("name")).put("machineId", joinerId)
+            for (i in 0 until machines.length()) {
+                val row = machines.optJSONObject(i) ?: continue
+                if (row.optString("machineId") == joinerId) joiner = row
+            }
+            MesaSponsor.grantToJoiner(activity, joiner, joinerId)
+            activity.runOnUiThread {
+                toast(activity, "Approved. " + (request.optString("name").ifBlank { "That machine" }) + " can now join.")
+                showMachines(activity)
+            }
+        }
+    }
+
+    private fun denyPending(activity: Activity, request: JSONObject) {
+        thread(name = "mesa-deny") {
+            val hostUrl = request.optString("hostUrl")
+            val hostId = request.optString("hostId")
+            val token = CredentialVault(activity).load("link-$hostId").orEmpty()
+            val error = MesaSponsor.denyOnHost(hostUrl, token, request.optString("id"))
+            activity.runOnUiThread {
+                toast(activity, error ?: "Denied.")
+                showMachines(activity)
+            }
+        }
+    }
+
     private fun joinMachine(activity: Activity, machine: JSONObject, wraps: JSONArray) {
+        if (machine.optString("type") == "phone") {
+            toast(activity, "Join this phone from that phone: open My machines and pick this device.")
+            return
+        }
         val url = MesaCloud.connectionUrl(machine)
         if (url.isEmpty()) {
             toast(activity, "That machine has no Tailscale or LAN address.")
