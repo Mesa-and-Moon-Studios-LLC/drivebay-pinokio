@@ -20,6 +20,8 @@ Free stays fully usable for linking your own machines. Paid editions add remote 
 
 "Keep what you have": a one-time license never expires. After the updates window, versions released later run as Free, and the version you had keeps working fully.
 
+Not built yet: HTTPS on the remote-access port forward. You said on 16 Nov this should be a Pro feature. Today the forward is plain HTTP and the app says so. When TLS lands, add it to the Pro row and gate it with `entitlements.can("remote_access")` next to the existing check in `linked-http.mjs`.
+
 ### Suggested prices (proposal, not published anywhere)
 
 Research, checked 17 Nov 2026:
