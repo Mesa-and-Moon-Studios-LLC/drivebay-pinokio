@@ -22,6 +22,19 @@ object DavClient {
         depth: String = "1",
         timeoutMs: Int = 8000,
         socketFactory: (String, Int, Boolean) -> Socket = ::openSocket,
+    ): Reply? = request("PROPFIND", url, basicAuth, mapOf("Depth" to depth), timeoutMs, socketFactory)
+
+    /**
+     * Any WebDAV method with no request body (PROPFIND, MKCOL, MOVE, DELETE). Never throws:
+     * an unreachable host or a malformed reply comes back as null.
+     */
+    fun request(
+        method: String,
+        url: String,
+        basicAuth: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Int = 8000,
+        socketFactory: (String, Int, Boolean) -> Socket = ::openSocket,
     ): Reply? {
         return try {
             val uri = URI(url)
@@ -29,9 +42,13 @@ object DavClient {
             val host = uri.host ?: return null
             val port = if (uri.port > 0) uri.port else if (secure) 443 else 80
             val path = (uri.rawPath?.takeIf { it.isNotEmpty() } ?: "/") + (uri.rawQuery?.let { "?$it" } ?: "")
-            val request = "PROPFIND $path HTTP/1.0\r\n" +
+            val extra = headers.entries.joinToString("") { (key, value) ->
+                // A header value never carries a line break.
+                "${key.replace(Regex("[\\r\\n:]"), "")}: ${value.replace(Regex("[\\r\\n]"), "")}\r\n"
+            }
+            val request = "$method $path HTTP/1.0\r\n" +
                 "Host: ${uri.authority}\r\n" +
-                "Depth: $depth\r\n" +
+                extra +
                 "Authorization: Basic $basicAuth\r\n" +
                 "Content-Length: 0\r\n" +
                 "Connection: close\r\n\r\n"
@@ -88,5 +105,5 @@ object DavClient {
         return if (secure) (SSLSocketFactory.getDefault() as SSLSocketFactory).createSocket(plain, host, port, true) else plain
     }
 
-    private const val MAX_BYTES = 4 * 1024 * 1024
+    private const val MAX_BYTES = 16 * 1024 * 1024
 }

@@ -225,15 +225,9 @@ object MesaPanel {
                 CredentialVault(activity).save("link-" + machine.optString("machineId"), token)
                 CredentialVault(activity).save("link-scope-" + machine.optString("machineId"), "shares")
             }.isSuccess
-            val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
             activity.runOnUiThread {
                 if (!saved) toast(activity, "Paired, but this phone could not save the pairing. Try again.")
-                val message = if (names.isEmpty()) "Connected. No folders are shared." else names.joinToString("\n")
-                android.app.AlertDialog.Builder(activity)
-                    .setTitle(machine.optString("displayName"))
-                    .setMessage(message)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
+                else openDrives(activity, machine)
             }
         }
     }
@@ -247,41 +241,14 @@ object MesaPanel {
         return vault.load("link-scope-$id").orEmpty() != "shares"
     }
 
-    /** Open a machine this phone already holds a grant for. A refused token is forgotten and the choices come back. */
+    /** Open a machine this phone already holds a grant for in the full-screen browser. */
     private fun openDrives(activity: Activity, machine: JSONObject) {
-        val url = MesaCloud.connectionUrl(machine)
-        val id = machine.optString("machineId")
-        val vault = CredentialVault(activity)
-        val token = vault.load("link-$id").orEmpty()
-        if (url.isEmpty() || token.isBlank()) {
+        if (MesaCloud.connectionUrl(machine).isEmpty()) {
             toast(activity, "That machine has no Tailscale or LAN address.")
             return
         }
-        thread(name = "mesa-open") {
-            val auth = Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP)
-            val reply = DavClient.propfind(url, auth)
-            if (reply == null) {
-                activity.runOnUiThread { toast(activity, "Could not reach ${machine.optString("displayName")}. Is it on and on your network?") }
-                return@thread
-            }
-            if (reply.status == 401 || reply.status == 403) {
-                runCatching { vault.forget("link-$id"); vault.forget("link-scope-$id") }
-                activity.runOnUiThread {
-                    toast(activity, "${machine.optString("displayName")} no longer trusts this phone. Join it again.")
-                    showMachines(activity)
-                }
-                return@thread
-            }
-            val names = if (reply.status == 207) runCatching { MesaCloud.shareNames(reply.body) }.getOrDefault(emptyList()) else emptyList()
-            activity.runOnUiThread {
-                val message = if (names.isEmpty()) "No drives are available on this machine." else names.joinToString("\n")
-                android.app.AlertDialog.Builder(activity)
-                    .setTitle(machine.optString("displayName"))
-                    .setMessage(message)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
-            }
-        }
+        runCatching { LinkedBrowserActivity.launch(activity, machine) }
+            .onFailure { toast(activity, "Could not open the file browser.") }
     }
 
     private fun redeem(url: String, code: String, activity: Activity): String? {
@@ -738,16 +705,10 @@ object MesaPanel {
                         CredentialVault(activity).save("link-" + hostId, token)
                         CredentialVault(activity).save("link-scope-" + hostId, if (full) "full" else "shares")
                     }
-                    val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
                     activity.runOnUiThread {
                         waiting.dismiss()
-                        val head = if (full) "Trusted. All drives on this machine:" else "Connected. Shared folders only:"
-                        val message = if (names.isEmpty()) "$head\n(none found)" else head + "\n" + names.joinToString("\n")
-                        android.app.AlertDialog.Builder(activity)
-                            .setTitle(machine.optString("displayName"))
-                            .setMessage(message)
-                            .setPositiveButton(android.R.string.ok, null)
-                            .show()
+                        toast(activity, if (full) "Trusted. Opening all drives on this machine." else "Connected. Shared folders only.")
+                        openDrives(activity, machine)
                     }
                     return@thread
                 }

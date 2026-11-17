@@ -221,3 +221,13 @@ test("the 6-digit code still works and stays shared-folders only", async () => {
   const root = await dav(ctx, json(res).token, "PROPFIND", "/dav/");
   assert.doesNotMatch(Buffer.from(root.body).toString("utf8"), /Macintosh/);
 });
+
+test("the DAV middleware sends 204 without a body so a successful DELETE is not a 500", async () => {
+  const fs = await import("node:fs");
+  const source = fs.readFileSync(new URL("../app/server/middleware/linked-dav.ts", import.meta.url), "utf8");
+  assert.match(source, /result\.status === 204/);
+  assert.match(source, /new Response\(noBody \? null : bytes/);
+  // The same rule holds for the real Response class.
+  assert.throws(() => new Response(new Uint8Array(), { status: 204 }), /Invalid response status code 204/);
+  assert.equal(new Response(null, { status: 204 }).status, 204);
+});

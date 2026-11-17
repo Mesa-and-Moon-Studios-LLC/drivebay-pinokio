@@ -73,5 +73,8 @@ export default async function linkedDavMiddleware(event: LinkedEvent, next: () =
   if (!result) return next();
   const raw = result.body;
   const bytes = raw instanceof Uint8Array ? new Uint8Array(raw) : new TextEncoder().encode(String(raw ?? ""));
-  return new Response(bytes, { status: result.status, headers: result.headers });
+  // A 204 (DELETE) or 205/304 cannot carry a body: new Response(bytes, { status: 204 }) throws and the
+  // client saw a 500 even though the delete had worked.
+  const noBody = result.status === 204 || result.status === 205 || result.status === 304;
+  return new Response(noBody ? null : bytes, { status: result.status, headers: result.headers });
 }
