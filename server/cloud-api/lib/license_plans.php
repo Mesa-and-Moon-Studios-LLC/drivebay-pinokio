@@ -15,6 +15,11 @@ function drivebay_license_plans($ctx) {
             ['id' => 'enterprise', 'name' => 'Enterprise', 'seats' => null, 'features' => ['Self-hosted on your own servers', 'Offline license file for air-gapped networks', 'Seat count set by your agreement', 'Updates and bug fixes included for the term', 'One-time or yearly license']],
         ],
         'prices' => $prices,
-        'checkout' => ['provider' => isset($checkout['provider']) ? $checkout['provider'] : 'none', 'enabled' => !empty($checkout['enabled'])],
+        // Checkout links are handed out only when Aaron flips checkout.enabled on. Until then the page shows disabled buttons.
+        'checkout' => [
+            'provider' => isset($checkout['provider']) ? $checkout['provider'] : 'none',
+            'enabled' => !empty($checkout['enabled']),
+            'links' => (!empty($checkout['enabled']) && isset($checkout['links']) && is_array($checkout['links'])) ? $checkout['links'] : new stdClass(),
+        ],
     ];
 }

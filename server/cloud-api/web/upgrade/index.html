@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Drivebay editions</title>
+<style>
+:root{--night:#0a1f38;--deep:#071528;--ink:#efe7f2;--muted:#a3abc8;--gold:#e6c56a;--line:rgba(230,197,106,.25);--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);background:var(--deep);color:var(--ink);line-height:1.5}
+main{max-width:1040px;margin:0 auto;padding:40px 20px 80px}
+h1{font-size:2rem;margin:0 0 6px}
+.lede{color:var(--muted);max-width:60ch;margin:0 0 28px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.card{border:1px solid var(--line);border-radius:14px;padding:18px;background:linear-gradient(180deg,#0b2440,#081a31);display:flex;flex-direction:column}
+.card h2{margin:0 0 4px;font-size:1.25rem}
+.price{color:var(--gold);min-height:1.5em;margin:0 0 10px;font-weight:600}
+.card ul{padding-left:18px;margin:0 0 16px;color:#d7d9ea;flex:1}
+.card li{margin:4px 0}
+.btn{display:block;text-align:center;border:1px solid var(--gold);color:var(--gold);padding:10px 12px;border-radius:10px;text-decoration:none;background:transparent;font:inherit;width:100%}
+.btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--muted)}
+.btn.live{background:var(--gold);color:#1a1405;cursor:pointer}
+section{margin-top:36px}
+section h3{margin:0 0 6px}
+section p,section ol{color:#d7d9ea;max-width:70ch}
+code{background:#0b2440;padding:1px 6px;border-radius:5px}
+.note{color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>Drivebay editions</h1>
+  <p class="lede">Drivebay stays free for linking your own machines. Pro and Elite add time-limited remote access and more sharing. Enterprise runs on your own servers.</p>
+  <div class="grid" id="grid" aria-live="polite"><p class="note">Loading editions…</p></div>
+  <p class="note" id="status"></p>
+
+  <section>
+    <h3>Already have a purchase code?</h3>
+    <ol>
+      <li>Open Drivebay on your computer and go to <b>Settings → Edition and license</b>. On the phone, open the Mesa panel and tap <b>Edition and license</b>.</li>
+      <li>Paste the code (it looks like <code>DBAY-XXXX-XXXX-XXXX-XXXX</code>) and press Activate.</li>
+      <li>Your code works on as many devices as your edition includes. To move a seat, press Deactivate on the old device.</li>
+    </ol>
+    <p class="note">Activation sends the code, a hashed device id and the device name to this site so seats can be counted. It never sends file names or contents. Your files are encrypted before they reach us and we cannot read them.</p>
+  </section>
+  <section>
+    <h3>Enterprise</h3>
+    <p>Enterprise includes a self-hosted server, an offline license file for networks without internet, and a seat count set by your agreement. A one-time license includes a set number of months of updates, and you can renew updates each year.</p>
+  </section>
+</main>
+<script>
+(function () {
+  var API = "/drivebay/api/license.php?action=plans";
+  var ORDER = ["pro", "elite", "enterprise"];
+  var grid = document.getElementById("grid");
+  var status = document.getElementById("status");
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+  function render(plans) {
+    grid.textContent = "";
+    var checkout = plans.checkout || {};
+    var links = checkout.links || {};
+    var prices = plans.prices || {};
+    plans.editions.forEach(function (ed) {
+      var card = el("div", "card");
+      card.appendChild(el("h2", "", ed.name));
+      var p = prices[ed.id];
+      card.appendChild(el("div", "price", ed.id === "free" ? "Free" : (p ? String(p) : "")));
+      var ul = el("ul");
+      ed.features.forEach(function (f) { ul.appendChild(el("li", "", f)); });
+      card.appendChild(ul);
+      if (ed.id === "free") {
+        var dl = el("a", "btn", "Download");
+        dl.href = "/";
+        card.appendChild(dl);
+      } else {
+        var link = checkout.enabled && links[ed.id];
+        var b = el(link ? "a" : "button", "btn" + (link ? " live" : ""), ed.id === "enterprise" ? (link ? "Get Enterprise" : "Enterprise: coming soon") : (link ? "Buy " + ed.name : "Buy " + ed.name + ": coming soon"));
+        if (link) { b.href = link; b.rel = "noopener"; } else { b.setAttribute("aria-disabled", "true"); b.disabled = true; }
+        card.appendChild(b);
+      }
+      grid.appendChild(card);
+    });
+    if (!checkout.enabled) status.textContent = "Purchases are not open yet.";
+  }
+  fetch(API, { headers: { Accept: "application/json" } })
+    .then(function (r) { return r.json(); })
+    .then(render)
+    .catch(function () { grid.textContent = ""; grid.appendChild(el("p", "note", "Could not load the editions right now. Please try again later.")); });
+})();
+</script>
+</body>
+</html>

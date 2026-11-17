@@ -1,0 +1,4 @@
+# Unlisted page: keep it out of search engines even if someone links to it.
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow, noarchive"
+</IfModule>

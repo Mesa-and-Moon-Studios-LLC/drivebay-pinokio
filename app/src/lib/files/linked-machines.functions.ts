@@ -588,6 +588,13 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
       });
       return { ok: true as const, ...next, message: next.enabled ? "Remote access is on." : "Remote access is off." };
     }
+    if (data.enabled) {
+      // Turning remote access on for another computer is a Pro or Elite feature on the device you are holding too.
+      // The other computer checks its own edition as well, so either side can show the upgrade prompt.
+      const mine = await (await import("@/lib/license/license.server")).currentEntitlements();
+      if (!mine.can("remote_access")) return { ok: false as const, upgrade: true, feature: "remote_access", message: mine.upgradeMessage("remote_access") };
+      if (!mine.remoteMinutesAllowed(data.minutes || 15)) return { ok: false as const, upgrade: true, feature: "remote_24h", message: mine.upgradeMessage("remote_24h") };
+    }
     const cloud = await import("./linked-cloud.mjs");
     const machines = await import("./linked-machines.mjs");
     const listed = await cloud.fetchMachines(home);

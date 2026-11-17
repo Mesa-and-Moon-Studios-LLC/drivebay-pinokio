@@ -1,0 +1,24 @@
+# Drivebay Enterprise, self-hosted cloud API.
+#   1. cp .env.example .env   and fill in your Firebase project id
+#   2. put your license file at ./data/license.dbaylicense
+#   3. docker compose up -d --build
+# Put a TLS reverse proxy (Caddy, nginx, Traefik) in front of port 8080. Never expose plain http beyond your network.
+services:
+  drivebay-api:
+    build:
+      context: ..
+      dockerfile: enterprise/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DRIVEBAY_LICENSE_FILE: /data/license.dbaylicense
+      DRIVEBAY_SQLITE_PATH: /data/drivebay.sqlite
+    ports:
+      - "127.0.0.1:${DRIVEBAY_PORT:-8080}:80"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/health.php >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
