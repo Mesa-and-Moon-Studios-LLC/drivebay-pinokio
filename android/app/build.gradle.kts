@@ -11,8 +11,10 @@ android {
         applicationId = "com.mesaandmoon.drivebay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33809
-        versionName = "3.38.9"
+        versionCode = 33900
+        versionName = "3.39.0"
+        // Build time in seconds. A license's "updates until" date is compared with this.
+        buildConfigField("long", "BUILD_TS_SECONDS", "${System.currentTimeMillis() / 1000L}L")
     }
 
     buildFeatures {

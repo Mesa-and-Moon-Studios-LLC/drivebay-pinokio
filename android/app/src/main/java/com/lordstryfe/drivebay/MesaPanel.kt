@@ -55,6 +55,10 @@ object MesaPanel {
             toast(activity, "Signed out of Mesa and Moon")
         }
         machines.setOnClickListener { showMachines(activity) }
+        activity.findViewById<MaterialButton>(R.id.editionButton)?.apply {
+            text = "Edition: " + com.lordstryfe.drivebay.license.EditionPanel.currentEdition(activity).name
+            setOnClickListener { com.lordstryfe.drivebay.license.EditionPanel.show(activity) }
+        }
     }
 
     fun consume(activity: Activity, intent: Intent?) {
@@ -359,13 +363,19 @@ object MesaPanel {
     }
 
     private fun remoteAccessDialog(activity: Activity, machine: JSONObject) {
+        // Remote access is a Pro or Elite feature. The computer that opens its port enforces it too.
+        val edition = com.lordstryfe.drivebay.license.EditionPanel.currentEdition(activity)
+        if (!edition.can("remote_access")) {
+            com.lordstryfe.drivebay.license.EditionPanel.showUpgrade(activity, "remote_access")
+            return
+        }
         val token = CredentialVault(activity).load("link-" + machine.optString("machineId")).orEmpty()
         if (token.isBlank()) {
             toast(activity, "Pair this phone with that computer first.")
             return
         }
         val minutes = android.widget.Spinner(activity)
-        minutes.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("15 minutes", "1 hour", "4 hours", "24 hours"))
+        minutes.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("15 minutes", "1 hour", "4 hours", if (edition.can("remote_24h")) "24 hours" else "24 hours (Elite)"))
         val mode = android.widget.Spinner(activity)
         mode.adapter = android.widget.ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, listOf("Read-only", "Read-and-write"))
         val box = LinearLayout(activity).apply {
@@ -382,6 +392,10 @@ object MesaPanel {
             .setView(box)
             .setPositiveButton("Turn on") { _, _ ->
                 val mins = intArrayOf(15, 60, 240, 1440)[minutes.selectedItemPosition]
+                if (mins == 1440 && !edition.can("remote_24h")) {
+                    com.lordstryfe.drivebay.license.EditionPanel.showUpgrade(activity, "remote_24h")
+                    return@setPositiveButton
+                }
                 val access = if (mode.selectedItemPosition == 0) "ro" else "rw"
                 setRemoteAccess(activity, machine, token, true, mins, access)
             }
@@ -407,6 +421,11 @@ object MesaPanel {
             val text = postWithToken("$origin/api/link/remote-access", payload.toString(), token)
             val json = text?.let { runCatching { JSONObject(it) }.getOrNull() }
             activity.runOnUiThread {
+                if (json != null && json.optBoolean("upgrade")) {
+                    // The computer said its edition does not include this.
+                    com.lordstryfe.drivebay.license.EditionPanel.showUpgrade(activity, json.optString("feature").ifBlank { "remote_access" })
+                    return@runOnUiThread
+                }
                 if (json == null || json.optBoolean("ok") != true && !json.has("enabled")) {
                     toast(activity, json?.optString("error").takeUnless { it.isNullOrBlank() } ?: "That machine did not accept the change.")
                     return@runOnUiThread
@@ -615,7 +634,7 @@ object MesaPanel {
         return token to (prefs.getString("email", "") ?: "")
     }
 
-    private fun machineId(activity: Activity): String {
+    fun machineId(activity: Activity): String {
         val prefs = activity.getSharedPreferences("drivebay_mesa", Activity.MODE_PRIVATE)
         val existing = prefs.getString("machineId", "") ?: ""
         if (existing.isNotBlank()) return existing

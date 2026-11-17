@@ -320,6 +320,16 @@
                     android:textAllCaps="false"
                     android:textColor="#E8EEF7" />
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/editionButton"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/edition_button"
+                    android:textAllCaps="false"
+                    android:textColor="#E8EEF7" />
+
                 <CheckBox
                     android:id="@+id/mesaHidden"
                     android:layout_width="match_parent"

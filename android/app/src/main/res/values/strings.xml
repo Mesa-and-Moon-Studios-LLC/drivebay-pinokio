@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DriveBay</string>
+    <string name="edition_button">Edition and license</string>
     <string name="server_url_hint">http://100.x.x.x:8765</string>
     <string name="connect">Connect</string>
     <string name="settings">App settings</string>
