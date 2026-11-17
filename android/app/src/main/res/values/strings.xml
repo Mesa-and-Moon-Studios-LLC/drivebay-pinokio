@@ -4,7 +4,7 @@
     <string name="server_url_hint">http://100.x.x.x:8765</string>
     <string name="connect">Connect</string>
     <string name="settings">App settings</string>
-    <string name="app_settings_note">Set the address of your Drivebay PC, your Mesa and Moon account, your own machines, and what this phone shares.</string>
+    <string name="app_settings_note">Set the address of your Drivebay PC, your Mesa and Moon account, your own machines, and what this phone shares. Server settings stay on the PC.</string>
     <string name="save_connect">Save and Connect</string>
     <string name="url_label">DriveBay URL</string>
     <string name="url_help">Address of the Drivebay PC. Include http:// and the port. 8765 is the usual port. 8766 is also common.</string>
