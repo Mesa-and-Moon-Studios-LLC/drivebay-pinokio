@@ -130,27 +130,43 @@ object MesaPanel {
                 }
                 for (i in 0 until list.length()) {
                     val row = list.getJSONObject(i)
-                    val title = row.optString("displayName") + " · " + row.optString("type") +
-                        if (MesaCloud.isOnline(row.optString("lastSeen"), System.currentTimeMillis())) " · online" else " · offline"
+                    val online = MesaCloud.isOnline(row.optString("lastSeen"), System.currentTimeMillis())
+                    val isSelf = row.optString("machineId") == machineId(activity)
                     body.addView(TextView(activity).apply {
-                        text = title
-                        setPadding(0, 12, 0, 0)
+                        text = row.optString("displayName") + if (isSelf) " (this phone)" else ""
+                        textSize = 16f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setPadding(0, 28, 0, 0)
                     })
-                    if (row.optString("machineId") == machineId(activity)) continue
-                    if (directory.locked && row.optString("type") != "phone") {
+                    body.addView(TextView(activity).apply {
+                        text = row.optString("type") + " · " + if (online) "online" else "offline"
+                        textSize = 12f
+                        alpha = 0.7f
+                    })
+                    if (isSelf) continue
+                    val granted = hasOpenGrant(activity, row)
+                    if (granted) {
                         body.addView(MaterialButton(activity).apply {
-                            text = "Join"
+                            text = "Open drives"
                             isAllCaps = false
-                            setOnClickListener { joinMachine(activity, row, directory.wraps) }
+                            setOnClickListener { openDrives(activity, row) }
+                        })
+                    } else {
+                        if (directory.locked && row.optString("type") != "phone") {
+                            body.addView(MaterialButton(activity).apply {
+                                text = "Join"
+                                isAllCaps = false
+                                setOnClickListener { joinMachine(activity, row, directory.wraps) }
+                            })
+                        }
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = activity.getString(R.string.mesa_connect) + " with a code (shared folders only)"
+                            isAllCaps = false
+                            setOnClickListener { connect(activity, row) }
                         })
                     }
-                    body.addView(MaterialButton(activity).apply {
-                        text = activity.getString(R.string.mesa_connect)
-                        isAllCaps = false
-                        setOnClickListener { connect(activity, row) }
-                    })
                     if (row.optString("tailscaleHost").isNotBlank()) {
-                        body.addView(MaterialButton(activity).apply {
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                             text = "Remote access"
                             isAllCaps = false
                             setOnClickListener { remoteAccessDialog(activity, row) }
@@ -205,11 +221,60 @@ object MesaPanel {
                 activity.runOnUiThread { toast(activity, "That machine refused the code.") }
                 return@thread
             }
-            val saved = runCatching { CredentialVault(activity).save("link-" + machine.optString("machineId"), token) }.isSuccess
+            val saved = runCatching {
+                CredentialVault(activity).save("link-" + machine.optString("machineId"), token)
+                CredentialVault(activity).save("link-scope-" + machine.optString("machineId"), "shares")
+            }.isSuccess
             val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
             activity.runOnUiThread {
                 if (!saved) toast(activity, "Paired, but this phone could not save the pairing. Try again.")
                 val message = if (names.isEmpty()) "Connected. No folders are shared." else names.joinToString("\n")
+                android.app.AlertDialog.Builder(activity)
+                    .setTitle(machine.optString("displayName"))
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+        }
+    }
+
+    /** A saved token that is not known to be shared-folders-only opens the drives without asking again. */
+    private fun hasOpenGrant(activity: Activity, machine: JSONObject): Boolean {
+        val vault = CredentialVault(activity)
+        val id = machine.optString("machineId")
+        if (machine.optString("type") == "phone") return false
+        if (vault.load("link-$id").isNullOrBlank()) return false
+        return vault.load("link-scope-$id").orEmpty() != "shares"
+    }
+
+    /** Open a machine this phone already holds a grant for. A refused token is forgotten and the choices come back. */
+    private fun openDrives(activity: Activity, machine: JSONObject) {
+        val url = MesaCloud.connectionUrl(machine)
+        val id = machine.optString("machineId")
+        val vault = CredentialVault(activity)
+        val token = vault.load("link-$id").orEmpty()
+        if (url.isEmpty() || token.isBlank()) {
+            toast(activity, "That machine has no Tailscale or LAN address.")
+            return
+        }
+        thread(name = "mesa-open") {
+            val auth = Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP)
+            val reply = DavClient.propfind(url, auth)
+            if (reply == null) {
+                activity.runOnUiThread { toast(activity, "Could not reach ${machine.optString("displayName")}. Is it on and on your network?") }
+                return@thread
+            }
+            if (reply.status == 401 || reply.status == 403) {
+                runCatching { vault.forget("link-$id"); vault.forget("link-scope-$id") }
+                activity.runOnUiThread {
+                    toast(activity, "${machine.optString("displayName")} no longer trusts this phone. Join it again.")
+                    showMachines(activity)
+                }
+                return@thread
+            }
+            val names = if (reply.status == 207) runCatching { MesaCloud.shareNames(reply.body) }.getOrDefault(emptyList()) else emptyList()
+            activity.runOnUiThread {
+                val message = if (names.isEmpty()) "No drives are available on this machine." else names.joinToString("\n")
                 android.app.AlertDialog.Builder(activity)
                     .setTitle(machine.optString("displayName"))
                     .setMessage(message)
@@ -669,7 +734,10 @@ object MesaPanel {
                     val token = answer?.optString("token").orEmpty()
                     if (token.isBlank()) continue
                     val full = answer?.optString("scope") == "full"
-                    runCatching { CredentialVault(activity).save("link-" + hostId, token) }
+                    runCatching {
+                        CredentialVault(activity).save("link-" + hostId, token)
+                        CredentialVault(activity).save("link-scope-" + hostId, if (full) "full" else "shares")
+                    }
                     val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
                     activity.runOnUiThread {
                         waiting.dismiss()
