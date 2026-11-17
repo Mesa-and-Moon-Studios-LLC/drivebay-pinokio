@@ -292,7 +292,7 @@ export function redeemCode(state, { code, peerId, name, now, token, tokenSalt })
   return { ok: true, token: String(token), state: { ...granted, code: null } };
 }
 
-function addGrant(state, { peerId, name, token, tokenSalt, now }) {
+function addGrant(state, { peerId, name, token, tokenSalt, now, scope = "shares", publicKey = "" }) {
   return {
     ...state,
     grants: {
@@ -302,9 +302,34 @@ function addGrant(state, { peerId, name, token, tokenSalt, now }) {
         salt: String(tokenSalt),
         name: cleanText(name, 80),
         createdAt: Number(now) || Date.now(),
+        // "full" = every drive this machine shows locally (own machines that joined with the
+        // join password and were approved). "shares" = only the shared-folder list.
+        scope: scope === "full" ? "full" : "shares",
+        publicKey: scope === "full" ? cleanText(publicKey, 4096) : "",
       },
     },
   };
+}
+
+export const GRANT_SCOPES = ["shares", "full"];
+
+/** Which grant a pair token belongs to, or null. */
+export function grantForToken(state, token) {
+  for (const [peerId, grant] of Object.entries(state?.grants || {})) {
+    if (!grant?.salt || !grant.tokenHash) continue;
+    if (secretsEqual(hashSecret(token, grant.salt), grant.tokenHash)) {
+      return { peerId, scope: grant.scope === "full" ? "full" : "shares", name: grant.name || "", publicKey: grant.publicKey || "" };
+    }
+  }
+  return null;
+}
+
+/** Forget a trusted or paired machine. Its token stops working on the next request. */
+export function revokeGrant(state, peerId) {
+  const grants = { ...(state?.grants || {}) };
+  if (!Object.prototype.hasOwnProperty.call(grants, peerId)) return { ok: false, error: "That machine is not paired.", state };
+  delete grants[peerId];
+  return { ok: true, state: { ...state, grants } };
 }
 
 export function verifyPairToken(state, token) {
@@ -316,7 +341,7 @@ export function verifyPairToken(state, token) {
   return false;
 }
 
-export function startRequest(state, { id, fromId, name, secret, salt, now }) {
+export function startRequest(state, { id, fromId, name, secret, salt, now, verified = false, publicKey = "" }) {
   const pending = (state.pending || []).filter((row) => Number(now) - Number(row.at) < CODE_TTL_MS).slice(-19);
   pending.push({
     id: cleanText(id, 64),
@@ -327,6 +352,9 @@ export function startRequest(state, { id, fromId, name, secret, salt, now }) {
     at: Number(now),
     token: "",
     tokenSalt: "",
+    // True only when the join password proof and the device key were checked on this host.
+    verified: verified === true,
+    publicKey: verified === true ? cleanText(publicKey, 4096) : "",
   });
   return { ...state, pending };
 }
@@ -338,28 +366,33 @@ export function approveRequest(state, id, { token, tokenSalt, now }) {
   });
   const row = pending.find((item) => item.id === id && item.token === String(token));
   if (!row) return { ok: false, error: "That approval request is gone.", state };
-  const granted = addGrant({ ...state, pending }, {
+  const scope = row.verified === true ? "full" : "shares";
+  const granted = addGrant({ ...state, pending: pending.map((item) => (item === row ? { ...item, scope } : item)) }, {
     peerId: row.fromId || id,
     name: row.name,
     token,
     tokenSalt,
     now,
+    scope,
+    publicKey: row.publicKey,
   });
   return { ok: true, state: granted };
 }
 
 export function pollRequest(state, { id, secret }) {
   let token = "";
+  let scope = "shares";
   const pending = [];
   for (const row of state.pending || []) {
     if (row.id === id && row.token && secretsEqual(hashSecret(secret, row.salt), row.secretHash)) {
       token = row.token;
+      scope = row.scope === "full" ? "full" : "shares";
       continue;
     }
     pending.push(row);
   }
   if (!token) return { ok: false, error: "This machine has not approved that request yet.", state };
-  return { ok: true, token, state: { ...state, pending } };
+  return { ok: true, token, scope, state: { ...state, pending } };
 }
 
 export function publicPairState(state) {
@@ -367,11 +400,12 @@ export function publicPairState(state) {
     codeActive: Boolean(state?.code) && state.code.failures < MAX_CODE_FAILURES,
     pending: (state?.pending || [])
       .filter((row) => !row.token)
-      .map((row) => ({ id: row.id, fromId: row.fromId, name: row.name, at: row.at })),
+      .map((row) => ({ id: row.id, fromId: row.fromId, name: row.name, at: row.at, join: row.verified === true })),
     grants: Object.entries(state?.grants || {}).map(([id, grant]) => ({
       id,
       name: grant.name || "",
       createdAt: grant.createdAt || 0,
+      scope: grant.scope === "full" ? "full" : "shares",
     })),
   };
 }

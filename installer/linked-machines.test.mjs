@@ -409,7 +409,7 @@ test("sign-in URLs match Google and Apple and the docs name the cloud rules", ()
   assert.match(ui, /Continue with Google/);
   assert.match(ui, /Continue with Apple/);
   assert.match(ui, /Create account/);
-  assert.match(ui, /Email me a reset link/);
+  assert.match(ui, /Send reset link/);
   assert.match(ui, /My machines/);
   const phoneUi = fs.readFileSync(path.join(root, "app/src/components/settings/phone-drive.tsx"), "utf8");
   assert.equal(phoneUi.includes("Windows drive letter"), false);

@@ -6,6 +6,29 @@ import { handleLinkedHttp } from "../../src/lib/files/linked-http.mjs";
 import { machineHome } from "../../src/lib/files/linked-store.mjs";
 import { readReachMode, resolveDataDir, resolvePublicAccessFile } from "../../src/lib/files/settings.server";
 
+/**
+ * Drives a trusted own machine may browse: the same enabled drives the local file browser
+ * shows, narrowed by the server-lock allowed roots, with the server-lock write switches.
+ */
+async function loadFullAccess() {
+  const { listEnabledDrives } = await import("../../src/lib/files/drive-access.server");
+  const lock = await import("../../src/lib/files/server-lock.server");
+  const policy = lock.readServerLock();
+  const drives = await listEnabledDrives();
+  const roots = drives
+    .filter((drive) => lock.isPathAllowedByRoots(drive.path, policy.allowedRoots))
+    .map((drive) => ({ path: drive.path, name: drive.label || drive.id }));
+  return {
+    roots,
+    policy: {
+      allowUpload: policy.allowUpload,
+      allowDelete: policy.allowDelete,
+      allowRename: policy.allowRename,
+      allowCreateFolder: policy.allowCreateFolder,
+    },
+  };
+}
+
 type LinkedEvent = {
   url: URL;
   req: Request;
@@ -45,6 +68,7 @@ export default async function linkedDavMiddleware(event: LinkedEvent, next: () =
     home: machineHome() || resolveDataDir(),
     accessFile: resolvePublicAccessFile(),
     reachMode: readReachMode(),
+    fullAccess: loadFullAccess,
   });
   if (!result) return next();
   const raw = result.body;

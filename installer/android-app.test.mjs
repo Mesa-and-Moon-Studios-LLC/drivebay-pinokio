@@ -14,7 +14,7 @@ test("settings offers the Android APK and hides Google Play until a URL is set",
   assert.match(version, /PLAY_STORE_URL = ""/);
 
   const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
-  assert.match(settings, /Get the Android app/);
+  assert.match(settings, /Android app/);
   assert.match(settings, /href=\{ANDROID_APK_URL\}/);
   assert.match(settings, /Android APK/);
   const play = settings.indexOf("{PLAY_STORE_URL ? (");

@@ -110,9 +110,9 @@ export function VaultLock({
   if (vault?.ready && vault.unlocked) {
     return (
       <div className="space-y-1 rounded-lg border border-border p-3">
-        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Locked machine list</p>
+        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Join password</p>
         <p className="text-xs text-fg-muted">
-          This device can read the machine list. Mesa and Moon only holds data it cannot read.
+          Set, and this device is unlocked. It can join other machines and approve new ones. Mesa and Moon only holds data it cannot read.
           {vault.hasPasskey ? " A passkey is set." : ""}
         </p>
       </div>
@@ -122,10 +122,10 @@ export function VaultLock({
   if (vault?.ready && !vault.unlocked) {
     return (
       <div className="space-y-3 rounded-lg border border-border p-3" data-testid="vault-unlock">
-        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Unlock the machine list</p>
+        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Enter your join password</p>
         <p className="text-xs text-fg-muted">{vault.cannotRecover || CANNOT_RECOVER_MESSAGE}</p>
         <div className="space-y-1">
-          <Label htmlFor="vault-unlock-pass">Passphrase or recovery key</Label>
+          <Label htmlFor="vault-unlock-pass">Join password or recovery key</Label>
           <Input id="vault-unlock-pass" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
         </div>
         <div className="flex flex-wrap gap-2">
@@ -184,14 +184,14 @@ export function VaultLock({
 
   return (
     <div className="space-y-3 rounded-lg border border-border p-3" data-testid="vault-setup">
-      <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Lock the machine list</p>
+      <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Set a join password</p>
       <p className="text-sm text-fg">
-        Before Drivebay keeps this computer on your account, set a passphrase. Your devices will encrypt the machine
-        list with it, so Mesa and Moon only holds data it cannot read.
+        Pick a join password. A new machine has to enter it, and a machine you already trust has to approve it, before
+        it can see your drives. It also encrypts your machine list, so Mesa and Moon only holds data it cannot read.
       </p>
       <p className="text-xs text-fg-muted">{CANNOT_RECOVER_MESSAGE}</p>
       <div className="space-y-1">
-        <Label htmlFor="vault-pass">Recovery passphrase</Label>
+        <Label htmlFor="vault-pass">Join password</Label>
         <Input id="vault-pass" type="password" value={passphrase} onChange={(event) => setPassphrase(event.target.value)} />
       </div>
       <div className="space-y-1">
@@ -200,7 +200,7 @@ export function VaultLock({
       </div>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" className="mt-1" checked={usePasskey} onChange={(event) => setUsePasskey(event.target.checked)} />
-        <span>Also save a passkey on this device (iCloud Keychain, Google Password Manager, or Windows Hello). The passphrase stays as the backup.</span>
+        <span>Also save a passkey on this device (iCloud Keychain, Google Password Manager, or Windows Hello). The join password stays as the backup.</span>
       </label>
       <Button
         type="button"
@@ -226,12 +226,12 @@ export function VaultLock({
               setPassphrase("");
               setConfirm("");
               setShownKey(result.recoveryKey);
-              toast.success("The machine list is locked.");
+              toast.success("Join password set.");
             } else toast.error(result.message);
           })().finally(() => setBusy(false));
         }}
       >
-        Lock the machine list
+        Set join password
       </Button>
     </div>
   );

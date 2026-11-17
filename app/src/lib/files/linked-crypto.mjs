@@ -348,3 +348,45 @@ export function migratePlaintextRows(dek, rows, nowIso) {
   }
   return { ok: true, envelopes, leftover };
 }
+
+/**
+ * Join proof for adding a machine to the same Mesa and Moon login.
+ * The new machine unlocks the account DEK with the join password (passphrase,
+ * recovery key, or passkey), then proves it holds the DEK with an HMAC and proves
+ * it owns its device key with an Ed25519 signature. Neither value is the password
+ * or the DEK, and both are bound to one host, one machine id, and one request secret.
+ */
+export function joinKey(dek) {
+  return Buffer.from(
+    crypto.hkdfSync("sha256", Buffer.from(dek), Buffer.from("drivebay-join"), Buffer.from("drivebay-join-v1"), 32),
+  );
+}
+
+export function joinMessage({ hostId, peerId, secret }) {
+  return Buffer.from(`drivebay-join-v1\0${hostId}\0${peerId}\0${secret}`, "utf8");
+}
+
+export function joinProof(dek, parts) {
+  return crypto.createHmac("sha256", joinKey(dek)).update(joinMessage(parts)).digest("base64");
+}
+
+export function verifyJoinProof(dek, parts, proof) {
+  if (!dek || !proof) return false;
+  const want = Buffer.from(joinProof(dek, parts));
+  const got = Buffer.from(String(proof));
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
+export function signJoin(privateKeyB64, parts) {
+  const key = crypto.createPrivateKey({ key: Buffer.from(privateKeyB64, "base64"), format: "der", type: "pkcs8" });
+  return crypto.sign(null, joinMessage(parts), key).toString("base64");
+}
+
+export function verifyJoinSignature(publicKeyB64, parts, signature) {
+  try {
+    const key = crypto.createPublicKey({ key: Buffer.from(String(publicKeyB64), "base64"), format: "der", type: "spki" });
+    return crypto.verify(null, joinMessage(parts), key, Buffer.from(String(signature), "base64"));
+  } catch {
+    return false;
+  }
+}

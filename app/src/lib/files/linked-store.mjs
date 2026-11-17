@@ -165,5 +165,6 @@ export function publicLinks(records) {
     label: row?.label ? String(row.label) : "",
     via: row?.via ? String(row.via) : "",
     paired: Boolean(row?.token),
+    scope: row?.scope === "full" ? "full" : "shares",
   }));
 }

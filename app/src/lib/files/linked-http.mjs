@@ -16,8 +16,10 @@ import {
   randomToken,
   redeemCode,
   startRequest,
+  revokeGrant,
   verifyPairToken,
 } from "./linked-machines.mjs";
+import { verifyJoinRequest } from "./linked-join.mjs";
 import { handleDav } from "./linked-dav.mjs";
 import { loadIdentity, loadPairState, loadShares, savePairState } from "./linked-store.mjs";
 import {
@@ -81,6 +83,8 @@ export async function handleLinkedHttp({
   now = Date.now(),
   accessFile,
   reachMode = "both",
+  fullAccess = null,
+  joinDeps = {},
 }) {
   const verb = String(method || "GET").toUpperCase();
   const pathname = String(path || "").split("?")[0];
@@ -114,6 +118,7 @@ export async function handleLinkedHttp({
       directInternet: shares.directInternet === true,
       displayName: identity?.displayName || "Drivebay",
       publicWrite: writeOk,
+      fullAccess: typeof fullAccess === "function" ? await fullAccess() : fullAccess,
     });
   }
   if (!pathname.startsWith("/api/link/")) return null;
@@ -161,24 +166,53 @@ export async function handleLinkedHttp({
     const id = randomRequestId();
     const secret = String(payload.secret || "");
     if (secret.length < 16) return json(400, { error: "The request secret is missing." });
+    const fromId = String(payload.machineId || "");
+    // A join request carries the join password proof and a device-key signature. A bad one is
+    // refused outright so the user is not asked to approve something that can never be trusted.
+    let verified = false;
+    let publicKey = "";
+    if (payload.proof || payload.signature) {
+      const checked = await verifyJoinRequest({
+        home,
+        peerId: fromId,
+        secret,
+        proof: String(payload.proof || ""),
+        signature: String(payload.signature || ""),
+        ...joinDeps,
+      });
+      if (!checked.ok) {
+        const message = {
+          "bad-password": "The join password did not match.",
+          "host-locked": "Unlock the machine list on this computer first.",
+          "host-unregistered": "This computer has not registered yet.",
+          "not-on-login": "That machine is not on this Mesa and Moon login.",
+          "bad-device-key": "That machine's device key did not match the account.",
+        }[checked.reason] || "The join request was refused.";
+        return json(403, { error: message, reason: checked.reason });
+      }
+      verified = true;
+      publicKey = checked.publicKey || "";
+    }
     state = startRequest(state, {
       id,
-      fromId: String(payload.machineId || ""),
+      fromId,
       name: String(payload.displayName || "Machine"),
       secret,
       salt: randomSalt(),
       now,
+      verified,
+      publicKey,
     });
     savePairState(home, state);
     const stored = (state.pending || [])[state.pending.length - 1];
-    return json(200, { id: stored?.id || id });
+    return json(200, { id: stored?.id || id, join: verified });
   }
 
   if (pathname === "/api/link/poll" && verb === "POST") {
     const result = pollRequest(state, { id: String(payload.id || ""), secret: String(payload.secret || "") });
     if (result.ok) savePairState(home, result.state);
     if (!result.ok) return json(409, { error: result.error });
-    return json(200, { token: result.token });
+    return json(200, { token: result.token, scope: result.scope || "shares" });
   }
 
   if (pathname === "/api/link/remote-access" && (verb === "GET" || verb === "POST")) {
@@ -248,6 +282,13 @@ export function approveLocalRequest(home, id, now = Date.now()) {
   const state = loadPairState(home);
   const token = randomToken();
   const result = approveRequest(state, id, { token, tokenSalt: randomSalt(), now });
+  if (!result.ok) return result;
+  savePairState(home, result.state);
+  return { ok: true };
+}
+
+export function revokeLocalGrant(home, peerId) {
+  const result = revokeGrant(loadPairState(home), String(peerId || ""));
   if (!result.ok) return result;
   savePairState(home, result.state);
   return { ok: true };

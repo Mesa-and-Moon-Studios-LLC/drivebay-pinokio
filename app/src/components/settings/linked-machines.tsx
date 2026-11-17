@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import {
   finishLinkedMachine,
   getLinkedStatus,
   listLinkedMachines,
+  revokeLinkedGrant,
   saveLinkedShares,
   saveMesaSession,
   setMachineRemoteAccess,
@@ -33,6 +34,7 @@ import {
 
 const NONCE_KEY = "mesa-nonce";
 const SIGNED_IN_KEY = "mesa-signed-in-at";
+export const SIGN_IN_SETUP_HINT = "Sign-in is not set up on this machine yet. Open Settings, Advanced, Sign-in setup.";
 
 type ShareRow = { path: string; access: "ro" | "rw"; name?: string };
 type MachineRow = {
@@ -60,15 +62,21 @@ type Status = {
     signinBridge?: string;
   };
   shares: { hidden: boolean; directInternet: boolean; publicHost: string; folders: ShareRow[] };
-  pairs: { pending: { id: string; name: string }[] };
-  links: { machineId: string; label: string; paired: boolean; via: string }[];
+  pairs: {
+    pending: { id: string; name: string; join?: boolean }[];
+    grants: { id: string; name: string; createdAt: number; scope: "full" | "shares" }[];
+  };
+  links: { machineId: string; label: string; paired: boolean; via: string; scope?: string }[];
   self: { displayName: string } | null;
   warning: string;
   vault?: { ready?: boolean; unlocked?: boolean; hasPassphrase?: boolean; hasPasskey?: boolean; hasRecovery?: boolean; cannotRecover?: string };
   remoteAccess?: { enabled?: boolean; offAt?: number | null; mode?: string; source?: string; byName?: string };
 };
 
-export function LinkedMachines() {
+type LinkedCtx = ReturnType<typeof useLinkedState>;
+const LinkedContext = createContext<LinkedCtx | null>(null);
+
+function useLinkedState() {
   const [status, setStatus] = useState<Status | null>(null);
   const [machines, setMachines] = useState<MachineRow[]>([]);
   const [listNote, setListNote] = useState("");
@@ -173,7 +181,7 @@ export function LinkedMachines() {
 
   async function submitEmail(action: "signIn" | "signUp" | "reset") {
     if (!status?.config.ready || !status.config.apiKey) {
-      toast.error("Add mesa-firebase.json on this machine. Drivebay keeps working without it.");
+      toast.error(SIGN_IN_SETUP_HINT);
       return;
     }
     const address = cleanEmail(email);
@@ -235,7 +243,7 @@ export function LinkedMachines() {
 
   function startProvider(provider: "google" | "apple") {
     if (!status?.config.ready) {
-      toast.error("Add mesa-firebase.json on this machine. Drivebay keeps working without it.");
+      toast.error(SIGN_IN_SETUP_HINT);
       return;
     }
     const enabled = provider === "google" ? status.config.google : status.config.apple;
@@ -302,6 +310,18 @@ export function LinkedMachines() {
     }
   }
 
+  async function join(machine: MachineRow) {
+    setBusy(true);
+    try {
+      const result = await connectLinkedMachine({ data: { machineId: machine.machineId, askApproval: true, join: true } });
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function finish(machineId: string) {
     const result = await finishLinkedMachine({ data: { machineId } });
     if (result.ok && !("pending" in result && result.pending)) toast.success("Mounted");
@@ -310,151 +330,361 @@ export function LinkedMachines() {
   }
 
   const signedIn = status?.account.signedIn === true;
+  return {
+    status,
+    machines,
+    listNote,
+    name,
+    setName,
+    hidden,
+    setHidden,
+    direct,
+    setDirect,
+    publicHost,
+    setPublicHost,
+    folders,
+    setFolders,
+    folderPath,
+    setFolderPath,
+    folderAccess,
+    setFolderAccess,
+    code,
+    setCode,
+    pairCode,
+    email,
+    setEmail,
+    password,
+    setPassword,
+    busy,
+    setBusy,
+    remoteMinutes,
+    setRemoteMinutes,
+    remoteMode,
+    setRemoteMode,
+    refresh,
+    submitEmail,
+    startProvider,
+    saveShareForm,
+    showCode,
+    connect,
+    join,
+    finish,
+    signedIn,
+  };
+}
 
+export function LinkedProvider({ children }: { children: ReactNode }) {
+  const value = useLinkedState();
+  return <LinkedContext.Provider value={value}>{children}</LinkedContext.Provider>;
+}
+
+function useLinked() {
+  const value = useContext(LinkedContext);
+  if (!value) throw new Error("LinkedProvider is missing.");
+  return value;
+}
+
+function Card({ children }: { children: ReactNode }) {
+  return <div className="space-y-4 rounded-md border border-border bg-bg-elevated p-4 text-sm">{children}</div>;
+}
+
+function Sub({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3">
-      <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Mesa and Moon</p>
-      <div className="space-y-4 rounded-md border border-border bg-bg-elevated p-4 text-sm">
-        <div>
-          <p className="text-base font-medium text-fg">Mesa and Moon</p>
-          <p className="mt-1 text-xs text-fg-muted">
-            Optional. Drivebay works without an account. Your files never touch our servers. The account stores only
-            how to reach this machine: its name, type, Tailscale or LAN address, port, public key, and last seen.
-          </p>
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-fg">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Account group: the Mesa and Moon sign-in. */
+export function MesaAccountSection() {
+  const { status, signedIn, busy, email, setEmail, password, setPassword, startProvider, submitEmail, refresh } = useLinked();
+  return (
+    <Card>
+      <div>
+        <p className="text-base font-medium text-fg">Mesa and Moon account</p>
+        <p className="mt-1 text-xs text-fg-muted">
+          Optional. Drivebay works without it. Your files never touch our servers. The account only stores how to
+          reach each of your machines, and your machine list is encrypted with your join password.
+        </p>
+      </div>
+      {signedIn ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-fg">Signed in as {status?.account.email || status?.account.displayName}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              void signOutMesa().then(() => refresh());
+            }}
+          >
+            Sign out
+          </Button>
         </div>
-        {signedIn ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-sm text-fg">{status?.account.email || status?.account.displayName}</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                void signOutMesa().then(() => refresh());
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
-        ) : (
-          <div className="mx-auto flex max-w-sm flex-col gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => startProvider("google")}
-              className="rounded-md bg-white px-4 py-2.5 text-sm font-medium text-neutral-900"
-            >
-              Continue with Google
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => startProvider("apple")}
-              className="rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white"
-            >
-              Continue with Apple
-            </button>
-            <form
-              className="space-y-2 rounded-md border border-border p-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitEmail("signIn");
-              }}
-            >
-              <p className="text-sm font-medium text-fg">Email</p>
-              <Input
-                type="email"
-                autoComplete="username"
-                value={email}
-                placeholder="you@example.com"
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <Input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                placeholder="Password"
-                onChange={(event) => setPassword(event.target.value)}
-              />
-              <div className="flex flex-wrap gap-2">
-                <Button type="submit" size="sm" disabled={busy}>
-                  Sign in
-                </Button>
-                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("signUp")}>
-                  Create account
-                </Button>
-                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("reset")}>
-                  Email me a reset link
-                </Button>
-              </div>
-              <p className="text-xs text-fg-muted">
-                The password is sent to Mesa and Moon sign-in and is not saved on this machine. If this email already
-                belongs to Google or Apple, use that button. It stays one account.
-              </p>
-            </form>
-            {status && !status.config.ready ? (
-              <p className="text-xs text-fg-muted">
-                Sign-in needs mesa-firebase.json on this machine. Until then these buttons explain what is missing, and
-                Drivebay stays fully usable.
-              </p>
-            ) : null}
-          </div>
-        )}
-
-        <VaultLock vault={status?.vault} config={status?.config} signedIn={signedIn} onDone={() => void refresh()} />
-        <RemoteAccessBanner access={status?.remoteAccess} machineId="self" onChange={() => void refresh()} />
-
-                <div className="space-y-1">
-          <Label htmlFor="machine-name">Name on this login</Label>
-          <Input id="machine-name" value={name} onChange={(event) => setName(event.target.value)} />
+      ) : (
+        <div className="mx-auto flex max-w-sm flex-col gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => startProvider("google")}
+            className="rounded-md bg-white px-4 py-2.5 text-sm font-medium text-neutral-900"
+          >
+            Continue with Google
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => startProvider("apple")}
+            className="rounded-md bg-black px-4 py-2.5 text-sm font-medium text-white"
+          >
+            Continue with Apple
+          </button>
+          <form
+            className="space-y-2 rounded-md border border-border p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitEmail("signIn");
+            }}
+          >
+            <p className="text-sm font-medium text-fg">Email</p>
+            <Input
+              type="email"
+              autoComplete="username"
+              value={email}
+              placeholder="you@example.com"
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              placeholder="Password"
+              onChange={(event) => setPassword(event.target.value)}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="sm" disabled={busy}>
+                Sign in
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("signUp")}>
+                Create account
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void submitEmail("reset")}>
+                Send reset link
+              </Button>
+            </div>
+            <p className="text-xs text-fg-muted">
+              This password is sent to Mesa and Moon sign-in and is not saved here. If the email already belongs to
+              Google or Apple, use that button. It stays one account.
+            </p>
+          </form>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />
-          Hidden. Other machines on this login do not see this one.
-        </label>
+      )}
+    </Card>
+  );
+}
 
-        <div className="space-y-2">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Shared folders</p>
-          <p className="text-xs text-fg-muted">Nothing is shared until you add a folder. WebDAV exposes only this list.</p>
-          {folders.length === 0 ? <p className="text-xs text-fg-muted">No folders shared.</p> : null}
-          {folders.map((folder) => (
-            <div key={folder.path} className="flex flex-wrap items-center gap-2">
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">{folder.path}</span>
-              <select
-                className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
-                value={folder.access}
-                onChange={(event) =>
-                  setFolders((prev) =>
-                    prev.map((row) =>
-                      row.path === folder.path ? { ...row, access: event.target.value === "rw" ? "rw" : "ro" } : row,
-                    ),
-                  )
-                }
-              >
-                <option value="ro">Read-only</option>
-                <option value="rw">Read-write</option>
-              </select>
+/** Advanced group: developer-only sign-in setup. */
+export function SignInSetupNote() {
+  const { status } = useLinked();
+  return (
+    <div className="space-y-1 text-xs text-fg-muted">
+      <p className="text-sm text-fg">Sign-in setup</p>
+      <p>
+        {status?.config.ready
+          ? "Sign-in is set up on this machine."
+          : "Sign-in is not set up on this machine. Put the mesa-firebase.json file in this machine's data folder, then restart Drivebay. Drivebay stays fully usable without it."}
+      </p>
+    </div>
+  );
+}
+
+/** This machine group: how this machine appears on the login. */
+export function ThisMachineSection() {
+  const { name, setName, hidden, setHidden, busy, saveShareForm, signedIn } = useLinked();
+  return (
+    <Card>
+      <div className="space-y-1">
+        <Label htmlFor="machine-name">Name on your login</Label>
+        <Input id="machine-name" value={name} onChange={(event) => setName(event.target.value)} />
+        <p className="text-xs text-fg-muted">
+          {signedIn ? "This is how your other machines see this one." : "Used once you sign in to Mesa and Moon."}
+        </p>
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-1" checked={hidden} onChange={(event) => setHidden(event.target.checked)} />
+        <span>Hide this machine from your other machines.</span>
+      </label>
+      <Button type="button" size="sm" disabled={busy} onClick={() => void saveShareForm()}>
+        Save
+      </Button>
+    </Card>
+  );
+}
+
+/** My machines group: join password, join requests, trusted devices, and your other machines. */
+export function MyMachinesSection() {
+  const {
+    status, signedIn, machines, listNote, busy, setBusy, code, setCode, remoteMinutes, setRemoteMinutes,
+    remoteMode, setRemoteMode, connect, join, finish, refresh,
+  } = useLinked();
+  const vaultReady = status?.vault?.ready === true;
+  const pending = status?.pairs.pending || [];
+  const grants = status?.pairs.grants || [];
+  return (
+    <Card>
+      <p className="text-xs text-fg-muted">
+        Your machines on the same login see each other&apos;s whole drives. A new machine must know your join password,
+        and a machine you already trust must approve it. A stolen login alone cannot do either.
+      </p>
+
+      <VaultLock vault={status?.vault} config={status?.config} signedIn={signedIn} onDone={() => void refresh()} />
+
+      {pending.length ? (
+        <Sub title="Join requests">
+          {pending.map((row) => (
+            <div key={row.id} className="flex flex-wrap items-center gap-2" data-testid="join-request">
+              <span className="min-w-0 flex-1 text-xs">
+                <span className="text-sm text-fg">{row.name || "A machine"}</span> wants to join.{" "}
+                {row.join ? "Its join password and device key checked out." : "It did not send the join password, so it would only see your shared folders."}
+              </span>
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
-                onClick={() => setFolders((prev) => prev.filter((row) => row.path !== folder.path))}
+                onClick={() => {
+                  void approveLinkedRequest({ data: { id: row.id } }).then(() => refresh());
+                }}
               >
-                Remove
+                Approve
               </Button>
             </div>
           ))}
-          <div className="flex flex-wrap gap-2">
-            <Input
-              value={folderPath}
-              placeholder="C:\Users\me\Shared or /home/me/Shared"
-              onChange={(event) => setFolderPath(event.target.value)}
-            />
+        </Sub>
+      ) : null}
+
+      <Sub title="Trusted devices">
+        {grants.length === 0 ? <p className="text-xs text-fg-muted">No device has been approved on this machine yet.</p> : null}
+        {grants.map((grant) => (
+          <div key={grant.id} className="flex flex-wrap items-center gap-2" data-testid="trusted-device">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-fg">{grant.name || grant.id}</p>
+              <p className="text-xs text-fg-muted">
+                {grant.scope === "full" ? "Trusted. Can browse all drives on this machine." : "Paired with a code. Shared folders only."}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void revokeLinkedGrant({ data: { id: grant.id } }).then(() => refresh());
+              }}
+            >
+              Forget
+            </Button>
+          </div>
+        ))}
+      </Sub>
+
+      <Sub title="Your other machines">
+        {listNote ? <p className="text-xs text-fg-muted">{listNote}</p> : null}
+        {!signedIn ? <p className="text-xs text-fg-muted">Sign in to see the other machines on this login.</p> : null}
+        {signedIn && machines.length === 0 && !listNote ? (
+          <p className="text-xs text-fg-muted">No other machines yet. Sign in on each one.</p>
+        ) : null}
+        {signedIn && !vaultReady && machines.length > 0 ? (
+          <p className="text-xs text-fg-muted">Set a join password above first. Until then, machines can only connect with a 6-digit code.</p>
+        ) : null}
+        {machines.map((machine) => (
+          <div key={machine.machineId} className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-fg">
+                {machine.displayName}{" "}
+                <span className="text-xs text-fg-muted">
+                  {machine.type}
+                  {machine.self ? " · this machine" : ""}
+                  {machine.hidden ? " · hidden" : ""}
+                  {machine.online ? " · online" : " · offline"}
+                  {machine.connect?.via ? ` · ${machine.connect.via}` : ""}
+                </span>
+              </p>
+            </div>
+            {machine.self ? null : (
+              <>
+                {machine.connect?.risk ? (
+                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, true)}>
+                    Connect over the public internet
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" disabled={busy || machine.type === "phone"} onClick={() => void join(machine)}>
+                    Join
+                  </Button>
+                )}
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, false)}>
+                  Connect
+                </Button>
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void finish(machine.machineId)}>
+                  Check approval
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void disconnectLinkedMachine({ data: { machineId: machine.machineId, forget: true } }).then(() => refresh())
+                  }
+                >
+                  Forget
+                </Button>
+              </>
+            )}
+          </div>
+        ))}
+        <p className="text-xs text-fg-muted">
+          <span className="text-fg">Join</span> sends your join password proof and waits for a trusted device on that
+          machine to approve. <span className="text-fg">Connect</span> mounts a machine you already joined, or uses the
+          6-digit code below.
+        </p>
+        <div className="space-y-1">
+          <Label htmlFor="pair-code">6-digit code from the other machine (shared folders only)</Label>
+          <Input id="pair-code" value={code} onChange={(event) => setCode(event.target.value)} />
+        </div>
+      </Sub>
+    </Card>
+  );
+}
+
+/** Sharing with others group: shared folders, 6-digit code, and remote access. */
+export function SharingSection() {
+  const {
+    status, signedIn, machines, busy, setBusy, folders, setFolders, folderPath, setFolderPath, folderAccess, setFolderAccess,
+    direct, setDirect, publicHost, setPublicHost, saveShareForm, showCode, pairCode, remoteMinutes, setRemoteMinutes,
+    remoteMode, setRemoteMode, refresh,
+  } = useLinked();
+  const tailnetMachines = machines.filter((machine) => !machine.self && machine.connect?.via === "tailscale");
+  return (
+    <Card>
+      <p className="text-xs text-fg-muted">
+        Everyone who is not one of your own machines only sees what you share here. Your own trusted machines do not
+        need a shared folder.
+      </p>
+      <Sub title="Shared folders">
+        {folders.length === 0 ? <p className="text-xs text-fg-muted">No folders shared.</p> : null}
+        {folders.map((folder) => (
+          <div key={folder.path} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">{folder.path}</span>
             <select
               className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
-              value={folderAccess}
-              onChange={(event) => setFolderAccess(event.target.value === "rw" ? "rw" : "ro")}
+              value={folder.access}
+              onChange={(event) =>
+                setFolders((prev) =>
+                  prev.map((row) =>
+                    row.path === folder.path ? { ...row, access: event.target.value === "rw" ? "rw" : "ro" } : row,
+                  ),
+                )
+              }
             >
               <option value="ro">Read-only</option>
               <option value="rw">Read-write</option>
@@ -463,28 +693,56 @@ export function LinkedMachines() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                const next = folderPath.trim();
-                if (!next) return;
-                setFolders((prev) => [...prev.filter((row) => row.path !== next), { path: next, access: folderAccess }]);
-                setFolderPath("");
-              }}
+              onClick={() => setFolders((prev) => prev.filter((row) => row.path !== folder.path))}
             >
-              Add folder
+              Remove
             </Button>
           </div>
-        </div>
-
-        <label className="flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={direct}
-            onChange={(event) => setDirect(event.target.checked)}
+        ))}
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={folderPath}
+            placeholder="C:\Users\me\Shared or /home/me/Shared"
+            onChange={(event) => setFolderPath(event.target.value)}
           />
-          <span>
-            I opened this port on the public internet myself. {status?.warning}
-          </span>
+          <select
+            className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
+            value={folderAccess}
+            onChange={(event) => setFolderAccess(event.target.value === "rw" ? "rw" : "ro")}
+          >
+            <option value="ro">Read-only</option>
+            <option value="rw">Read-write</option>
+          </select>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const next = folderPath.trim();
+              if (!next) return;
+              setFolders((prev) => [...prev.filter((row) => row.path !== next), { path: next, access: folderAccess }]);
+              setFolderPath("");
+            }}
+          >
+            Add folder
+          </Button>
+        </div>
+      </Sub>
+
+      <Sub title="6-digit code">
+        <p className="text-xs text-fg-muted">
+          Lets someone else's device open the shared folders above. Give it to them in person. It expires in 10 minutes.
+        </p>
+        <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void showCode()}>
+          Show a 6-digit code
+        </Button>
+        {pairCode ? <p className="font-mono text-lg tracking-widest text-fg">{pairCode}</p> : null}
+      </Sub>
+
+      <Sub title="Remote access (outside Tailscale)">
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={direct} onChange={(event) => setDirect(event.target.checked)} />
+          <span>I opened this port on the public internet myself. {status?.warning}</span>
         </label>
         {direct ? (
           <div className="space-y-1">
@@ -497,150 +755,66 @@ export function LinkedMachines() {
             />
           </div>
         ) : null}
-        <Button type="button" size="sm" disabled={busy} onClick={() => void saveShareForm()}>
-          Save machine
-        </Button>
-
-        <div className="space-y-2">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Pairing</p>
-          <p className="text-xs text-fg-muted">
-            The account can list machines. Opening one still needs a code or an approval on that machine. A stolen
-            login cannot mount a drive by itself.
-          </p>
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void showCode()}>
-            Show a 6-digit code
-          </Button>
-          {pairCode ? <p className="font-mono text-lg tracking-widest text-fg">{pairCode}</p> : null}
-          {(status?.pairs.pending || []).map((row) => (
-            <div key={row.id} className="flex items-center gap-2">
-              <span className="text-xs">{row.name || "A machine"} wants to connect.</span>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  void approveLinkedRequest({ data: { id: row.id } }).then(() => refresh());
-                }}
+        {signedIn && tailnetMachines.length ? (
+          <div className="space-y-2">
+            <p className="text-xs text-fg-muted">
+              Turn the port forward on for another machine on your Tailscale network. It switches itself off after the
+              time you pick.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
+                value={remoteMinutes}
+                onChange={(event) => setRemoteMinutes(Number(event.target.value))}
+                aria-label="Remote access time limit"
               >
-                Approve
-              </Button>
+                <option value={15}>15 minutes</option>
+                <option value={60}>1 hour</option>
+                <option value={240}>4 hours</option>
+                <option value={1440}>24 hours</option>
+              </select>
+              <select
+                className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
+                value={remoteMode}
+                onChange={(event) => setRemoteMode(event.target.value === "rw" ? "rw" : "ro")}
+                aria-label="Remote access mode"
+              >
+                <option value="ro">Read-only</option>
+                <option value="rw">Read-and-write</option>
+              </select>
             </div>
-          ))}
-        </div>
-
-        <div className="space-y-2">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">My machines</p>
-          {listNote ? <p className="text-xs text-fg-muted">{listNote}</p> : null}
-          {!signedIn ? <p className="text-xs text-fg-muted">Sign in to see the other machines on this login.</p> : null}
-          {signedIn && machines.length === 0 && !listNote ? (
-            <p className="text-xs text-fg-muted">No other machines yet. Sign in on each one.</p>
-          ) : null}
-          <div className="space-y-1">
-            <Label htmlFor="pair-code">Code from the other machine</Label>
-            <Input id="pair-code" value={code} onChange={(event) => setCode(event.target.value)} />
-          </div>
-          {machines.map((machine) => (
-            <div key={machine.machineId} className="flex flex-wrap items-center gap-2 border-t border-border pt-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-fg">
-                  {machine.displayName}{" "}
-                  <span className="text-xs text-fg-muted">
-                    {machine.type}
-                    {machine.self ? " · this machine" : ""}
-                    {machine.hidden ? " · hidden" : ""}
-                    {machine.online ? " · online" : " · offline"}
-                    {machine.connect?.via ? ` · ${machine.connect.via}` : ""}
-                  </span>
-                </p>
+            {tailnetMachines.map((machine) => (
+              <div key={machine.machineId} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1 text-sm text-fg">{machine.displayName}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    void setMachineRemoteAccess({
+                      data: { machineId: machine.machineId, enabled: true, minutes: remoteMinutes, mode: remoteMode },
+                    })
+                      .then((result) => {
+                        if (result.ok) toast.success(result.message);
+                        else toast.error(result.message);
+                      })
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Turn on
+                </Button>
               </div>
-              {machine.self ? null : (
-                <>
-                  {machine.connect?.via === "tailscale" ? (
-                    <span className="flex flex-wrap items-center gap-1">
-                      <select
-                        className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
-                        value={remoteMinutes}
-                        onChange={(event) => setRemoteMinutes(Number(event.target.value))}
-                        aria-label="Remote access time limit"
-                      >
-                        <option value={15}>15 minutes</option>
-                        <option value={60}>1 hour</option>
-                        <option value={240}>4 hours</option>
-                        <option value={1440}>24 hours</option>
-                      </select>
-                      <select
-                        className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
-                        value={remoteMode}
-                        onChange={(event) => setRemoteMode(event.target.value === "rw" ? "rw" : "ro")}
-                        aria-label="Remote access mode"
-                      >
-                        <option value="ro">Read-only</option>
-                        <option value="rw">Read-and-write</option>
-                      </select>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => {
-                          setBusy(true);
-                          void setMachineRemoteAccess({
-                            data: { machineId: machine.machineId, enabled: true, minutes: remoteMinutes, mode: remoteMode },
-                          })
-                            .then((result) => {
-                              if (result.ok) toast.success(result.message);
-                              else toast.error(result.message);
-                            })
-                            .finally(() => setBusy(false));
-                        }}
-                      >
-                        Turn remote access on
-                      </Button>
-                    </span>
-                  ) : null}
-                  <Button type="button" size="sm" disabled={busy} onClick={() => void connect(machine, false)}>
-                    Connect
-                  </Button>
-                  {machine.connect?.risk ? (
-                    <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, true)}>
-                      Connect over the public internet
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() =>
-                        void connectLinkedMachine({
-                          data: { machineId: machine.machineId, askApproval: true },
-                        }).then((result) => {
-                          if (result.ok) toast.success(result.message);
-                          else toast.error(result.message);
-                        })
-                      }
-                    >
-                      Ask to approve
-                    </Button>
-                  )}
-                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void finish(machine.machineId)}>
-                    Check approval
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void disconnectLinkedMachine({ data: { machineId: machine.machineId, forget: true } }).then(() => refresh())
-                    }
-                  >
-                    Forget
-                  </Button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
+            ))}
+          </div>
+        ) : null}
+        <RemoteAccessBanner access={status?.remoteAccess} machineId="self" onChange={() => void refresh()} />
+      </Sub>
+
+      <Button type="button" size="sm" disabled={busy} onClick={() => void saveShareForm()}>
+        Save
+      </Button>
+    </Card>
   );
 }

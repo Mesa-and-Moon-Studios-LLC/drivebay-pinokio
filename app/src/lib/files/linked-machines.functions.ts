@@ -173,7 +173,17 @@ export const approveLinkedRequest = createServerFn({ method: "POST" })
     return result.ok ? { ok: true as const } : { ok: false as const, message: result.error || "Could not approve." };
   });
 
-async function mountSaved(home: string, machineId: string, token: string, machine: Record<string, unknown>, letter: string) {
+export const revokeLinkedGrant = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ id: z.string().min(1).max(200) }))
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const http = await import("./linked-http.mjs");
+    const result = http.revokeLocalGrant(home, data.id);
+    return result.ok ? { ok: true as const } : { ok: false as const, message: result.error || "Could not remove that device." };
+  });
+
+async function mountSaved(home: string, machineId: string, token: string, machine: Record<string, unknown>, letter: string, scope: "full" | "shares" = "shares") {
   const machines = await import("./linked-machines.mjs");
   const drive = await import("./phone-drive.mjs");
   const store = await import("./linked-store.mjs");
@@ -193,6 +203,7 @@ async function mountSaved(home: string, machineId: string, token: string, machin
     method: plan.method,
     mountPoint: plan.mountPoint || "",
     via: plan.via,
+    scope,
   };
   store.saveLinkedTokens(home, records);
   if (result.code === 0 && plan.volumeLabel) {
@@ -201,8 +212,11 @@ async function mountSaved(home: string, machineId: string, token: string, machin
   const shown = plan.userFacing || plan.volumeLabel || "that machine";
   return {
     ok: result.code === 0,
-    message: result.code === 0 ? `Mounted ${shown}.` : drive.redact(result.output, token),
+    message: result.code === 0
+      ? scope === "full" ? `Mounted ${shown}. You can browse all of its drives.` : `Mounted ${shown}. Only its shared folders are visible.`
+      : drive.redact(result.output, token),
     display: shown,
+    scope,
   };
 }
 
@@ -215,6 +229,7 @@ export const connectLinkedMachine = createServerFn({ method: "POST" })
       letter: z.string().max(8).optional(),
       askApproval: z.boolean().optional(),
       acceptRisk: z.boolean().optional(),
+      join: z.boolean().optional(),
     }),
   )
   .handler(async ({ data }) => {
@@ -254,22 +269,52 @@ export const connectLinkedMachine = createServerFn({ method: "POST" })
         token = redeemed.token;
       }
     }
-    if (!token && data.askApproval && machine.type !== "phone") {
+    if (!token && (data.askApproval || data.join) && machine.type === "phone" && data.join) {
+      return { ok: false as const, message: "Join this phone from the phone: open Machines on it and pick this computer." };
+    }
+    if (!token && (data.askApproval || data.join) && machine.type !== "phone") {
       const secret = machines.randomToken();
+      let proof = "";
+      let signature = "";
+      if (data.join) {
+        // Joining needs the join password: the machine list must be unlocked on this device,
+        // which is the only way to hold the account key. Send a proof of it, never the key.
+        const vault = await import("./linked-vault.mjs");
+        const crypto = await import("./linked-crypto.mjs");
+        const dek = vault.loadDek(home);
+        if (!dek || !self?.privateKey || !self.machineId) {
+          return {
+            ok: false as const,
+            needsPassword: true as const,
+            message: "Enter your join password first. Unlock the machine list on this device in My machines, then join.",
+          };
+        }
+        const parts = { hostId: machine.machineId, peerId: self.machineId, secret };
+        proof = crypto.joinProof(dek, parts);
+        signature = crypto.signJoin(self.privateKey, parts);
+      }
       const asked = await connect.requestRemote({
         url: target.url,
         machineId: self?.machineId || "peer",
         displayName: self?.displayName || "Drivebay",
         secret,
+        proof,
+        signature,
       });
       if (!asked.ok) return { ok: false as const, message: asked.error };
       const records = store.loadLinkedTokens(home);
       records[data.machineId] = { ...(records[data.machineId] || {}), pendingId: asked.id, pendingSecret: secret, url: target.url, letter };
       store.saveLinkedTokens(home, records);
-      return { ok: true as const, pending: true as const, message: "Waiting for approval on that machine." };
+      return {
+        ok: true as const,
+        pending: true as const,
+        message: data.join
+          ? `Waiting for a trusted device to approve this join on ${machine.displayName || "that machine"}.`
+          : "Waiting for approval on that machine.",
+      };
     }
     if (!token) return { ok: false as const, message: "Enter the 6-digit code from that machine, or ask it to approve." };
-    return mountSaved(home, data.machineId, token, machine, letter);
+    return mountSaved(home, data.machineId, token, machine, letter, (saved?.token && !data.code ? saved.scope : "shares") === "full" ? "full" : "shares");
   });
 
 export const finishLinkedMachine = createServerFn({ method: "POST" })
@@ -291,7 +336,7 @@ export const finishLinkedMachine = createServerFn({ method: "POST" })
     const machine = (listed.machines || []).find((item: { machineId?: string }) => item.machineId === data.machineId);
     if (!machine) return { ok: false as const, message: "That machine is not on this login." };
     const letter = machines.pickDriveLetter(store.loadLinkedTokens(home), data.machineId, data.letter || row.letter || "P");
-    return mountSaved(home, data.machineId, polled.token, machine, letter);
+    return mountSaved(home, data.machineId, polled.token, machine, letter, polled.scope === "full" ? "full" : "shares");
   });
 
 export const disconnectLinkedMachine = createServerFn({ method: "POST" })

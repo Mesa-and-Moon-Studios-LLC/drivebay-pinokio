@@ -28,19 +28,26 @@ export async function redeemRemote({ url, code, machineId, displayName, fetchImp
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.token) return { ok: false, error: body.error || "That machine refused the code." };
-  return { ok: true, token: String(body.token) };
+  return { ok: true, token: String(body.token), scope: body.scope === "full" ? "full" : "shares" };
 }
 
-export async function requestRemote({ url, machineId, displayName, secret, fetchImpl = fetch }) {
+export async function requestRemote({ url, machineId, displayName, secret, proof, signature, fetchImpl = fetch }) {
   const origin = new URL(url).origin;
+  // proof and signature are the join password proof and the device-key signature. They are
+  // derived values, never the password or the account key.
+  const payload = { machineId, displayName, secret };
+  if (proof && signature) {
+    payload.proof = proof;
+    payload.signature = signature;
+  }
   const res = await fetchImpl(`${origin}/api/link/request`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ machineId, displayName, secret }),
+    body: JSON.stringify(payload),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.id) return { ok: false, error: body.error || "That machine did not take the request." };
-  return { ok: true, id: String(body.id) };
+  return { ok: true, id: String(body.id), join: body.join === true };
 }
 
 export async function pollRemote({ url, id, secret, fetchImpl = fetch }) {
@@ -52,5 +59,5 @@ export async function pollRemote({ url, id, secret, fetchImpl = fetch }) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.token) return { ok: false, error: body.error || "Still waiting for approval on that machine." };
-  return { ok: true, token: String(body.token) };
+  return { ok: true, token: String(body.token), scope: body.scope === "full" ? "full" : "shares" };
 }
