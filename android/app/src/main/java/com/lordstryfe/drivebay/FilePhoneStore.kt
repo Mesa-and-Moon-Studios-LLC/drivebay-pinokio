@@ -143,3 +143,15 @@ class FilePhoneStore(
         }
     }
 }
+
+
+/** Placeholder share view when only trusted own-machine grants are active. */
+class EmptyDavStore : DavStore {
+    override fun list(path: String): List<DavNode>? = if (path == "/") emptyList() else null
+    override fun stat(path: String): DavNode? = if (path == "/") DavNode("/", "Storage", true, 0, 0) else null
+    override fun read(path: String): ByteArray? = null
+    override fun put(path: String, bytes: ByteArray): Boolean = false
+    override fun delete(path: String): Boolean = false
+    override fun mkcol(path: String): Boolean = false
+    override fun move(from: String, to: String): Boolean = false
+}

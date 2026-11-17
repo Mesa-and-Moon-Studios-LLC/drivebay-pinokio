@@ -53,4 +53,18 @@ class MesaJoinTest {
         assertTrue(a.length >= 16)
         assertFalse(a == b)
     }
+
+    @Test fun reciprocalSignatureMatchesTheDesktopHost() {
+        val token = "db_" + "ab".repeat(32)
+        val issuedAt = "2026-11-17T19:02:00.000Z"
+        val key = "MC4CAQAwBQYDK2VwBCIEICmwJa9gLiF5bAd804u9pR4rrqttxL8hNpffgGULaPQB"
+        assertEquals(
+            "BTmJcdS9V0fYbJWkmR3tbozlY3JBOcg8zj/aoFu82QbPYitUQS+KJzTyCBPz4u6XB4u+c8xLsbdNPBncmd+yCg==",
+            MesaJoin.reciprocalSignature(key, hostId, peerId, token, issuedAt),
+        )
+        assertEquals(
+            "DA5djDKuRKQmDskcnbv2YdKQm3mOmRcWkuLuIaJFc2M9MRhP0vAHxRRw1OEeJcBoaE4DSUXJvsschYPAl9sJDA==",
+            MesaJoin.forgetSignature(key, peerId, hostId, issuedAt),
+        )
+    }
 }

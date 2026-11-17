@@ -18,6 +18,7 @@ import {
   signOutMesa,
 } from "@/lib/files/linked-machines.functions";
 import { VaultLock } from "@/components/settings/vault-lock";
+import { LinkedBrowsePanel } from "@/components/settings/linked-browse";
 import { RemoteAccessBanner } from "@/components/remote-access-banner";
 import {
   bridgeStartUrl,
@@ -92,6 +93,7 @@ function useLinkedState() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [browsing, setBrowsing] = useState<{ machineId: string; title: string } | null>(null);
   const [remoteMinutes, setRemoteMinutes] = useState(15);
   const [remoteMode, setRemoteMode] = useState<"ro" | "rw">("ro");
 
@@ -361,6 +363,8 @@ function useLinkedState() {
     setRemoteMinutes,
     remoteMode,
     setRemoteMode,
+    browsing,
+    setBrowsing,
     refresh,
     submitEmail,
     startProvider,
@@ -528,7 +532,7 @@ export function ThisMachineSection() {
 export function MyMachinesSection() {
   const {
     status, signedIn, machines, listNote, busy, setBusy, code, setCode, remoteMinutes, setRemoteMinutes,
-    remoteMode, setRemoteMode, connect, join, finish, refresh,
+    remoteMode, setRemoteMode, browsing, setBrowsing, connect, join, finish, refresh,
   } = useLinked();
   const vaultReady = status?.vault?.ready === true;
   const pending = status?.pairs.pending || [];
@@ -613,6 +617,11 @@ export function MyMachinesSection() {
             </div>
             {machine.self ? null : (
               <>
+                {status?.links?.some((link) => link.machineId === machine.machineId && link.paired) ? (
+                  <Button type="button" size="sm" disabled={busy} onClick={() => setBrowsing({ machineId: machine.machineId, title: machine.displayName })}>
+                    Open drives
+                  </Button>
+                ) : null}
                 {machine.connect?.risk ? (
                   <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void connect(machine, true)}>
                     Connect over the public internet
@@ -642,9 +651,17 @@ export function MyMachinesSection() {
             )}
           </div>
         ))}
+        {browsing ? (
+          <LinkedBrowsePanel
+            machineId={browsing.machineId}
+            title={browsing.title}
+            onClose={() => setBrowsing(null)}
+          />
+        ) : null}
         <p className="text-xs text-fg-muted">
           <span className="text-fg">Join</span> sends your join password proof and waits for a trusted device on that
-          machine to approve. <span className="text-fg">Connect</span> mounts a machine you already joined, or uses the
+          machine to approve. <span className="text-fg">Open drives</span> browses a machine that already approved you.
+          <span className="text-fg"> Connect</span> mounts a machine you already joined, or uses the
           6-digit code below.
         </p>
         <div className="space-y-1">

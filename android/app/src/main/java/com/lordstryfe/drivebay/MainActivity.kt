@@ -101,6 +101,7 @@ class MainActivity : AppCompatActivity() {
     private var updatingShare = false
     /** Set while the All files access screen is open, so onResume can finish turning whole-phone mode on. */
     private var awaitingAllFiles = false
+    private var awaitingLinkAllFiles = false
 
     private val uploadLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -1054,8 +1055,21 @@ class MainActivity : AppCompatActivity() {
         return getString(R.string.phone_share_last_seen, seen)
     }
 
-    private fun openAllFilesSettings() {
-        awaitingAllFiles = true
+    fun requestLinkAllFiles() {
+        if (PhoneShareService.allFilesAccess()) {
+            MesaReciprocal.rememberNeedAllFiles(this, false)
+            PhoneShareService.start(this)
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setMessage("Allow all-files access so computers you've joined can open this phone's storage.")
+            .setPositiveButton(R.string.phone_share_whole_open) { _, _ -> openAllFilesSettings(forLink = true) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openAllFilesSettings(forLink: Boolean = false) {
+        if (forLink) awaitingLinkAllFiles = true else awaitingAllFiles = true
         val specific = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
         try {
             startActivity(specific)
@@ -1090,6 +1104,13 @@ class MainActivity : AppCompatActivity() {
     private fun syncWholePhoneAccess() {
         if (Build.VERSION.SDK_INT < 30) return
         val granted = PhoneShareService.allFilesAccess()
+        if (awaitingLinkAllFiles || MesaReciprocal.needsAllFiles(this)) {
+            if (awaitingLinkAllFiles) awaitingLinkAllFiles = false
+            if (granted) {
+                MesaReciprocal.rememberNeedAllFiles(this, false)
+                PhoneShareService.start(this)
+            }
+        }
         if (awaitingAllFiles) {
             awaitingAllFiles = false
             if (granted) setWholePhone(true) else renderPhoneShare()

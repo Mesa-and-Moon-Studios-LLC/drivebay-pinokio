@@ -178,6 +178,7 @@ export const revokeLinkedGrant = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().min(1).max(200) }))
   .handler(async ({ data }) => {
     const home = await adminHome();
+    await notifyForgetPeer(home, data.id);
     const http = await import("./linked-http.mjs");
     const result = http.revokeLocalGrant(home, data.id);
     return result.ok ? { ok: true as const } : { ok: false as const, message: result.error || "Could not remove that device." };
@@ -355,6 +356,9 @@ export const disconnectLinkedMachine = createServerFn({ method: "POST" })
     const result = await drive.runMount(plan);
     if (result.code === 0 && row.url) await drive.clearDriveLabel(row.url);
     if (data.forget) {
+      await notifyForgetPeer(home, data.machineId);
+      const http = await import("./linked-http.mjs");
+      http.revokeLocalGrant(home, data.machineId);
       delete records[data.machineId];
       store.saveLinkedTokens(home, records);
     }
@@ -480,4 +484,108 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false as const, message: body.error || "That machine did not accept the change." };
     return { ok: true as const, ...body, message: body.enabled ? "Remote access is on." : "Remote access is off." };
+  });
+
+
+async function notifyForgetPeer(home: string, peerId: string) {
+  try {
+    const store = await import("./linked-store.mjs");
+    const cloud = await import("./linked-cloud.mjs");
+    const machines = await import("./linked-machines.mjs");
+    const browse = await import("./linked-browse.mjs");
+    const reciprocal = await import("./linked-reciprocal.mjs");
+    const identity = store.loadIdentity(home);
+    const saved = store.loadLinkedTokens(home)[peerId];
+    const listed = await cloud.fetchMachines(home).catch(() => null);
+    const machine = (listed?.machines || []).find((row: { machineId?: string }) => row.machineId === peerId);
+    const target = machine ? machines.connectionUrl(machine) : { url: saved?.url || "" };
+    const issuedAt = new Date().toISOString();
+    let signature = "";
+    if (identity?.privateKey && identity.machineId) {
+      signature = reciprocal.signForget(identity.privateKey, {
+        fromId: identity.machineId,
+        peerId,
+        issuedAt,
+      });
+    }
+    await browse.notifyPeerForget({
+      url: target.url || saved?.url || "",
+      token: saved?.token || "",
+      fromId: identity?.machineId || "",
+      peerId,
+      signature,
+      issuedAt,
+    });
+  } catch {
+    // A local forget must still succeed if the other machine is offline.
+  }
+}
+
+async function resolveLinkedTarget(home: string, machineId: string) {
+  const store = await import("./linked-store.mjs");
+  const cloud = await import("./linked-cloud.mjs");
+  const machines = await import("./linked-machines.mjs");
+  const saved = store.loadLinkedTokens(home)[machineId];
+  if (!saved?.token) return { ok: false as const, message: "This computer does not have access to that machine yet." };
+  const listed = await cloud.fetchMachines(home);
+  if (!listed.ok) return { ok: false as const, message: listed.error || "No machine list." };
+  const machine = (listed.machines || []).find((row: { machineId?: string }) => row.machineId === machineId);
+  if (!machine) return { ok: false as const, message: "That machine is not on this login." };
+  return { ok: true as const, machine, token: String(saved.token) };
+}
+
+export const listLinkedBrowse = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ machineId: z.string().min(8).max(64), path: z.string().max(4000).optional() }))
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const target = await resolveLinkedTarget(home, data.machineId);
+    if (!target.ok) return { ok: false as const, message: target.message, entries: [] as const, path: data.path || "/" };
+    const browse = await import("./linked-browse.mjs");
+    const listed = await browse.listRemote({ machine: target.machine, token: target.token, path: data.path || "/" });
+    return listed.ok
+      ? { ok: true as const, entries: listed.entries, path: listed.path, message: "" }
+      : { ok: false as const, message: listed.error || "Could not browse.", entries: [] as const, path: data.path || "/" };
+  });
+
+export const mutateLinkedBrowse = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(
+    z.object({
+      machineId: z.string().min(8).max(64),
+      method: z.enum(["DELETE", "MKCOL", "MOVE", "PUT"]),
+      path: z.string().min(1).max(4000),
+      destination: z.string().max(4000).optional(),
+      content: z.string().max(20_000_000).optional(),
+    }),
+  )
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const target = await resolveLinkedTarget(home, data.machineId);
+    if (!target.ok) return { ok: false as const, message: target.message };
+    const browse = await import("./linked-browse.mjs");
+    const body = data.method === "PUT" && data.content ? Buffer.from(data.content, "base64") : undefined;
+    const result = await browse.mutateRemote({
+      machine: target.machine,
+      token: target.token,
+      method: data.method,
+      path: data.path,
+      destination: data.destination,
+      body,
+    });
+    return result.ok ? { ok: true as const, message: "" } : { ok: false as const, message: result.error || "Could not change that file." };
+  });
+
+export const readLinkedBrowse = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator(z.object({ machineId: z.string().min(8).max(64), path: z.string().min(1).max(4000) }))
+  .handler(async ({ data }) => {
+    const home = await adminHome();
+    const target = await resolveLinkedTarget(home, data.machineId);
+    if (!target.ok) return { ok: false as const, message: target.message };
+    const browse = await import("./linked-browse.mjs");
+    const result = await browse.readRemote({ machine: target.machine, token: target.token, path: data.path });
+    if (!result.ok) return { ok: false as const, message: result.error || "Could not read that file." };
+    if (result.bytes.length > 15_000_000) return { ok: false as const, message: "That file is too large to open here." };
+    return { ok: true as const, content: result.bytes.toString("base64"), name: result.name, type: result.type };
   });

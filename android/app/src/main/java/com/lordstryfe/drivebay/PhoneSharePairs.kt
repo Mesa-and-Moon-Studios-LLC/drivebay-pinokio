@@ -15,6 +15,10 @@ data class PhonePair(
     val lastSeenMs: Long,
     /** False until the user types a name. A blank or migrated name is replaced by the PC's hostname. */
     val customName: Boolean = false,
+    /** "full" is an approved own-machine join; "shares" is a 6-digit code pairing. */
+    val scope: String = "shares",
+    /** Mesa and Moon machine id of the peer, when this pair came from a trusted join. */
+    val machineId: String = "",
 )
 
 /** Live list of paired PCs. The WebDAV server reads this on every request, so a revoke applies immediately. */
@@ -203,7 +207,9 @@ object PhonePairJson {
                     .put("codeRecord", pair.codeRecord ?: JSONObject.NULL)
                     .put("codeFailures", pair.codeFailures)
                     .put("lastSeenMs", pair.lastSeenMs)
-                    .put("customName", pair.customName),
+                    .put("customName", pair.customName)
+                    .put("scope", if (pair.scope == "full") "full" else "shares")
+                    .put("machineId", pair.machineId),
             )
         }
         return array.toString()
@@ -233,6 +239,8 @@ object PhonePairJson {
                             codeFailures = obj.optInt("codeFailures", 0).coerceAtLeast(0),
                             lastSeenMs = obj.optLong("lastSeenMs", 0),
                             customName = obj.optBoolean("customName", false),
+                            scope = if (obj.optString("scope") == "full") "full" else "shares",
+                            machineId = obj.optString("machineId"),
                         ),
                     )
                 }
@@ -285,9 +293,12 @@ class PhonePairGate(
     private val lock = Any()
     private val verified = HashMap<String, Pair<String, ByteArray>>()
     private val accepted = ThreadLocal<String?>()
+    private val acceptedScope = ThreadLocal<String?>()
     private val offeredName = ThreadLocal<String?>()
 
     override fun acceptedPeer(): String? = accepted.get()
+
+    override fun acceptedScope(): String? = acceptedScope.get()
 
     override fun rememberClientName(name: String?) {
         offeredName.set(name)
@@ -295,6 +306,7 @@ class PhonePairGate(
 
     override fun authorized(header: String?, remote: String?): Boolean {
         accepted.set(null)
+        acceptedScope.set(null)
         val clientName = offeredName.get()
         offeredName.set(null)
         val (user, secret) = PhoneShareAuth.parseBasic(header) ?: return false
@@ -343,7 +355,9 @@ class PhonePairGate(
         val renamed = clientName?.let { directory.noteHostName(id, it, now()) } == true
         directory.noteSeen(id, now())
         if (directory.snapshot().none { it.id == id }) return false
+        val pair = directory.snapshot().firstOrNull { it.id == id }
         accepted.set(PhoneShareLifecycle.peerId(tokenHash))
+        acceptedScope.set(if (pair?.scope == "full") "full" else "shares")
         if (renamed) runCatching { onRenamed() }
         return true
     }

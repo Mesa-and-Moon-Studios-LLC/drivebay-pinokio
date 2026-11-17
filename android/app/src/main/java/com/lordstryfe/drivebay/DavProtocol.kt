@@ -53,6 +53,9 @@ interface DavAuthorizer {
 
     /** Peer id of the credential accepted on this thread, or null. */
     fun acceptedPeer(): String? = null
+
+    /** "full" when the accepted credential is a trusted own-machine grant. */
+    fun acceptedScope(): String? = null
 }
 
 object DavProtocol {
@@ -62,8 +65,14 @@ object DavProtocol {
     fun handle(request: DavRequest, store: DavStore, tokenHash: String, peerId: String? = null): DavResponse =
         handle(request, store, PhoneShareGate(tokenHash), peerId)
 
-    fun handle(request: DavRequest, store: DavStore, gate: DavAuthorizer, peerId: String? = null): DavResponse {
-        val response = dispatch(request, store, gate)
+    fun handle(
+        request: DavRequest,
+        store: DavStore,
+        gate: DavAuthorizer,
+        peerId: String? = null,
+        storeFor: ((String?) -> DavStore)? = null,
+    ): DavResponse {
+        val response = dispatch(request, store, gate, storeFor)
         val client = gate.acceptedPeer()?.takeIf { it.isNotBlank() }
         if (peerId.isNullOrBlank() && client == null) return response
         val extra = buildMap {
@@ -73,13 +82,14 @@ object DavProtocol {
         return response.copy(headers = response.headers + extra)
     }
 
-    private fun dispatch(request: DavRequest, store: DavStore, gate: DavAuthorizer): DavResponse {
+    private fun dispatch(request: DavRequest, store: DavStore, gate: DavAuthorizer, storeFor: ((String?) -> DavStore)? = null): DavResponse {
         val method = request.method.uppercase(Locale.US)
         if (method != "OPTIONS") gate.rememberClientName(header(request, PhoneShareLifecycle.PC_NAME_HEADER))
         if (method != "OPTIONS" && !gate.authorized(header(request, "authorization"), request.remoteAddress)) {
             return text(401, "Unauthorized", mapOf("WWW-Authenticate" to "Basic realm=\"Drivebay\""), "Sign in required")
         }
         val path = normalize(request.path) ?: return text(400, "Bad Request", emptyMap(), "Bad path")
+        val active = storeFor?.invoke(gate.acceptedScope()) ?: store
         return when (method) {
             "OPTIONS" -> DavResponse(
                 200,
@@ -90,13 +100,13 @@ object DavProtocol {
                     "Content-Length" to "0",
                 ),
             )
-            "PROPFIND" -> propfind(store, path, header(request, "depth"))
-            "GET" -> get(store, path, head = false)
-            "HEAD" -> get(store, path, head = true)
-            "PUT" -> if (store.put(path, request.body)) text(201, "Created", emptyMap(), "") else text(409, "Conflict", emptyMap(), "Cannot write")
-            "DELETE" -> if (store.delete(path)) DavResponse(204, "No Content") else text(404, "Not Found", emptyMap(), "Missing")
-            "MKCOL" -> if (store.mkcol(path)) DavResponse(201, "Created") else text(409, "Conflict", emptyMap(), "Cannot create")
-            "MOVE" -> move(store, path, header(request, "destination"))
+            "PROPFIND" -> propfind(active, path, header(request, "depth"))
+            "GET" -> get(active, path, head = false)
+            "HEAD" -> get(active, path, head = true)
+            "PUT" -> if (active.put(path, request.body)) text(201, "Created", emptyMap(), "") else text(409, "Conflict", emptyMap(), "Cannot write")
+            "DELETE" -> if (active.delete(path)) DavResponse(204, "No Content") else text(404, "Not Found", emptyMap(), "Missing")
+            "MKCOL" -> if (active.mkcol(path)) DavResponse(201, "Created") else text(409, "Conflict", emptyMap(), "Cannot create")
+            "MOVE" -> move(active, path, header(request, "destination"))
             "LOCK" -> lock(path)
             "UNLOCK" -> DavResponse(204, "No Content")
             else -> text(405, "Method Not Allowed", mapOf("Allow" to "OPTIONS, PROPFIND, GET, HEAD, PUT, DELETE, MKCOL, MOVE, LOCK, UNLOCK"), "")

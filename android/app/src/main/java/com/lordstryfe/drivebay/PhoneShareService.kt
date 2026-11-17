@@ -163,11 +163,11 @@ class PhoneShareService : Service() {
                 }
                 return
             }
-            val docs = openStore(folders, wholePhone)
+            val docs = openStores(folders, wholePhone, PhoneShareLifecycle.hasTrustedGrant(PhoneShareStore(this).pairs()))
             stopServer()
             val shareStore = PhoneShareStore(this)
             val dav = PhoneDavServer(
-                docs,
+                docs.first,
                 hash,
                 PORT,
                 hosts,
@@ -181,13 +181,16 @@ class PhoneShareService : Service() {
                     .distinct()
                     .joinToString(" ")
                     .ifBlank { "Phone" },
-            ) {
-                val listening = server?.boundHosts().orEmpty()
-                onMain {
-                    broadcast(listening)
-                    if (server != null) enterForeground(notification(listening))
-                }
-            }
+                onCodeLocked = {
+                    val listening = server?.boundHosts().orEmpty()
+                    onMain {
+                        broadcast(listening)
+                        if (server != null) enterForeground(notification(listening))
+                    }
+                },
+                storeFor = { scope -> if (scope == "full") docs.second else docs.first },
+                onForget = { machineId -> MesaReciprocal.forgetLocal(this, machineId) },
+            )
             dav.start()
             if (ticket != generation.get() || stopping) {
                 dav.stop()
@@ -215,29 +218,55 @@ class PhoneShareService : Service() {
         }
     }
 
-    private fun openStore(folders: List<SharedFolder>, wholePhone: Boolean): DavStore {
+    private fun openStores(folders: List<SharedFolder>, wholePhone: Boolean, trusted: Boolean): Pair<DavStore, DavStore> {
         val share = PhoneShareStore(this)
-        val inner: DavStore = if (wholePhone) {
-            if (!hasAllFilesAccess()) throw AllFilesAccessException()
-            val files = FilePhoneStore(Environment.getExternalStorageDirectory()) { hasAllFilesAccess() }
-            if (!files.usable()) throw AllFilesAccessException()
-            files
-        } else {
-            DocumentPhoneStore(this, folders).also { if (it.rootCount() == 0) throw FolderAccessException() }
-        }
-        return AccessDavStore(inner) { path ->
-            if (wholePhone) {
-                AccessDavStore.folderWritable(path) { share.wholeAccess() }
-            } else {
+        val shares: DavStore = if (wholePhone) {
+            wholeFilesStore()
+        } else if (folders.isNotEmpty()) {
+            val inner = DocumentPhoneStore(this, folders).also { if (it.rootCount() == 0) throw FolderAccessException() }
+            AccessDavStore(inner) { path ->
                 AccessDavStore.folderWritable(path) { name ->
                     share.folders().firstOrNull { it.name == name }?.access ?: "ro"
                 }
             }
+        } else if (trusted) {
+            EmptyDavStore()
+        } else {
+            throw FolderAccessException()
+        }
+        val full = if (trusted) {
+            try {
+                rawWholeFiles()
+            } catch (_: AllFilesAccessException) {
+                shares
+            }
+        } else if (wholePhone) {
+            shares
+        } else {
+            shares
+        }
+        return shares to full
+    }
+
+    private fun wholeFilesStore(): DavStore {
+        val share = PhoneShareStore(this)
+        return AccessDavStore(rawWholeFiles()) { path ->
+            AccessDavStore.folderWritable(path) { share.wholeAccess() }
         }
     }
 
-    private fun shareKey(wholePhone: Boolean, folders: List<SharedFolder>, hash: String): String =
-        "$wholePhone|$hash|${PhoneShareStore(this).wholeAccess()}|" + folders.joinToString("|") { "${it.uri}:${it.access}" }
+    private fun rawWholeFiles(): DavStore {
+        if (!hasAllFilesAccess()) throw AllFilesAccessException()
+        val files = FilePhoneStore(Environment.getExternalStorageDirectory()) { hasAllFilesAccess() }
+        if (!files.usable()) throw AllFilesAccessException()
+        return files
+    }
+
+    private fun shareKey(wholePhone: Boolean, folders: List<SharedFolder>, hash: String): String {
+        val store = PhoneShareStore(this)
+        val trusted = PhoneShareLifecycle.hasTrustedGrant(store.pairs())
+        return "$wholePhone|$trusted|$hash|${store.wholeAccess()}|" + folders.joinToString("|") { "${it.uri}:${it.access}" }
+    }
 
     private fun noteRetry() {
         if (stopping) return
@@ -492,7 +521,7 @@ class PhoneShareService : Service() {
 
         fun resumeIfEnabled(context: Context) {
             val store = PhoneShareStore(context)
-            if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.tokenHash(), store.folders().size, store.wholePhone())) return
+            if (!PhoneShareLifecycle.shouldResume(store.enabled(), store.pairs(), store.folders().size, store.wholePhone())) return
             start(context)
         }
 

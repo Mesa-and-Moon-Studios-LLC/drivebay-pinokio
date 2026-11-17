@@ -160,6 +160,34 @@ class PhoneShareStore(context: Context) : PhoneShareCodeState, PhonePairDirector
         pair
     }
 
+    /** Trusted own-machine grant. Replaces any earlier grant for the same computer. */
+    fun upsertTrustedPair(name: String, token: String, machineId: String): PhonePair = synchronized(pairLock) {
+        val hash = PhoneShareAuth.hash(token)
+        val stored = PhonePairRules.storedName(name)
+        val id = MesaReciprocal.trustedPairId(machineId)
+        val pair = PhonePair(
+            id = id,
+            name = stored,
+            tokenHash = hash,
+            codeRecord = null,
+            codeFailures = 0,
+            lastSeenMs = 0,
+            customName = stored.isNotEmpty(),
+            scope = "full",
+            machineId = machineId,
+        )
+        val next = loadPairs().filterNot { it.machineId == machineId && it.scope == "full" } + pair
+        prefs.edit().putString(KEY_PAIRS, PhonePairJson.encode(next)).commit()
+        pair
+    }
+
+    fun revokeByMachineId(machineId: String) {
+        if (machineId.isBlank()) return
+        synchronized(pairLock) {
+            writePairs(loadPairs().filterNot { it.machineId == machineId })
+        }
+    }
+
     /** Drops that PC's token. The next WebDAV request from it fails. */
     fun revoke(id: String) {
         synchronized(pairLock) { writePairs(PhonePairRules.revoke(loadPairs(), id)) }

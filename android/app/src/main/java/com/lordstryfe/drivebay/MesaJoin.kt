@@ -34,13 +34,27 @@ object MesaJoin {
     }
 
     /** The PKCS#8 Ed25519 key ends with the 32-byte seed. */
-    fun signature(privateKeyB64: String, hostId: String, peerId: String, secret: String): String {
+    fun signature(privateKeyB64: String, hostId: String, peerId: String, secret: String): String =
+        sign(privateKeyB64, message(hostId, peerId, secret))
+
+    fun reciprocalMessage(hostId: String, peerId: String, accessToken: String, issuedAt: String): ByteArray =
+        "drivebay-reciprocal-v1\u0000$hostId\u0000$peerId\u0000$accessToken\u0000$issuedAt".toByteArray(Charsets.UTF_8)
+
+    fun reciprocalSignature(privateKeyB64: String, hostId: String, peerId: String, accessToken: String, issuedAt: String): String =
+        sign(privateKeyB64, reciprocalMessage(hostId, peerId, accessToken, issuedAt))
+
+    fun forgetMessage(fromId: String, peerId: String, issuedAt: String): ByteArray =
+        "drivebay-forget-v1\u0000$fromId\u0000$peerId\u0000$issuedAt".toByteArray(Charsets.UTF_8)
+
+    fun forgetSignature(privateKeyB64: String, fromId: String, peerId: String, issuedAt: String): String =
+        sign(privateKeyB64, forgetMessage(fromId, peerId, issuedAt))
+
+    fun sign(privateKeyB64: String, msg: ByteArray): String {
         val der = MesaVault.fromB64(privateKeyB64)
         require(der.size >= 32) { "Device key is too short." }
         val seed = der.copyOfRange(der.size - 32, der.size)
         val signer = Ed25519Signer()
         signer.init(true, Ed25519PrivateKeyParameters(seed, 0))
-        val msg = message(hostId, peerId, secret)
         signer.update(msg, 0, msg.size)
         return MesaVault.b64(signer.generateSignature())
     }

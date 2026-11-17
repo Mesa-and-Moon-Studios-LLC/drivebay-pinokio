@@ -151,6 +151,19 @@ object MesaPanel {
                             isAllCaps = false
                             setOnClickListener { openDrives(activity, row) }
                         })
+                        body.addView(MaterialButton(activity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                            text = "Forget"
+                            isAllCaps = false
+                            setOnClickListener {
+                                thread(name = "mesa-forget") {
+                                    MesaReciprocal.forgetPeer(activity, row)
+                                    activity.runOnUiThread {
+                                        toast(activity, "Forgot that machine.")
+                                        showMachines(activity)
+                                    }
+                                }
+                            }
+                        })
                     } else {
                         if (directory.locked && row.optString("type") != "phone") {
                             body.addView(MaterialButton(activity).apply {
@@ -395,6 +408,13 @@ object MesaPanel {
             body
         }
         post(config.cloudApi + "/machines.php", payload.toString(), session.first)
+        val dek = loadDek(activity)
+        val listed = if (directory?.locked == true) {
+            if (dek == null) JSONArray() else openLocked(dek, directory.machines)
+        } else {
+            directory?.machines ?: JSONArray()
+        }
+        MesaReciprocal.offerPending(activity, listed)
     }
 
     private fun refresh(activity: Activity, status: TextView) {
@@ -705,9 +725,11 @@ object MesaPanel {
                         CredentialVault(activity).save("link-" + hostId, token)
                         CredentialVault(activity).save("link-scope-" + hostId, if (full) "full" else "shares")
                     }
+                    if (full) runCatching { MesaReciprocal.offerTo(activity, machine, token) }
                     activity.runOnUiThread {
                         waiting.dismiss()
                         toast(activity, if (full) "Trusted. Opening all drives on this machine." else "Connected. Shared folders only.")
+                        if (full && MesaReciprocal.needsAllFiles(activity)) promptAllFiles(activity)
                         openDrives(activity, machine)
                     }
                     return@thread
@@ -768,6 +790,14 @@ object MesaPanel {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun promptAllFiles(activity: Activity) {
+        if (activity is MainActivity) {
+            activity.requestLinkAllFiles()
+            return
+        }
+        toast(activity, "Allow all-files access so trusted computers can open this phone's storage.")
     }
 
     private fun toast(activity: Activity, message: String) {

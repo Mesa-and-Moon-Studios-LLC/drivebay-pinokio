@@ -177,6 +177,14 @@ class PhoneSharePairsTest {
         assertTrue(PhoneShareLifecycle.shouldResume(true, pairs, 0, wholePhone = true))
         assertFalse(PhoneShareLifecycle.shouldResume(true, emptyList(), 1))
         assertFalse(PhoneShareLifecycle.shouldResume(false, pairs, 1))
+        val trusted = listOf(pair("Mac Mini", tokenA, codeA).copy(scope = "full", machineId = "mac-1"))
+        assertTrue(PhoneShareLifecycle.shouldResume(false, trusted, 0))
+        assertTrue(PhoneShareLifecycle.hasTrustedGrant(trusted))
+        assertFalse(PhoneShareLifecycle.hasTrustedGrant(pairs))
+        val encoded = PhonePairJson.encode(trusted)
+        val decoded = PhonePairJson.decode(encoded).single()
+        assertEquals("full", decoded.scope)
+        assertEquals("mac-1", decoded.machineId)
     }
 
     private fun pair(name: String, token: String, code: String): PhonePair {

@@ -21,10 +21,12 @@ class PhoneDavServer(
     private val bindHosts: List<String>,
     private val peerId: String? = null,
     codeState: PhoneShareCodeState? = null,
-    pairs: PhonePairDirectory? = null,
+    private val pairs: PhonePairDirectory? = null,
     private val peerIds: (() -> List<String>)? = null,
     private val phoneName: String = "",
     onCodeLocked: () -> Unit = {},
+    private val storeFor: ((String?) -> DavStore)? = null,
+    private val onForget: (String) -> Unit = {},
 ) {
     private val gate: DavAuthorizer = if (pairs != null) {
         PhonePairGate(pairs, onCodeLocked = { _ -> onCodeLocked() }, onRenamed = onCodeLocked)
@@ -144,18 +146,32 @@ class PhoneDavServer(
             }
             val livePeers = peerIds?.invoke().orEmpty().filter { it.isNotBlank() }.distinct()
             val headerPeer = if (livePeers.isNotEmpty()) PhoneShareLifecycle.peerHeader(livePeers) else peerId
-            val response = DavProtocol.handle(
-                DavRequest(
+            val requestPath = requestLine[1]
+            val response = if (requestPath.startsWith("/api/link/")) {
+                PhoneLinkApi.handle(
                     requestLine[0].uppercase(Locale.US),
-                    requestLine[1],
+                    requestPath,
                     headers,
                     body,
                     client.inetAddress?.hostAddress,
-                ),
-                store,
-                gate,
-                headerPeer,
-            )
+                    pairs,
+                    onForget,
+                ) ?: DavResponse(404, "Not Found", body = """{"error":"Unknown link method."}""".toByteArray(), headers = mapOf("Content-Type" to "application/json; charset=utf-8"))
+            } else {
+                DavProtocol.handle(
+                    DavRequest(
+                        requestLine[0].uppercase(Locale.US),
+                        requestPath,
+                        headers,
+                        body,
+                        client.inetAddress?.hostAddress,
+                    ),
+                    store,
+                    gate,
+                    headerPeer,
+                    storeFor,
+                )
+            }
             val status = "HTTP/1.1 ${response.status} ${response.reason}\r\n"
             val headerText = buildString {
                 append(status)

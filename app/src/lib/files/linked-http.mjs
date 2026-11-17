@@ -21,7 +21,8 @@ import {
 } from "./linked-machines.mjs";
 import { verifyJoinRequest } from "./linked-join.mjs";
 import { handleDav } from "./linked-dav.mjs";
-import { loadIdentity, loadPairState, loadShares, savePairState } from "./linked-store.mjs";
+import { loadIdentity, loadLinkedTokens, loadPairState, loadShares, saveLinkedTokens, savePairState } from "./linked-store.mjs";
+import { acceptReciprocalOffer, applyForget } from "./linked-reciprocal.mjs";
 import {
   formatCountdown,
   nextRemoteAccess,
@@ -275,6 +276,60 @@ export async function handleLinkedHttp({
     });
   }
 
+  if (pathname === "/api/link/reciprocal" && verb === "POST") {
+    const inbound = pairTokenFrom(headers, payload);
+    const offer = payload.offer && typeof payload.offer === "object" ? payload.offer : payload;
+    const identity = loadIdentity(home);
+    const accepted = acceptReciprocalOffer({
+      state,
+      selfId: identity?.machineId || "",
+      inboundToken: inbound,
+      offer: {
+        hostId: String(offer.hostId || ""),
+        peerId: String(offer.peerId || ""),
+        accessToken: String(offer.accessToken || ""),
+        issuedAt: String(offer.issuedAt || ""),
+      },
+      signature: String(payload.signature || ""),
+    });
+    if (!accepted.ok) return json(403, { error: accepted.error });
+    const records = loadLinkedTokens(home);
+    const existing = records[accepted.peerId] || {};
+    records[accepted.peerId] = {
+      ...existing,
+      token: accepted.accessToken,
+      scope: "full",
+      label: existing.label || accepted.name || "",
+      reciprocal: true,
+    };
+    saveLinkedTokens(home, records);
+    return json(200, { ok: true, machineId: accepted.peerId, scope: "full" });
+  }
+
+  if (pathname === "/api/link/forget" && verb === "POST") {
+    const inbound = pairTokenFrom(headers, payload);
+    const identity = loadIdentity(home);
+    const forgotten = applyForget({
+      state,
+      selfId: identity?.machineId || "",
+      inboundToken: inbound,
+      fromId: String(payload.fromId || ""),
+      peerId: String(payload.peerId || identity?.machineId || ""),
+      signature: String(payload.signature || ""),
+      issuedAt: String(payload.issuedAt || ""),
+    });
+    if (!forgotten.ok) return json(403, { error: forgotten.error });
+    savePairState(home, forgotten.state);
+    if (forgotten.dropId) {
+      const records = loadLinkedTokens(home);
+      if (records[forgotten.dropId]) {
+        delete records[forgotten.dropId];
+        saveLinkedTokens(home, records);
+      }
+    }
+    return json(200, { ok: true });
+  }
+
   return json(404, { error: "Unknown link method." });
 }
 
@@ -288,10 +343,16 @@ export function approveLocalRequest(home, id, now = Date.now()) {
 }
 
 export function revokeLocalGrant(home, peerId) {
-  const result = revokeGrant(loadPairState(home), String(peerId || ""));
+  const id = String(peerId || "");
+  const result = revokeGrant(loadPairState(home), id);
   if (!result.ok) return result;
   savePairState(home, result.state);
-  return { ok: true };
+  const records = loadLinkedTokens(home);
+  if (records[id]) {
+    delete records[id];
+    saveLinkedTokens(home, records);
+  }
+  return { ok: true, dropId: id };
 }
 
 export function issueLocalCode(home, code, now = Date.now()) {
