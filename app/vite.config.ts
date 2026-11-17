@@ -136,6 +136,8 @@ const standaloneBuild =
   process.env.DRIVEBAY_STANDALONE === "1" || process.env.DRIVEBAY_STANDALONE === "true";
 
 export default defineConfig(({ command }) => ({
+  // Build time in seconds. A license's "updates until" date is compared with this.
+  define: { __DRIVEBAY_BUILD_TS__: JSON.stringify(Math.floor(Date.now() / 1000)) },
   server: {
     host: "0.0.0.0",
     port: Number(process.env.PORT) || 8080,

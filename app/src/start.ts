@@ -61,7 +61,12 @@ async function publicAccessBlock(request: Request, pathname: string): Promise<Re
     const host = await import("@/lib/files/host-request.server");
     const { requestReach } = await import("@/lib/files/public-access.mjs");
     const { publicWriteAllowed, readRemoteAccessFile } = await import("@/lib/files/public-access.mjs");
-    const remote = readRemoteAccessFile(settings.resolvePublicAccessFile());
+    const license = await import("@/lib/license/license.server");
+    const entitlements = await license.currentEntitlements();
+    // Without a Pro or Elite license, remote access counts as off even if a timer is still running.
+    const remote = entitlements.can("remote_access")
+      ? readRemoteAccessFile(settings.resolvePublicAccessFile())
+      : { enabled: false, offAt: null, mode: "" };
     const address = host.clientAddress();
     if (requestReach(mode, address, remote, Date.now()) === "deny") {
       // fall through to the off-page below

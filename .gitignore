@@ -28,3 +28,10 @@ installer/dist/
 installer/DrivebayTray.exe
 installer/DrivebayTray.exe.config
 
+
+# Licensing: private signing keys, admin tokens and the license database never go in git.
+signing.key
+*.signing.key
+license-admin-token*
+license.sqlite*
+server/cloud-api/license-data/

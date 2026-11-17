@@ -350,6 +350,10 @@ export const savePublicAccess = createServerFn({ method: "POST" })
     if (settings.readReachMode() !== "both") {
       throw new Error("Public access is only used in Tailscale + Local mode.");
     }
+    if (data.enabled) {
+      const entitlements = await (await import("@/lib/license/license.server")).currentEntitlements();
+      if (!entitlements.can("public_access")) throw new Error(entitlements.upgradeMessage("public_access"));
+    }
     const saved = settings.writePublicAccess(data.enabled, data.hours);
     return { enabled: saved.enabled, offAt: saved.offAt, canEdit: true };
   });

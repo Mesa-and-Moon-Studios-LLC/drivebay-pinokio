@@ -90,14 +90,20 @@ export async function handleLinkedHttp({
   reachMode = "both",
   fullAccess = null,
   joinDeps = {},
+  entitlements = null,
 }) {
+  // Edition gates. null means "no gate" and exists for unit tests only: the real middleware always passes one.
+  const ent = typeof entitlements === "function" ? entitlements() : entitlements;
+  const remoteAllowed = !ent || ent.can("remote_access");
   const verb = String(method || "GET").toUpperCase();
   const pathname = String(path || "").split("?")[0];
   const knownPeer = String(remoteAddress || "").trim();
   if (pathname === "/dav" || pathname.startsWith("/dav/")) {
     const shares = loadShares(home);
     const identity = loadIdentity(home);
-    const access = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+    const stored = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+    // A lapsed license closes remote access even if the timer has not run out. Tailscale and LAN are unaffected.
+    const access = remoteAllowed ? stored : { enabled: false, offAt: null, mode: "" };
     if (requestReach(reachMode, knownPeer, access, now) === "deny") {
       const body = Buffer.from("Public access is off", "utf8");
       return {
@@ -128,7 +134,8 @@ export async function handleLinkedHttp({
   }
   if (!pathname.startsWith("/api/link/")) return null;
   if (!home) return json(503, { error: "This machine has no data folder." });
-  const linkAccess = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+  const linkStored = accessPath(home, accessFile) ? readRemoteAccessFile(accessPath(home, accessFile), now) : { enabled: false, mode: "" };
+  const linkAccess = remoteAllowed ? linkStored : { enabled: false, offAt: null, mode: "" };
   if (requestReach(reachMode, knownPeer, linkAccess, now) === "deny") {
     return json(403, { error: "Public access is off" });
   }
@@ -270,6 +277,14 @@ export async function handleLinkedHttp({
       return json(409, { error: "This computer is in Tailscale-only mode. Set it to Both on that computer first." });
     }
     const enabled = payload.enabled === true;
+    if (enabled && ent) {
+      if (!ent.can("remote_access")) {
+        return json(402, { error: ent.upgradeMessage("remote_access"), upgrade: true, feature: "remote_access", requiredEdition: "pro" });
+      }
+      if (!ent.remoteMinutesAllowed(Number(payload.minutes))) {
+        return json(402, { error: ent.upgradeMessage("remote_24h"), upgrade: true, feature: "remote_24h", requiredEdition: "elite" });
+      }
+    }
     let next;
     try {
       next = enabled

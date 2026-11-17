@@ -1,0 +1,12 @@
+<?php
+// ONE-SHOT. Deployed under a random name, called once, then deleted. Refuses to run if a signing key exists.
+require dirname(__DIR__) . '/lib/license_init.php';
+header('Content-Type: application/json');
+$dir = drivebay_license_dir();
+if (is_file($dir . '/signing.key')) {
+    http_response_code(409);
+    echo json_encode(['error' => 'already initialised']);
+    exit;
+}
+$out = drivebay_license_init($dir, '__ADMIN_TOKEN_SHA256__');
+echo json_encode(['ok' => true, 'publicKey' => $out['publicKey'], 'dir' => $dir]);

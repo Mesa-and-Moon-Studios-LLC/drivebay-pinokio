@@ -23,6 +23,7 @@ import {
 } from "@/components/settings/linked-machines";
 import { Disclosure, SettingsGroup, SettingsNav } from "@/components/settings/settings-group";
 import { DonateMenu } from "@/components/settings/donate-menu";
+import { EditionCard } from "@/components/settings/edition-card";
 import { SupportBanner } from "@/components/support-banner";
 import { RemoteAccessBanner } from "@/components/remote-access-banner";
 import { HowToGuide } from "@/components/settings/how-to";
@@ -485,6 +486,10 @@ function SettingsPage() {
         </section>
 
           <MesaAccountSection />
+        </SettingsGroup>
+
+        <SettingsGroup id="edition" title="Edition and license" hint="Free keeps your own machines linked. Pro and Elite add remote access and more.">
+          <EditionCard />
         </SettingsGroup>
 
         <SettingsGroup id="this-machine" title="This machine" hint="How this machine appears and what it exposes on this device.">

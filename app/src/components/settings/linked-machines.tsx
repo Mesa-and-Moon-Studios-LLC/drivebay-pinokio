@@ -73,6 +73,14 @@ type Status = {
   warning: string;
   vault?: { ready?: boolean; unlocked?: boolean; hasPassphrase?: boolean; hasPasskey?: boolean; hasRecovery?: boolean; cannotRecover?: string };
   remoteAccess?: { enabled?: boolean; offAt?: number | null; mode?: string; source?: string; byName?: string };
+  edition?: {
+    edition: string;
+    remoteAccess: boolean;
+    remote24h: boolean;
+    sharedFolderLimit: number;
+    remoteAccessMessage: string;
+    remote24hMessage: string;
+  };
 };
 
 type LinkedCtx = ReturnType<typeof useLinkedState>;
@@ -837,6 +845,14 @@ export function SharingSection() {
               Turn the port forward on for another machine on your Tailscale network. It switches itself off after the
               time you pick.
             </p>
+            {status?.edition && !status.edition.remoteAccess ? (
+              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-fg" role="status" data-testid="remote-upgrade-note">
+                {status.edition.remoteAccessMessage}{" "}
+                <a className="underline underline-offset-4" href="#edition">
+                  Open Edition settings
+                </a>
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <select
                 className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
@@ -847,7 +863,9 @@ export function SharingSection() {
                 <option value={15}>15 minutes</option>
                 <option value={60}>1 hour</option>
                 <option value={240}>4 hours</option>
-                <option value={1440}>24 hours</option>
+                <option value={1440} disabled={status?.edition ? !status.edition.remote24h : false}>
+                  {status?.edition && !status.edition.remote24h ? "24 hours (Elite)" : "24 hours"}
+                </option>
               </select>
               <select
                 className="rounded-md border border-border bg-bg px-2 py-1 text-xs"
@@ -866,7 +884,7 @@ export function SharingSection() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={busy}
+                  disabled={busy || (status?.edition ? !status.edition.remoteAccess : false)}
                   onClick={() => {
                     setBusy(true);
                     void setMachineRemoteAccess({

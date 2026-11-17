@@ -1,0 +1,85 @@
+{
+    "note": "Test vectors for Drivebay license keys. The signing seed is a public test value and must never be a production key.",
+    "publicKeyHex": "d1db752e351ae1060583cf0b98c34507ae70b5f5eb81ffae1409c32f2b733642",
+    "issued": 1795000000,
+    "licenses": [
+        {
+            "name": "pro perpetual, 12 months of updates",
+            "key": "DBAY-040G0-0R005-0G000-2NR0G-40R40-M30E2-00MSB-D32N2-7B9J4-VVXM0-0PH1M-ZC5GC-W030Z-8XY80-3TW8G-XHCYM-NB6Y6-7YBC1-C5SD0-0BK1C-JBGD9-Y9BGT-0EQE1-GH31E-T07VT-960XS-EK210",
+            "expect": {
+                "edition": "pro",
+                "seats": 3,
+                "offline": false,
+                "issued": 1794960000,
+                "expires": null,
+                "updatesUntil": 1826496000,
+                "id": "0102030405060708",
+                "label": ""
+            }
+        },
+        {
+            "name": "elite yearly subscription",
+            "key": "DBAY-04100-2G005-0G5BG-2NTGT-58X4M-PKAFA-00W2E-366GJ-Q2YSA-JJVT9-K1ZC3-5N2VP-E13NK-891SV-1YZQ3-SFSYQ-B4306-258QS-2RHXT-5A628-9FWT6-Z7DFW-BAG0C-X3MDN-EFZX5-4PPY6-36028",
+            "expect": {
+                "edition": "elite",
+                "seats": 10,
+                "offline": false,
+                "issued": 1794960000,
+                "expires": 1826496000,
+                "updatesUntil": 1826496000,
+                "id": "a1a2a3a4a5a6a7a8",
+                "label": ""
+            }
+        },
+        {
+            "name": "enterprise offline, lifetime updates, UTF-8 label",
+            "key": "DBAY-041G3-X0105-0G007-ZZZZY-XQECQ-EN9K2-0K85H-PTS90-REE6X-GXFCD-QP8S9-08XPP-4J0HT-E8MH4-RA1GM-0RC61-BTMF5-20M2H-YK2ZR-5MV2A-ZJP0H-NBJ0D-89X4W-58D6Y-4JHM5-22YSK-WMXZJ-5R5NM-Q4PZF-G24AC-VWZ8B-PS1AH-PTY0M",
+            "expect": {
+                "edition": "enterprise",
+                "seats": 500,
+                "offline": true,
+                "issued": 1794960000,
+                "expires": null,
+                "updatesUntil": null,
+                "id": "ffeeddccbbaa9988",
+                "label": "Acme Ünïcode GmbH"
+            }
+        }
+    ],
+    "tamperedKeys": [
+        {
+            "name": "edition byte changed from pro to enterprise",
+            "key": "DBAY-041G0-0R005-0G000-2NR0G-40R40-M30E2-00MSB-D32N2-7B9J4-VVXM0-0PH1M-ZC5GC-W030Z-8XY80-3TW8G-XHCYM-NB6Y6-7YBC1-C5SD0-0BK1C-JBGD9-Y9BGT-0EQE1-GH31E-T07VT-960XS-EK210"
+        },
+        {
+            "name": "truncated",
+            "key": "DBAY-040G0-0R005-0G000-2NR0G-40R40-M30E2-00MSB-D32N2-7B9J4-VVXM0-0PH1M-ZC5GC-W030Z-8XY80-3TW8G-XHCYM-NB6Y6-7YBC1-C5SD0-0BK1C-JBGD9-Y9BGT-0EQE1-GH31E-T07VT-960XS-"
+        },
+        {
+            "name": "not a key",
+            "key": "DBAY-HELLO-WORLD"
+        }
+    ],
+    "receipt": {
+        "machineId": "test-machine-0001",
+        "otherMachineId": "test-machine-0002",
+        "licenseId": "0102030405060708",
+        "text": "DBAR1.AQECAwQFBgcIBhLsjC8fwXJq_YbAayUTwJww2o1v47tSUbV1tbUDhaXrTgaYKNlzjZLBtU6xAHfrvPBLsc77pp9yQUlKdVDmzx4UoF4SQFM_esTQfnAz0g8",
+        "issuedAt": 1795000000,
+        "validUntil": 1797592000
+    },
+    "purchaseCodes": [
+        {
+            "code": "DBAY-0123-4567-89AB-CDE8",
+            "valid": true
+        },
+        {
+            "code": "DBAY-0123-4567-89AB-CDEZ",
+            "valid": false
+        },
+        {
+            "code": "DBAY-0123-4567-89AB-CDEF",
+            "valid": false
+        }
+    ]
+}

@@ -5,6 +5,12 @@
 import { handleLinkedHttp } from "../../src/lib/files/linked-http.mjs";
 import { machineHome } from "../../src/lib/files/linked-store.mjs";
 import { readReachMode, resolveDataDir, resolvePublicAccessFile } from "../../src/lib/files/settings.server";
+import { readEntitlements } from "../../src/lib/license/license-store.mjs";
+import { buildTimestamp } from "../../src/lib/license/build-info.mjs";
+
+function currentEntitlementsSync() {
+  return readEntitlements(machineHome() || resolveDataDir(), { buildTs: buildTimestamp() });
+}
 
 /**
  * Drives a trusted own machine may browse: the same enabled drives the local file browser
@@ -69,6 +75,7 @@ export default async function linkedDavMiddleware(event: LinkedEvent, next: () =
     accessFile: resolvePublicAccessFile(),
     reachMode: readReachMode(),
     fullAccess: loadFullAccess,
+    entitlements: () => currentEntitlementsSync(),
   });
   if (!result) return next();
   const raw = result.body;

@@ -16,6 +16,19 @@ async function adminHome() {
   return homeDir();
 }
 
+/** What the edition allows, for the My machines and sharing sections. */
+async function editionSummary() {
+  const entitlements = await (await import("@/lib/license/license.server")).currentEntitlements();
+  return {
+    edition: entitlements.edition,
+    remoteAccess: entitlements.can("remote_access"),
+    remote24h: entitlements.can("remote_24h"),
+    sharedFolderLimit: entitlements.sharedFolderLimit(),
+    remoteAccessMessage: entitlements.upgradeMessage("remote_access"),
+    remote24hMessage: entitlements.upgradeMessage("remote_24h"),
+  };
+}
+
 export const getLinkedStatus = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
   .handler(async () => {
@@ -54,6 +67,7 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
       warning: machines.DIRECT_INTERNET_WARNING,
       vault: vault.accountVaultStatus(home, listed),
       remoteAccess: (await import("./settings.server")).readRemoteAccess(),
+      edition: await editionSummary(),
     };
   });
 
@@ -117,6 +131,13 @@ export const saveLinkedShares = createServerFn({ method: "POST" })
     const machines = await import("./linked-machines.mjs");
     if (data.directInternet && !String(data.publicHost || "").trim()) {
       return { ok: false as const, message: machines.DIRECT_INTERNET_WARNING };
+    }
+    const entitlements = await (await import("@/lib/license/license.server")).currentEntitlements();
+    const limit = entitlements.sharedFolderLimit();
+    const already = store.loadShares(home).folders?.length || 0;
+    // Folders you already share keep working. Only adding past the limit is refused.
+    if (limit >= 0 && data.folders.length > Math.max(limit, already)) {
+      return { ok: false as const, message: entitlements.upgradeMessage("shared_folders"), upgrade: true, feature: "shared_folders" };
     }
     const fs = await import("node:fs");
     const folders = [];
@@ -549,6 +570,13 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
     if (!store.loadAccount(home)?.uid) return { ok: false as const, message: "Sign in to Mesa and Moon first." };
     const settings = await import("./settings.server");
     const identity = store.loadIdentity(home);
+    if (data.enabled) {
+      const entitlements = await (await import("@/lib/license/license.server")).currentEntitlements();
+      if (data.machineId === identity?.machineId || data.machineId === "self") {
+        if (!entitlements.can("remote_access")) return { ok: false as const, upgrade: true, feature: "remote_access", message: entitlements.upgradeMessage("remote_access") };
+        if (!entitlements.remoteMinutesAllowed(data.minutes || 15)) return { ok: false as const, upgrade: true, feature: "remote_24h", message: entitlements.upgradeMessage("remote_24h") };
+      }
+    }
     if (data.machineId === identity?.machineId || data.machineId === "self") {
       const next = settings.writeRemoteAccess({
         enabled: data.enabled,
@@ -585,7 +613,14 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
       }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false as const, message: body.error || "That machine did not accept the change." };
+    if (!res.ok) {
+      return {
+        ok: false as const,
+        message: body.error || "That machine did not accept the change.",
+        upgrade: body.upgrade === true,
+        feature: typeof body.feature === "string" ? body.feature : undefined,
+      };
+    }
     return { ok: true as const, ...body, message: body.enabled ? "Remote access is on." : "Remote access is off." };
   });
 

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 export const SETTINGS_GROUPS = [
   { id: "account", label: "Account" },
+  { id: "edition", label: "Edition" },
   { id: "this-machine", label: "This machine" },
   { id: "my-machines", label: "My machines" },
   { id: "sharing", label: "Sharing with others" },
