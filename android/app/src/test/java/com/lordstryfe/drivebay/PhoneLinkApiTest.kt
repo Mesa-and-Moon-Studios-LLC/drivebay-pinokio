@@ -35,7 +35,52 @@ class PhoneLinkApiTest {
 
     @Test fun unknownLinkMethodsAreIgnored() {
         assertNull(PhoneLinkApi.handle("GET", "/api/link/forget", emptyMap(), ByteArray(0), "10.0.0.2", null, {}))
-        assertNull(PhoneLinkApi.handle("POST", "/api/link/reciprocal", emptyMap(), ByteArray(0), "10.0.0.2", null, {}))
+        val reciprocal = PhoneLinkApi.handle("POST", "/api/link/reciprocal", emptyMap(), ByteArray(0), "10.0.0.2", null, {})
+        assertEquals(403, reciprocal!!.status)
+    }
+
+    @Test fun alreadyTrustedJoinIsAutoGrantedAndPollReturnsAToken() {
+        val dek = MesaVault.fromB64("BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=")
+        val selfId = "phone-1978c6ebc8c04036"
+        val fromId = "pc-joining-00000004"
+        val secret = "dbp_" + "ab".repeat(32)
+        MesaSponsor.testDek = dek
+        MesaSponsor.testSelfId = selfId
+        val dir = MemoryPairs(mutableListOf(PhonePair(token, "PC", hash, null, 0, 0, scope = "full", machineId = fromId)))
+        val proof = MesaJoin.proof(dek, selfId, fromId, secret)
+        val payload = org.json.JSONObject()
+            .put("machineId", fromId)
+            .put("displayName", "DESKTOP-7OPHOTR")
+            .put("secret", secret)
+            .put("proof", proof)
+            .put("signature", "c2tpcA==")
+        val asked = PhoneLinkApi.handle(
+            "POST",
+            "/api/link/request",
+            mapOf(),
+            payload.toString().toByteArray(),
+            "192.168.0.10",
+            dir,
+            {},
+        )!!
+        assertEquals(200, asked.status)
+        val askedBody = org.json.JSONObject(asked.body.toString(Charsets.UTF_8))
+        assertEquals(true, askedBody.optBoolean("granted"))
+        val polled = PhoneLinkApi.handle(
+            "POST",
+            "/api/link/poll",
+            mapOf(),
+            org.json.JSONObject().put("id", askedBody.optString("id")).put("secret", secret).toString().toByteArray(),
+            "192.168.0.10",
+            dir,
+            {},
+        )!!
+        assertEquals(200, polled.status)
+        val pollBody = org.json.JSONObject(polled.body.toString(Charsets.UTF_8))
+        assertEquals("full", pollBody.optString("scope"))
+        assertTrue(pollBody.optString("token").startsWith("db_"))
+        MesaSponsor.testDek = null
+        MesaSponsor.testSelfId = null
     }
 
     private class MemoryPairs(private var items: MutableList<PhonePair>) : PhonePairDirectory {

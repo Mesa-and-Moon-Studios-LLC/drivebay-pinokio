@@ -25,7 +25,7 @@ import { verifyJoinRequest } from "./linked-join.mjs";
 import { handleDav } from "./linked-dav.mjs";
 import { loadIdentity, loadLinkedTokens, loadPairState, loadShares, saveLinkedTokens, savePairState } from "./linked-store.mjs";
 import { acceptReciprocalOffer, applyForget } from "./linked-reciprocal.mjs";
-import { honorAttestation, publicPendingList, makeAttestation, spreadHonoredApproval, verifyAttestation } from "./linked-sponsor.mjs";
+import { honorAttestation, publicPendingList, makeAttestation, spreadHonoredApproval, verifyAttestation, alreadyTrustedGrant, sponsoredJoinAllowed } from "./linked-sponsor.mjs";
 import { loadDek } from "./linked-vault.mjs";
 import {
   formatCountdown,
@@ -208,9 +208,30 @@ export async function handleLinkedHttp({
       verified,
       publicKey,
     });
-    savePairState(home, state);
     const stored = (state.pending || [])[state.pending.length - 1];
-    return json(200, { id: stored?.id || id, join: verified });
+    const identity = loadIdentity(home);
+    let granted = false;
+    if (verified && stored?.id) {
+      const already = alreadyTrustedGrant(state, fromId, publicKey);
+      const sponsored = already
+        ? { ok: false }
+        : sponsoredJoinAllowed(state, {
+            attestation: payload.attestation,
+            dek: loadDek(home),
+            selfId: identity?.machineId || "",
+            joinerId: fromId,
+            joinerPublicKey: publicKey,
+          });
+      if (already || sponsored.ok) {
+        const approved = approveRequest(state, stored.id, { token: randomToken(), tokenSalt: randomSalt(), now });
+        if (approved.ok) {
+          state = approved.state;
+          granted = true;
+        }
+      }
+    }
+    savePairState(home, state);
+    return json(200, { id: stored?.id || id, join: verified, granted });
   }
 
   if (pathname === "/api/link/poll" && verb === "POST") {
@@ -377,6 +398,27 @@ export async function handleLinkedHttp({
     const denied = denyLocalRequest(home, String(payload.id || ""));
     if (!denied.ok) return json(409, { error: denied.error || "Could not deny." });
     return json(200, { ok: true });
+  }
+
+  if (pathname === "/api/link/sponsor-attestation" && verb === "POST") {
+    const trusted = grantForToken(state, pairTokenFrom(headers, payload));
+    if (!trusted || trusted.scope !== "full") return json(403, { error: "Only a trusted device can ask this machine to sponsor a join." });
+    const dek = loadDek(home);
+    const identity = loadIdentity(home);
+    if (!dek || !identity?.privateKey || !identity.machineId) {
+      return json(403, { error: "Unlock the machine list on this computer first." });
+    }
+    const attestation = makeAttestation({
+      dek,
+      privateKey: identity.privateKey,
+      approverId: identity.machineId,
+      joinerId: trusted.peerId,
+      joinerName: trusted.name || "",
+      joinerPublicKey: trusted.publicKey || "",
+      requestId: `sponsor:${trusted.peerId}`,
+      hostId: identity.machineId,
+    });
+    return json(200, { attestation });
   }
 
   if (pathname === "/api/link/honor-approval" && verb === "POST") {

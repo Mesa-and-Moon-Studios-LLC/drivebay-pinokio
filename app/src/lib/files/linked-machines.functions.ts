@@ -30,6 +30,7 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
       : null;
     const localPairs = machines.publicPairState(store.loadPairState(home));
     await renewPendingJoins(home).catch(() => {});
+    void import("./linked-mesh.mjs").then((mesh) => mesh.meshTrustedPeers(home, { mount: mountSaved }).catch(() => {}));
     const sponsor = await import("./linked-sponsor.mjs");
     const remotePending = await sponsor.listRemotePending(home).catch(() => []);
     const hostId = identity?.machineId || "";
@@ -220,6 +221,7 @@ export const approveLinkedRequest = createServerFn({ method: "POST" })
       });
       await sponsor.spreadHonoredApproval(home, attestation).catch(() => {});
     }
+    void import("./linked-mesh.mjs").then((mesh) => mesh.meshTrustedPeers(home, { mount: mountSaved }).catch(() => {}));
     return { ok: true as const };
   });
 
@@ -341,10 +343,7 @@ export const connectLinkedMachine = createServerFn({ method: "POST" })
         token = redeemed.token;
       }
     }
-    if (!token && (data.askApproval || data.join) && machine.type === "phone" && data.join) {
-      return { ok: false as const, message: "Join this phone from the phone: open Machines on it and pick this computer." };
-    }
-    if (!token && (data.askApproval || data.join) && machine.type !== "phone") {
+    if (!token && (data.askApproval || data.join)) {
       const secret = machines.randomToken();
       let proof = "";
       let signature = "";
@@ -419,7 +418,11 @@ export const finishLinkedMachine = createServerFn({ method: "POST" })
     const machine = (listed.machines || []).find((item: { machineId?: string }) => item.machineId === data.machineId);
     if (!machine) return { ok: false as const, message: "That machine is not on this login." };
     const letter = machines.pickDriveLetter(store.loadLinkedTokens(home), data.machineId, data.letter || row.letter || "P");
-    return mountSaved(home, data.machineId, polled.token, machine, letter, polled.scope === "full" ? "full" : "shares");
+    const mounted = await mountSaved(home, data.machineId, polled.token, machine, letter, polled.scope === "full" ? "full" : "shares");
+    if (mounted.ok && polled.scope === "full") {
+      void import("./linked-mesh.mjs").then((mesh) => mesh.meshTrustedPeers(home, { mount: mountSaved }).catch(() => {}));
+    }
+    return mounted;
   });
 
 export const disconnectLinkedMachine = createServerFn({ method: "POST" })
@@ -523,6 +526,7 @@ export const unlockLinkedVault = createServerFn({ method: "POST" })
     const settings = await import("./settings.server");
     await cloud.pushThisMachine(home, settings.readPortSettings().port);
     const joins = await requestJoinOnTrustedPeers(home);
+    void import("./linked-mesh.mjs").then((mesh) => mesh.meshTrustedPeers(home, { mount: mountSaved }).catch(() => {}));
     const message = joins.asked
       ? `The machine list is unlocked. Waiting for a trusted device on ${joins.names[0]} to approve this computer.`
       : "The machine list is unlocked on this device. Open My machines and click Join on a trusted computer, then approve it there.";
@@ -716,31 +720,36 @@ async function requestJoinOnTrustedPeers(home: string): Promise<{ asked: number;
     const names: string[] = [];
     for (const machine of listed.machines || []) {
       if (!machine?.machineId || machine.machineId === listed.selfId) continue;
-      if (machine.type === "phone") continue;
-      if (!machines.isOnline(machine.lastSeen, now)) continue;
-      const target = machines.connectionUrl(machine);
-      if (!target.url || target.risk) continue;
-      const secret = machines.randomToken();
-      const parts = { hostId: machine.machineId, peerId: self.machineId, secret };
-      const asked = await connect.requestRemote({
-        url: target.url,
-        machineId: self.machineId,
-        displayName: self.displayName || "Drivebay",
-        secret,
-        proof: crypto.joinProof(dek, parts),
-        signature: crypto.signJoin(self.privateKey, parts),
-      });
-      if (!asked.ok) continue;
       const records = store.loadLinkedTokens(home);
-      records[machine.machineId] = {
-        ...(records[machine.machineId] || {}),
-        pendingId: asked.id,
-        pendingSecret: secret,
-        url: target.url,
-        pendingAt: Date.now(),
-      };
-      store.saveLinkedTokens(home, records);
-      names.push(machine.displayName || "that machine");
+      if (records[machine.machineId]?.token && records[machine.machineId]?.scope === "full") continue;
+      const candidates = (machines.connectionCandidates || machines.connectionUrl) && machines.connectionCandidates
+        ? machines.connectionCandidates(machine)
+        : [machines.connectionUrl(machine)].filter((row: { url?: string }) => row?.url);
+      for (const target of candidates) {
+        if (!target.url || target.risk) continue;
+        const secret = machines.randomToken();
+        const parts = { hostId: machine.machineId, peerId: self.machineId, secret };
+        const asked = await connect.requestRemote({
+          url: target.url,
+          machineId: self.machineId,
+          displayName: self.displayName || "Drivebay",
+          secret,
+          proof: crypto.joinProof(dek, parts),
+          signature: crypto.signJoin(self.privateKey, parts),
+        });
+        if (!asked.ok) continue;
+        const next = store.loadLinkedTokens(home);
+        next[machine.machineId] = {
+          ...(next[machine.machineId] || {}),
+          pendingId: asked.id,
+          pendingSecret: secret,
+          url: target.url,
+          pendingAt: Date.now(),
+        };
+        store.saveLinkedTokens(home, next);
+        names.push(machine.displayName || "that machine");
+        break;
+      }
     }
     return { asked: names.length, names };
   } catch {

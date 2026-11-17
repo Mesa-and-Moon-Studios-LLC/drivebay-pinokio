@@ -26,6 +26,45 @@ object PhoneLinkApi {
             val error = MesaSponsor.honorInbound(attestation)
             return if (error == null) json(200, """{"ok":true}""") else json(403, JSONObject().put("error", error).toString())
         }
+        if (pathname == "/api/link/request" && method == "POST") {
+            if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
+                return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")
+            }
+            val payload = runCatching { JSONObject(body.toString(Charsets.UTF_8).ifBlank { "{}" }) }.getOrNull()
+                ?: return json(400, """{"error":"The request secret is missing."}""")
+            return MesaSponsor.handleJoinRequest(payload, pairs)
+        }
+        if (pathname == "/api/link/poll" && method == "POST") {
+            if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
+                return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")
+            }
+            val payload = runCatching { JSONObject(body.toString(Charsets.UTF_8).ifBlank { "{}" }) }.getOrNull()
+                ?: return json(409, """{"error":"That approval request is gone.","missing":true}""")
+            return MesaSponsor.handleJoinPoll(payload)
+        }
+        if (pathname == "/api/link/reciprocal" && method == "POST") {
+            if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
+                return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")
+            }
+            if (pairs == null) return json(403, """{"error":"Only a machine this phone already trusts can offer a reciprocal grant."}""")
+            val inbound = bearerOrBasic(headers)
+            val payload = runCatching { JSONObject(body.toString(Charsets.UTF_8).ifBlank { "{}" }) }.getOrNull() ?: JSONObject()
+            val token = inbound.ifBlank { payload.optString("token") }
+            val hit = pairs.snapshot().firstOrNull { token.isNotBlank() && PhoneShareAuth.looksLikeToken(token) && PhoneShareAuth.matches(token, it.tokenHash) }
+            if (hit == null || hit.scope != "full") return json(403, """{"error":"Only a machine this phone already trusts can offer a reciprocal grant."}""")
+            val offer = payload.optJSONObject("offer") ?: payload
+            val accessToken = offer.optString("accessToken")
+            val peerId = offer.optString("peerId")
+            if (!PhoneShareAuth.looksLikeToken(accessToken) || peerId.isBlank()) {
+                return json(403, """{"error":"The access token is not valid."}""")
+            }
+            MesaSponsor.appContext?.let { ctx ->
+                val vault = CredentialVault(ctx)
+                vault.save("link-$peerId", accessToken)
+                vault.save("link-scope-$peerId", "full")
+            }
+            return json(200, """{"ok":true,"scope":"full"}""")
+        }
         if (pathname != "/api/link/forget" || method != "POST") return null
         if (!PhoneShareNet.isPrivateOrTailscale(remote)) {
             return json(403, """{"error":"Pairing is only accepted from Tailscale, LAN, or this machine."}""")

@@ -138,48 +138,73 @@ function hostLiteral(host) {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
 
+function isIpv6Host(host) {
+  return String(host || "").includes(":");
+}
+
 /**
- * Tailscale, then LAN. A public address is used only when this machine
- * recorded that the owner opened the port.
+ * Every reachable address, IPv4 Tailscale first, then IPv6 Tailscale, then LAN.
+ * A public address is used only when this machine recorded that the owner opened the port.
  */
-export function connectionUrl(machine) {
-  const clean = sanitizeRegistration(machine);
-  if (!clean.ok) return { url: "", via: "", risk: false };
+export function connectionCandidates(machine) {
+  const rawAddresses = Array.isArray(machine?.addresses) ? machine.addresses : [];
+  const rest = machine && typeof machine === "object" ? { ...machine } : machine;
+  if (rest && typeof rest === "object") delete rest.addresses;
+  const clean = sanitizeRegistration(rest);
+  if (!clean.ok) return [];
   const row = clean.machine;
   const pathName = row.type === "phone" ? "/" : "/dav/";
-  let host = "";
-  let via = "";
-  if (row.tailscaleHost) {
-    host = row.tailscaleHost;
-    via = "tailscale";
-  } else if (row.lanAddress) {
-    host = row.lanAddress;
-    via = "lan";
-  } else if (row.directInternet && row.publicHost) {
-    host = row.publicHost;
-    via = "public";
-  }
-  if (!host) return { url: "", via: "", risk: false };
-  return {
-    url: `http://${hostLiteral(host)}:${row.port}${pathName}`,
-    via,
-    risk: via === "public",
+  const classified = classifyAddresses(rawAddresses);
+  const seen = new Set();
+  const out = [];
+  const add = (host, via, risk = false) => {
+    const cleaned = cleanHost(host) || String(host || "").trim();
+    if (!cleaned || seen.has(cleaned)) return;
+    seen.add(cleaned);
+    out.push({
+      url: `http://${hostLiteral(cleaned)}:${row.port}${pathName}`,
+      via,
+      risk: risk === true,
+      host: cleaned,
+    });
   };
+  const tailscale = [row.tailscaleHost, classified.tailscaleHost, ...rawAddresses]
+    .map((host) => cleanHost(host) || String(host || "").trim())
+    .filter((host) => host && isTailnetAddress(host));
+  for (const host of tailscale.filter((item) => !isIpv6Host(item))) add(host, "tailscale");
+  for (const host of tailscale.filter((item) => isIpv6Host(item))) add(host, "tailscale");
+  const lan = [row.lanAddress, classified.lanAddress, ...rawAddresses]
+    .map((host) => cleanHost(host) || String(host || "").trim())
+    .filter((host) => host && isLan(host));
+  for (const host of lan) add(host, "lan");
+  if (row.directInternet && row.publicHost) add(row.publicHost, "public", true);
+  return out;
+}
+
+/**
+ * Tailscale, then LAN. A public address is used only when this machine
+ * recorded that the owner opened the port. Prefers an IPv4 Tailscale address
+ * when both v4 and v6 are listed, because some peers cannot reach the v6 path.
+ */
+export function connectionUrl(machine) {
+  return connectionCandidates(machine)[0] || { url: "", via: "", risk: false };
 }
 
 export function classifyAddresses(addresses) {
   let tailscaleHost = "";
+  let tailscaleV6 = "";
   let lanAddress = "";
   for (const raw of addresses || []) {
     const host = cleanHost(raw);
     if (!host) continue;
-    if (!tailscaleHost && isTailnetAddress(host)) {
-      tailscaleHost = host;
+    if (isTailnetAddress(host)) {
+      if (!isIpv6Host(host) && !tailscaleHost) tailscaleHost = host;
+      else if (isIpv6Host(host) && !tailscaleV6) tailscaleV6 = host;
       continue;
     }
     if (!lanAddress && isLan(host)) lanAddress = host;
   }
-  return { tailscaleHost, lanAddress };
+  return { tailscaleHost: tailscaleHost || tailscaleV6, lanAddress };
 }
 
 function isLan(host) {

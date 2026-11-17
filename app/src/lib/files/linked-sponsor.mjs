@@ -246,3 +246,30 @@ export async function spreadHonoredApproval(home, attestation, fetchImpl = fetch
     return { sent: 0 };
   }
 }
+
+/** A full grant whose stored key, if any, matches the caller. */
+export function alreadyTrustedGrant(state, peerId, publicKey = "") {
+  const grant = state?.grants?.[peerId];
+  if (!grant || grant.scope !== "full") return null;
+  if (publicKey && grant.publicKey && grant.publicKey !== publicKey) return null;
+  return grant;
+}
+
+/**
+ * A join from a machine this host already trusts, or one a trusted device has
+ * already approved, can be granted immediately. Brand-new devices still wait.
+ */
+export function sponsoredJoinAllowed(state, { attestation, dek, selfId, joinerId, joinerPublicKey = "" }) {
+  if (!attestation || typeof attestation !== "object") return { ok: false, error: "No sponsor approval was sent." };
+  const approverId = String(attestation.approverId || "");
+  const trusted = alreadyTrustedGrant(state, approverId);
+  if (!trusted) return { ok: false, error: "Only a machine this device already trusts can sponsor a join." };
+  const checked = verifyAttestation(attestation, { dek, approverPublicKey: trusted.publicKey });
+  if (!checked.ok) return checked;
+  if (checked.joinerId !== joinerId) return { ok: false, error: "That approval is not for this machine." };
+  if (checked.approverId === selfId) return { ok: false, error: "This machine should approve the local request instead." };
+  if (joinerPublicKey && attestation.joinerPublicKey && attestation.joinerPublicKey !== joinerPublicKey) {
+    return { ok: false, error: "The sponsored key did not match this machine." };
+  }
+  return { ok: true };
+}

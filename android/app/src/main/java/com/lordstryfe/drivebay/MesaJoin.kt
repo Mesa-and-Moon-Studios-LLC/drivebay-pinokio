@@ -3,6 +3,7 @@ package com.lordstryfe.drivebay
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.generators.HKDFBytesGenerator
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters
+import org.bouncycastle.crypto.params.Ed25519PublicKeyParameters
 import org.bouncycastle.crypto.params.HKDFParameters
 import org.bouncycastle.crypto.signers.Ed25519Signer
 import javax.crypto.Mac
@@ -83,5 +84,36 @@ object MesaJoin {
             if (dek != null && dek.size == 32) return dek
         }
         return null
+    }
+
+    fun verifyProof(dek: ByteArray, hostId: String, peerId: String, secret: String, proof: String): Boolean {
+        if (proof.isBlank()) return false
+        return proof(dek, hostId, peerId, secret) == proof
+    }
+
+    fun verifySignature(publicKeyB64: String, hostId: String, peerId: String, secret: String, signature: String): Boolean {
+        return runCatching {
+            val der = MesaVault.fromB64(publicKeyB64)
+            if (der.size < 32) return false
+            val pub = der.copyOfRange(der.size - 32, der.size)
+            val verifier = Ed25519Signer()
+            verifier.init(false, Ed25519PublicKeyParameters(pub, 0))
+            val msg = message(hostId, peerId, secret)
+            verifier.update(msg, 0, msg.size)
+            verifier.verifySignature(MesaVault.fromB64(signature))
+        }.getOrDefault(false)
+    }
+
+    fun verifyApprovalSignature(publicKeyB64: String, approverId: String, joinerId: String, requestId: String, hostId: String, issuedAt: String, signature: String): Boolean {
+        return runCatching {
+            val der = MesaVault.fromB64(publicKeyB64)
+            if (der.size < 32) return false
+            val pub = der.copyOfRange(der.size - 32, der.size)
+            val verifier = Ed25519Signer()
+            verifier.init(false, Ed25519PublicKeyParameters(pub, 0))
+            val msg = approvalMessage(approverId, joinerId, requestId, hostId, issuedAt)
+            verifier.update(msg, 0, msg.size)
+            verifier.verifySignature(MesaVault.fromB64(signature))
+        }.getOrDefault(false)
     }
 }

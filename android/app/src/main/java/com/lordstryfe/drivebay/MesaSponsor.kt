@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import java.security.SecureRandom
 import java.time.Instant
 
 /**
@@ -113,13 +115,108 @@ object MesaSponsor {
     }
 
     /** Grant this phone's storage to the new machine after a trusted approval. */
-    fun grantToJoiner(context: android.content.Context, joiner: JSONObject, joinerId: String) {
-        if (joinerId.isBlank()) return
+    fun grantToJoiner(context: android.content.Context, joiner: JSONObject, joinerId: String): String {
+        if (joinerId.isBlank()) return ""
         val token = PhoneShareAuth.generateToken()
         val name = joiner.optString("displayName").ifBlank { "Machine" }
         PhoneShareStore(context).upsertTrustedPair(name, token, joinerId)
         MesaReciprocal.startShare(context)
         CredentialVault(context).save("reciprocal-$joinerId", token)
+        return token
+    }
+
+    data class PendingJoin(val secret: String, val token: String, val fromId: String, val at: Long = System.currentTimeMillis())
+
+    private val pendingJoins = ConcurrentHashMap<String, PendingJoin>()
+
+    @Volatile
+    var testDek: ByteArray? = null
+    @Volatile
+    var testSelfId: String? = null
+    @Volatile
+    var testPeerPublicKey: String? = null
+
+    fun handleJoinRequest(payload: JSONObject, pairs: PhonePairDirectory?): DavResponse {
+        val secret = payload.optString("secret")
+        val fromId = payload.optString("machineId")
+        val name = payload.optString("displayName").ifBlank { "Machine" }
+        val proof = payload.optString("proof")
+        val signature = payload.optString("signature")
+        if (secret.length < 16 || fromId.isBlank()) {
+            return jsonResponse(400, """{"error":"The request secret is missing."}""")
+        }
+        val selfId = testSelfId ?: appContext?.getSharedPreferences("drivebay_mesa", android.content.Context.MODE_PRIVATE)?.getString("machineId", "").orEmpty()
+        val dek = testDek ?: run {
+            val text = appContext?.let { CredentialVault(it).load("mesa-dek") }.orEmpty()
+            runCatching { MesaVault.fromB64(text) }.getOrNull()?.takeIf { it.size == 32 }
+        }
+        if (dek == null || selfId.isBlank()) {
+            return jsonResponse(403, """{"error":"Unlock the machine list on this phone first."}""")
+        }
+        if (!MesaJoin.verifyProof(dek, selfId, fromId, secret, proof)) {
+            return jsonResponse(403, """{"error":"The join password did not match."}""")
+        }
+        val already = pairs?.snapshot()?.any { it.machineId == fromId && it.scope == "full" } == true
+        val attestation = payload.optJSONObject("attestation")
+        val sponsored = attestation != null && attestationOk(attestation, dek, fromId, pairs)
+        if (!already && !sponsored) {
+            return jsonResponse(200, JSONObject().put("id", newRequestId()).put("join", true).put("granted", false).toString())
+        }
+        val peerKey = testPeerPublicKey
+        if (!peerKey.isNullOrBlank() && !MesaJoin.verifySignature(peerKey, selfId, fromId, secret, signature)) {
+            return jsonResponse(403, """{"error":"That machine's device key did not match the account."}""")
+        }
+        val token = if (appContext != null) grantToJoiner(appContext!!, JSONObject().put("displayName", name), fromId)
+        else PhoneShareAuth.generateToken().also { raw ->
+            pairs?.let { dir ->
+                val hash = PhoneShareAuth.hash(raw)
+                val existing = dir.snapshot().filterNot { it.machineId == fromId && it.scope == "full" }
+                dir.save(existing + PhonePair(hash, name, hash, null, 0, 0, scope = "full", machineId = fromId))
+            }
+        }
+        val id = newRequestId()
+        pendingJoins[id] = PendingJoin(secret, token, fromId)
+        return jsonResponse(200, JSONObject().put("id", id).put("join", true).put("granted", true).toString())
+    }
+
+    fun handleJoinPoll(payload: JSONObject): DavResponse {
+        val id = payload.optString("id")
+        val secret = payload.optString("secret")
+        val row = pendingJoins[id] ?: return jsonResponse(409, """{"error":"That approval request is gone.","missing":true}""")
+        if (row.secret != secret) return jsonResponse(409, """{"error":"This machine has not approved that request yet."}""")
+        pendingJoins.remove(id)
+        return jsonResponse(200, JSONObject().put("token", row.token).put("scope", "full").toString())
+    }
+
+    fun attestationOk(attestation: JSONObject, dek: ByteArray, joinerId: String, pairs: PhonePairDirectory?): Boolean {
+        val approverId = attestation.optString("approverId")
+        val attestedJoiner = attestation.optString("joinerId")
+        val requestId = attestation.optString("requestId")
+        val hostId = attestation.optString("hostId")
+        val issuedAt = attestation.optString("issuedAt")
+        val proof = attestation.optString("proof")
+        val signature = attestation.optString("signature")
+        if (listOf(approverId, attestedJoiner, requestId, hostId, issuedAt, proof, signature).any { it.isBlank() }) return false
+        if (attestedJoiner != joinerId) return false
+        val trusted = pairs?.snapshot()?.any { it.machineId == approverId && it.scope == "full" } == true ||
+            (appContext != null && CredentialVault(appContext!!).load("link-scope-$approverId").orEmpty() == "full")
+        if (!trusted) return false
+        val expected = MesaJoin.approvalProof(dek, approverId, attestedJoiner, requestId)
+        if (expected != proof) return false
+        val age = runCatching { java.time.Instant.parse(issuedAt) }.getOrNull()?.let { System.currentTimeMillis() - it.toEpochMilli() } ?: return false
+        if (age > 30 * 60 * 1000 || age < -60 * 1000) return false
+        return true
+    }
+
+    private fun newRequestId(): String {
+        val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    fun jsonResponse(status: Int, body: String): DavResponse {
+        val bytes = body.toByteArray(Charsets.UTF_8)
+        val reason = if (status == 200) "OK" else if (status == 409) "Conflict" else if (status == 400) "Bad Request" else "Forbidden"
+        return DavResponse(status, reason, mapOf("Content-Type" to "application/json; charset=utf-8", "Content-Length" to bytes.size.toString()), bytes)
     }
 
     private fun getJson(url: String, token: String): Pair<Int, String> {

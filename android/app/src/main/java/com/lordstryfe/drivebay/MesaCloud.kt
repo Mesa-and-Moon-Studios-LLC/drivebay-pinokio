@@ -84,13 +84,16 @@ object MesaCloud {
 
     fun classify(addresses: List<String>): Pair<String, String> {
         var tailscale = ""
+        var tailscaleV6 = ""
         var lan = ""
         for (raw in addresses) {
             val host = raw.trim().substringBefore('%')
-            if (tailscale.isEmpty() && isTailscale(host)) tailscale = host
-            else if (lan.isEmpty() && isLan(host)) lan = host
+            if (isTailscale(host)) {
+                if (!host.contains(":") && tailscale.isEmpty()) tailscale = host
+                else if (host.contains(":") && tailscaleV6.isEmpty()) tailscaleV6 = host
+            } else if (lan.isEmpty() && isLan(host)) lan = host
         }
-        return tailscale to lan
+        return (tailscale.ifEmpty { tailscaleV6 }) to lan
     }
 
     fun connectionUrl(machine: JSONObject): String {

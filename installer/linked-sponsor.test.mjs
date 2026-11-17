@@ -267,3 +267,184 @@ test("honoring a signed approval issues a full grant when this device already tr
   });
   assert.equal(untrusted.ok, false);
 });
+
+
+test("an already-trusted machine is auto-granted on Join, with no approval prompt", async () => {
+  const home = tmp("db-auto-trusted-");
+  const hostKeys = newMachineKeys();
+  const pcKeys = newMachineKeys();
+  const dek = newDek();
+  saveIdentity(home, { machineId: "host-mac-00000001", displayName: "Mac", ...hostKeys });
+  rememberDek(home, dek, hostKeys, "host-mac-00000001");
+  const existing = randomToken();
+  savePairState(home, addGrant({ grants: {}, pending: [], code: null }, {
+    peerId: "pc-joining-00000004",
+    name: "DESKTOP-7OPHOTR",
+    token: existing,
+    tokenSalt: randomSalt(),
+    now: 1,
+    scope: "full",
+    publicKey: pcKeys.publicKey,
+  }));
+  const secret = randomToken();
+  const parts = { hostId: "host-mac-00000001", peerId: "pc-joining-00000004", secret };
+  const asked = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/request",
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify({
+      machineId: "pc-joining-00000004",
+      displayName: "DESKTOP-7OPHOTR",
+      secret,
+      proof: joinProof(dek, parts),
+      signature: signJoin(pcKeys.privateKey, parts),
+    })),
+    remoteAddress: "100.64.0.9",
+    home,
+    joinDeps: { dek, lookupPeer: async () => ({ machineId: "pc-joining-00000004", publicKey: pcKeys.publicKey }) },
+  });
+  assert.equal(asked.status, 200);
+  const body = JSON.parse(Buffer.from(asked.body).toString());
+  assert.equal(body.granted, true);
+  assert.equal(publicPairState(loadPairState(home)).pending.length, 0);
+  const polled = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/poll",
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify({ id: body.id, secret })),
+    remoteAddress: "100.64.0.9",
+    home,
+  });
+  assert.equal(polled.status, 200);
+  const pollBody = JSON.parse(Buffer.from(polled.body).toString());
+  assert.equal(pollBody.scope, "full");
+  assert.match(pollBody.token, /^dbp_[0-9a-f]{64}$/);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("a brand-new verified machine still waits for approval when it has no sponsor", async () => {
+  const home = tmp("db-new-waits-");
+  const hostKeys = newMachineKeys();
+  const pcKeys = newMachineKeys();
+  const dek = newDek();
+  saveIdentity(home, { machineId: "host-mac-00000001", displayName: "Mac", ...hostKeys });
+  rememberDek(home, dek, hostKeys, "host-mac-00000001");
+  savePairState(home, { grants: {}, pending: [], code: null });
+  const secret = randomToken();
+  const parts = { hostId: "host-mac-00000001", peerId: "pc-joining-00000004", secret };
+  const asked = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/request",
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify({
+      machineId: "pc-joining-00000004",
+      displayName: "DESKTOP-7OPHOTR",
+      secret,
+      proof: joinProof(dek, parts),
+      signature: signJoin(pcKeys.privateKey, parts),
+    })),
+    remoteAddress: "100.64.0.9",
+    home,
+    joinDeps: { dek, lookupPeer: async () => ({ machineId: "pc-joining-00000004", publicKey: pcKeys.publicKey }) },
+  });
+  assert.equal(asked.status, 200);
+  const body = JSON.parse(Buffer.from(asked.body).toString());
+  assert.equal(body.join, true);
+  assert.equal(body.granted, false);
+  assert.equal(publicPairState(loadPairState(home)).pending.length, 1);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("a sponsor attestation from an already-trusted device auto-grants the joiner", async () => {
+  const home = tmp("db-sponsored-");
+  const hostKeys = newMachineKeys();
+  const macKeys = newMachineKeys();
+  const pcKeys = newMachineKeys();
+  const dek = newDek();
+  saveIdentity(home, { machineId: "phone-trusted-00002", displayName: "Phone", ...hostKeys });
+  rememberDek(home, dek, hostKeys, "phone-trusted-00002");
+  const macToken = randomToken();
+  savePairState(home, addGrant({ grants: {}, pending: [], code: null }, {
+    peerId: "host-mac-00000001",
+    name: "Mac",
+    token: macToken,
+    tokenSalt: randomSalt(),
+    now: 1,
+    scope: "full",
+    publicKey: macKeys.publicKey,
+  }));
+  const attestation = makeAttestation({
+    dek,
+    privateKey: macKeys.privateKey,
+    approverId: "host-mac-00000001",
+    joinerId: "pc-joining-00000004",
+    joinerName: "DESKTOP-7OPHOTR",
+    joinerPublicKey: pcKeys.publicKey,
+    requestId: "sponsor:pc-joining-00000004",
+    hostId: "host-mac-00000001",
+  });
+  const secret = randomToken();
+  const parts = { hostId: "phone-trusted-00002", peerId: "pc-joining-00000004", secret };
+  const asked = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/request",
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify({
+      machineId: "pc-joining-00000004",
+      displayName: "DESKTOP-7OPHOTR",
+      secret,
+      proof: joinProof(dek, parts),
+      signature: signJoin(pcKeys.privateKey, parts),
+      attestation,
+    })),
+    remoteAddress: "100.64.0.9",
+    home,
+    joinDeps: { dek, lookupPeer: async () => ({ machineId: "pc-joining-00000004", publicKey: pcKeys.publicKey }) },
+  });
+  assert.equal(asked.status, 200, Buffer.from(asked.body).toString());
+  const body = JSON.parse(Buffer.from(asked.body).toString());
+  assert.equal(body.granted, true);
+  const polled = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/poll",
+    headers: { "content-type": "application/json" },
+    body: Buffer.from(JSON.stringify({ id: body.id, secret })),
+    remoteAddress: "100.64.0.9",
+    home,
+  });
+  assert.equal(polled.status, 200);
+  assert.equal(JSON.parse(Buffer.from(polled.body).toString()).scope, "full");
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("a trusted machine can ask for a sponsor attestation for itself", async () => {
+  const home = tmp("db-sponsor-ask-");
+  const hostKeys = newMachineKeys();
+  const pcKeys = newMachineKeys();
+  const dek = newDek();
+  saveIdentity(home, { machineId: "host-mac-00000001", displayName: "Mac", ...hostKeys });
+  rememberDek(home, dek, hostKeys, "host-mac-00000001");
+  const pcToken = randomToken();
+  savePairState(home, addGrant({ grants: {}, pending: [], code: null }, {
+    peerId: "pc-joining-00000004",
+    name: "DESKTOP-7OPHOTR",
+    token: pcToken,
+    tokenSalt: randomSalt(),
+    now: 1,
+    scope: "full",
+    publicKey: pcKeys.publicKey,
+  }));
+  const asked = await handleLinkedHttp({
+    method: "POST",
+    path: "/api/link/sponsor-attestation",
+    headers: { authorization: `Bearer ${pcToken}`, "content-type": "application/json" },
+    body: Buffer.from("{}"),
+    remoteAddress: "100.64.0.9",
+    home,
+  });
+  assert.equal(asked.status, 200, Buffer.from(asked.body).toString());
+  const body = JSON.parse(Buffer.from(asked.body).toString());
+  assert.equal(body.attestation.approverId, "host-mac-00000001");
+  assert.equal(body.attestation.joinerId, "pc-joining-00000004");
+  fs.rmSync(home, { recursive: true, force: true });
+});
