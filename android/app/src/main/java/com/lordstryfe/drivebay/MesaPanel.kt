@@ -173,14 +173,17 @@ object MesaPanel {
             return
         }
         thread(name = "mesa-connect") {
-            val token = if (machine.optString("type") == "phone") code else redeem(url, code, activity)
+            val token = runCatching {
+                if (machine.optString("type") == "phone") code else redeem(url, code, activity)
+            }.getOrNull()
             if (token.isNullOrBlank()) {
                 activity.runOnUiThread { toast(activity, "That machine refused the code.") }
                 return@thread
             }
-            CredentialVault(activity).save("link-" + machine.optString("machineId"), token)
-            val names = propfind(url, token)
+            val saved = runCatching { CredentialVault(activity).save("link-" + machine.optString("machineId"), token) }.isSuccess
+            val names = runCatching { propfind(url, token) }.getOrDefault(emptyList())
             activity.runOnUiThread {
+                if (!saved) toast(activity, "Paired, but this phone could not save the pairing. Try again.")
                 val message = if (names.isEmpty()) "Connected. No folders are shared." else names.joinToString("\n")
                 android.app.AlertDialog.Builder(activity)
                     .setTitle(machine.optString("displayName"))
@@ -203,21 +206,10 @@ object MesaPanel {
     }
 
     private fun propfind(url: String, token: String): List<String> {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "PROPFIND"
-            setRequestProperty("Depth", "1")
-            setRequestProperty("Authorization", "Basic " + Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP))
-            connectTimeout = 8000
-            readTimeout = 8000
-        }
-        return try {
-            if (connection.responseCode != 207) emptyList()
-            else MesaCloud.shareNames(connection.inputStream.bufferedReader().readText())
-        } catch (_: Exception) {
-            emptyList()
-        } finally {
-            connection.disconnect()
-        }
+        // HttpURLConnection cannot send PROPFIND on Android (ProtocolException), so use DavClient.
+        val auth = Base64.encodeToString("drivebay:$token".toByteArray(), Base64.NO_WRAP)
+        val reply = DavClient.propfind(url, auth) ?: return emptyList()
+        return if (reply.status == 207) runCatching { MesaCloud.shareNames(reply.body) }.getOrDefault(emptyList()) else emptyList()
     }
 
     private fun remoteAccessDialog(activity: Activity, machine: JSONObject) {
