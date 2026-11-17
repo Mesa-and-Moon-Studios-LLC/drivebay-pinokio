@@ -29,7 +29,7 @@ import {
 } from "../app/src/lib/files/linked-crypto.mjs";
 import { newMachineId, newMachineKeys, sanitizeRegistration } from "../app/src/lib/files/linked-machines.mjs";
 import { ensureIdentity } from "../app/src/lib/files/linked-cloud.mjs";
-import { setupVault, loadDek, envelopeFor, openListedMachines, vaultStatus } from "../app/src/lib/files/linked-vault.mjs";
+import { setupVault, loadDek, envelopeFor, openListedMachines, vaultStatus, publicVaultFromWraps, accountVaultStatus, accountAlreadyLocked } from "../app/src/lib/files/linked-vault.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -224,4 +224,28 @@ test("PHP bootstrap redacts bearer tokens and the migrate script is not a web en
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.includes("super.secret.token"), false);
   assert.match(result.stdout, /\[redacted\]/);
+});
+
+test("a new machine uses the account's cloud lock records instead of offering to set a join password", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "drivebay-vault-status-"));
+  assert.equal(vaultStatus(home).ready, false);
+  const wraps = [
+    { kind: "passphrase", wrapId: "wrap-pass-1" },
+    { kind: "recovery", wrapId: "wrap-rec-1" },
+  ];
+  const fromCloud = accountVaultStatus(home, { ok: true, locked: true, wraps });
+  assert.equal(fromCloud.ready, true);
+  assert.equal(fromCloud.unlocked, false);
+  assert.equal(fromCloud.hasPassphrase, true);
+  assert.equal(fromCloud.hasRecovery, true);
+  assert.equal(fromCloud.hasPasskey, false);
+  assert.equal(accountAlreadyLocked({ locked: true, wraps }), true);
+  assert.equal(accountAlreadyLocked({ ok: true, locked: false, wraps: [] }), false);
+  const flags = publicVaultFromWraps(wraps);
+  assert.equal(flags.ready, true);
+  assert.equal(flags.unlocked, false);
+  const failed = accountVaultStatus(home, { ok: false, error: "The Mesa and Moon cloud did not return the lock records.", wraps: [], locked: false });
+  assert.equal(failed.ready, false);
+  assert.equal(failed.checkFailed, true);
+  fs.rmSync(home, { recursive: true, force: true });
 });

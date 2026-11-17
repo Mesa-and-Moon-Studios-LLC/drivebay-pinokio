@@ -14,6 +14,7 @@ type Vault = {
   hasPasskey?: boolean;
   hasRecovery?: boolean;
   cannotRecover?: string;
+  checkFailed?: boolean;
 };
 
 type Config = { authDomain?: string; signinBridge?: string; ready?: boolean };
@@ -77,6 +78,22 @@ export function VaultLock({
   const [usePasskey, setUsePasskey] = useState(false);
 
   if (!signedIn) return null;
+
+  if (!vault?.ready && vault?.checkFailed) {
+    return (
+      <div className="space-y-2 rounded-lg border border-border p-3" data-testid="vault-check-failed">
+        <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Join password</p>
+        <p className="text-sm text-fg">
+          Could not check whether this account already has a join password. Refresh Settings and try again. Do not set a
+          new one until this device can see the existing lock.
+        </p>
+        <p className="text-xs text-fg-muted">{vault.cannotRecover}</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => onDone()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
 
   if (shownKey) {
     return (

@@ -73,6 +73,26 @@ export function publicVault(state, unlocked) {
   };
 }
 
+/** Cloud wrap records mean the account already has a join password, even if this device has no local vault yet. */
+export function publicVaultFromWraps(wraps, unlocked = false) {
+  const list = Array.isArray(wraps) ? wraps : [];
+  const hasPassphrase = list.some((row) => row?.kind === "passphrase");
+  const hasPasskey = list.some((row) => row?.kind === "passkey");
+  const hasRecovery = list.some((row) => row?.kind === "recovery");
+  return {
+    ready: hasPassphrase || hasPasskey || hasRecovery,
+    unlocked: Boolean(unlocked),
+    hasPassphrase,
+    hasPasskey,
+    hasRecovery,
+    cannotRecover: CANNOT_RECOVER_MESSAGE,
+  };
+}
+
+export function accountAlreadyLocked(cloud) {
+  return Boolean(cloud?.locked || (Array.isArray(cloud?.wraps) && cloud.wraps.length));
+}
+
 function cacheKey(home) {
   return path.resolve(home || "");
 }
@@ -194,6 +214,26 @@ export function vaultStatus(home) {
   const state = readVaultFile(home);
   const dek = loadDek(home);
   return publicVault(state, Boolean(dek));
+}
+
+/**
+ * Local vault first. If this device has not unlocked yet, use the account's
+ * cloud lock records so a new machine asks for the existing join password
+ * instead of offering to set a new one.
+ */
+export function accountVaultStatus(home, cloud = null) {
+  const local = vaultStatus(home);
+  if (local.ready) return local;
+  if (!cloud) return local;
+  if (accountAlreadyLocked(cloud)) return publicVaultFromWraps(cloud.wraps, false);
+  if (cloud.ok === false) {
+    return {
+      ...local,
+      checkFailed: true,
+      cannotRecover: cloud.error || "Could not check whether a join password is already set.",
+    };
+  }
+  return local;
 }
 
 export { vaultFile };

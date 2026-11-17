@@ -23,6 +23,11 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
     const store = await import("./linked-store.mjs");
     const machines = await import("./linked-machines.mjs");
     const identity = store.loadIdentity(home);
+    const vault = await import("./linked-vault.mjs");
+    const cloud = await import("./linked-cloud.mjs");
+    const listed = store.loadAccount(home)?.uid
+      ? await cloud.fetchVault(home).catch((err: Error) => ({ ok: false as const, wraps: [], locked: false, error: err?.message || "Could not reach the lock records." }))
+      : null;
     return {
       account: store.publicAccount(store.loadAccount(home)),
       config: store.publicFirebaseConfig(store.loadFirebaseConfig(home)),
@@ -33,7 +38,7 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
         ? { machineId: identity.machineId, displayName: identity.displayName || "", publicKey: identity.publicKey || "" }
         : null,
       warning: machines.DIRECT_INTERNET_WARNING,
-      vault: (await import("./linked-vault.mjs")).vaultStatus(home),
+      vault: vault.accountVaultStatus(home, listed),
       remoteAccess: (await import("./settings.server")).readRemoteAccess(),
     };
   });
@@ -381,6 +386,19 @@ export const setupLinkedVault = createServerFn({ method: "POST" })
     const vault = await import("./linked-vault.mjs");
     const cloud = await import("./linked-cloud.mjs");
     const settings = await import("./settings.server");
+    const existing = await cloud.fetchVault(home);
+    if (vault.accountAlreadyLocked(existing)) {
+      return {
+        ok: false as const,
+        message: "This account already has a join password. Enter it instead of setting a new one.",
+      };
+    }
+    if (existing.ok === false) {
+      return {
+        ok: false as const,
+        message: existing.error || "Could not check whether this account already has a join password. Try again before setting a new one.",
+      };
+    }
     const setup = vault.setupVault(home, {
       passphrase: data.passphrase,
       prfOutput: data.prfOutput,
@@ -427,7 +445,11 @@ export const unlockLinkedVault = createServerFn({ method: "POST" })
     if (!unlocked.ok) return { ok: false as const, message: unlocked.error || "Could not unlock the machine list." };
     const settings = await import("./settings.server");
     await cloud.pushThisMachine(home, settings.readPortSettings().port);
-    return { ok: true as const, message: "The machine list is unlocked on this device." };
+    const joins = await requestJoinOnTrustedPeers(home);
+    const message = joins.asked
+      ? `The machine list is unlocked. Waiting for a trusted device on ${joins.names[0]} to approve this computer.`
+      : "The machine list is unlocked on this device. Open My machines and click Join on a trusted computer, then approve it there.";
+    return { ok: true as const, pending: joins.asked > 0, message };
   });
 
 export const setMachineRemoteAccess = createServerFn({ method: "POST" })
@@ -486,6 +508,55 @@ export const setMachineRemoteAccess = createServerFn({ method: "POST" })
     return { ok: true as const, ...body, message: body.enabled ? "Remote access is on." : "Remote access is off." };
   });
 
+
+/** After a new machine unlocks with the account join password, ask a trusted computer to approve it. */
+async function requestJoinOnTrustedPeers(home: string): Promise<{ asked: number; names: string[] }> {
+  try {
+    const cloud = await import("./linked-cloud.mjs");
+    const machines = await import("./linked-machines.mjs");
+    const store = await import("./linked-store.mjs");
+    const connect = await import("./linked-connect.mjs");
+    const vault = await import("./linked-vault.mjs");
+    const crypto = await import("./linked-crypto.mjs");
+    const listed = await cloud.fetchMachines(home);
+    if (!listed.ok || listed.needsUnlock) return { asked: 0, names: [] };
+    const self = store.loadIdentity(home);
+    const dek = vault.loadDek(home);
+    if (!dek || !self?.privateKey || !self.machineId) return { asked: 0, names: [] };
+    const now = Date.now();
+    const names: string[] = [];
+    for (const machine of listed.machines || []) {
+      if (!machine?.machineId || machine.machineId === listed.selfId) continue;
+      if (machine.type === "phone") continue;
+      if (!machines.isOnline(machine.lastSeen, now)) continue;
+      const target = machines.connectionUrl(machine);
+      if (!target.url || target.risk) continue;
+      const secret = machines.randomToken();
+      const parts = { hostId: machine.machineId, peerId: self.machineId, secret };
+      const asked = await connect.requestRemote({
+        url: target.url,
+        machineId: self.machineId,
+        displayName: self.displayName || "Drivebay",
+        secret,
+        proof: crypto.joinProof(dek, parts),
+        signature: crypto.signJoin(self.privateKey, parts),
+      });
+      if (!asked.ok) continue;
+      const records = store.loadLinkedTokens(home);
+      records[machine.machineId] = {
+        ...(records[machine.machineId] || {}),
+        pendingId: asked.id,
+        pendingSecret: secret,
+        url: target.url,
+      };
+      store.saveLinkedTokens(home, records);
+      names.push(machine.displayName || "that machine");
+    }
+    return { asked: names.length, names };
+  } catch {
+    return { asked: 0, names: [] };
+  }
+}
 
 async function notifyForgetPeer(home: string, peerId: string) {
   try {
