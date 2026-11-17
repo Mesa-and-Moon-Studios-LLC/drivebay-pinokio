@@ -13,6 +13,7 @@ import { clearStoredNext, rememberSettingsAfterLogin } from "@/lib/host-page.mjs
 import { ApiTokens } from "@/components/settings/api-tokens";
 import { PhoneDriveMount } from "@/components/settings/phone-drive";
 import {
+  JoinRequestsBanner,
   LinkedProvider,
   MesaAccountSection,
   MyMachinesSection,
@@ -427,6 +428,7 @@ function SettingsPage() {
         <>
         <SettingsNav />
         <LinkedProvider>
+        <JoinRequestsBanner />
         <SettingsGroup id="account" title="Account" hint="Who you are on this machine and on Mesa and Moon.">
         <section className="space-y-3">
           <p className="font-mono text-[10px] tracking-[0.16em] text-fg-subtle uppercase">Drivebay lock</p>

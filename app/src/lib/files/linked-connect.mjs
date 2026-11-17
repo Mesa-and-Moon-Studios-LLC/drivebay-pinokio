@@ -58,6 +58,6 @@ export async function pollRemote({ url, id, secret, fetchImpl = fetch }) {
     body: JSON.stringify({ id, secret }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok || !body.token) return { ok: false, error: body.error || "Still waiting for approval on that machine." };
+  if (!res.ok || !body.token) return { ok: false, error: body.error || "Still waiting for approval on that machine.", missing: body.missing === true };
   return { ok: true, token: String(body.token), scope: body.scope === "full" ? "full" : "shares" };
 }

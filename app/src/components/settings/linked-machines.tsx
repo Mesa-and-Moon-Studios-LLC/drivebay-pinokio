@@ -348,6 +348,13 @@ function useLinkedState() {
     await refresh();
   }
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refresh().catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const signedIn = status?.account.signedIn === true;
   return {
     status,
@@ -545,6 +552,61 @@ export function ThisMachineSection() {
   );
 }
 
+function PendingJoinList({ pending, onDone }: { pending: NonNullable<Status["pairs"]>["pending"]; onDone: () => void }) {
+  return (
+    <>
+      {pending.map((row) => (
+        <div key={row.id} className="flex flex-wrap items-center gap-2" data-testid="join-request">
+          <span className="min-w-0 flex-1 text-xs">
+            <span className="text-sm text-fg">{row.name || "A machine"}</span> wants to join
+            {row.hostName && row.hostName !== "this machine" ? ` on ${row.hostName}` : ""}.{" "}
+            {row.join
+              ? "Its join password and device key checked out."
+              : "It did not send the join password, so it would only see your shared folders."}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              void approveLinkedRequest({
+                data: { id: row.id, hostId: row.hostId, fromId: row.fromId, name: row.name },
+              }).then(() => onDone());
+            }}
+          >
+            Approve
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              void denyLinkedRequest({ data: { id: row.id, hostId: row.hostId } }).then(() => onDone());
+            }}
+          >
+            Deny
+          </Button>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Shown at the top of Settings so a pending join is not buried under Account or Drives. */
+export function JoinRequestsBanner() {
+  const { status, refresh } = useLinked();
+  const pending = status?.pairs.pending || [];
+  if (!pending.length) return null;
+  return (
+    <div className="rounded-md border-2 border-fg bg-bg-elevated p-4" data-testid="join-request-banner">
+      <p className="text-sm font-medium text-fg">Join requests</p>
+      <p className="mb-3 text-xs text-fg-muted">A machine on your login is waiting. Approve it here, or deny it.</p>
+      <div className="space-y-2">
+        <PendingJoinList pending={pending} onDone={() => void refresh()} />
+      </div>
+    </div>
+  );
+}
+
 /** My machines group: join password, join requests, trusted devices, and your other machines. */
 export function MyMachinesSection() {
   const {
@@ -565,36 +627,7 @@ export function MyMachinesSection() {
 
       {pending.length ? (
         <Sub title="Join requests">
-          {pending.map((row) => (
-            <div key={row.id} className="flex flex-wrap items-center gap-2" data-testid="join-request">
-              <span className="min-w-0 flex-1 text-xs">
-                <span className="text-sm text-fg">{row.name || "A machine"}</span> wants to join
-                {row.hostName && row.hostName !== "this machine" ? ` on ${row.hostName}` : ""}.{" "}
-                {row.join ? "Its join password and device key checked out." : "It did not send the join password, so it would only see your shared folders."}
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  void approveLinkedRequest({
-                    data: { id: row.id, hostId: row.hostId, fromId: row.fromId, name: row.name },
-                  }).then(() => refresh());
-                }}
-              >
-                Approve
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  void denyLinkedRequest({ data: { id: row.id, hostId: row.hostId } }).then(() => refresh());
-                }}
-              >
-                Deny
-              </Button>
-            </div>
-          ))}
+          <PendingJoinList pending={pending} onDone={() => void refresh()} />
         </Sub>
       ) : null}
 

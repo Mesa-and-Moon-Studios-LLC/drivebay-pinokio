@@ -323,6 +323,7 @@ class LinkedBrowserActivity : AppCompatActivity() {
             runCatching {
                 CredentialVault(this).forget("link-$machineId")
                 CredentialVault(this).forget("link-scope-$machineId")
+                CredentialVault(this).forget("link-url-$machineId")
             }
             toast(message)
             finish()

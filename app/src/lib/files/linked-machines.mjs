@@ -387,6 +387,9 @@ export function denyRequest(state, id) {
 }
 
 export function pollRequest(state, { id, secret }) {
+  if (!(state.pending || []).some((row) => row.id === id)) {
+    return { ok: false, missing: true, error: "That approval request is gone.", state };
+  }
   let token = "";
   let scope = "shares";
   const pending = [];

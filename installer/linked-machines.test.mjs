@@ -176,6 +176,13 @@ test("approval returns the pair token only to the machine that asked", () => {
   assert.equal(verifyPairToken(owner.state, "dbp_approved"), true);
 });
 
+test("polling a request that is no longer pending is marked missing so the joiner can send a new one", () => {
+  const state = freshPairState();
+  const missing = pollRequest(state, { id: "req-gone", secret: "request-secret-value" });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.missing, true);
+});
+
 test("mount plans name the drive and follow the 3.36.7 desktop or rclone split", () => {
   const secret = `dbp_${"ab".repeat(32)}`;
   const windows = linkedMountPlan({
@@ -567,4 +574,12 @@ test("own machines in My machines join with a password, not a 6-digit code", () 
   const panel = fs.readFileSync(path.join(root, "android/app/src/main/java/com/lordstryfe/drivebay/MesaPanel.kt"), "utf8");
   assert.match(panel, /approvePending/);
   assert.equal(panel.includes("with a code (shared folders only)"), false);
+  const settings = fs.readFileSync(path.join(root, "app/src/routes/settings.tsx"), "utf8");
+  const linked = fs.readFileSync(path.join(root, "app/src/components/settings/linked-machines.tsx"), "utf8");
+  assert.match(settings, /<JoinRequestsBanner \/>/);
+  assert.match(linked, /data-testid="join-request-banner"/);
+  assert.match(linked, /export function JoinRequestsBanner/);
+  const bannerAt = settings.indexOf("<JoinRequestsBanner />");
+  const accountAt = settings.indexOf("id=\"account\"");
+  assert.ok(bannerAt >= 0 && accountAt > bannerAt, "Approve must appear at the top of Settings, above Account");
 });

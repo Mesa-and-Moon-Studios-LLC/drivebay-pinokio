@@ -216,7 +216,7 @@ export async function handleLinkedHttp({
   if (pathname === "/api/link/poll" && verb === "POST") {
     const result = pollRequest(state, { id: String(payload.id || ""), secret: String(payload.secret || "") });
     if (result.ok) savePairState(home, result.state);
-    if (!result.ok) return json(409, { error: result.error });
+    if (!result.ok) return json(409, { error: result.error, missing: result.missing === true });
     return json(200, { token: result.token, scope: result.scope || "shares" });
   }
 

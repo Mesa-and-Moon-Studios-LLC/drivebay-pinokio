@@ -29,6 +29,7 @@ export const getLinkedStatus = createServerFn({ method: "GET" })
       ? await cloud.fetchVault(home).catch((err: Error) => ({ ok: false as const, wraps: [], locked: false, error: err?.message || "Could not reach the lock records." }))
       : null;
     const localPairs = machines.publicPairState(store.loadPairState(home));
+    await renewPendingJoins(home).catch(() => {});
     const sponsor = await import("./linked-sponsor.mjs");
     const remotePending = await sponsor.listRemotePending(home).catch(() => []);
     const hostId = identity?.machineId || "";
@@ -374,7 +375,7 @@ export const connectLinkedMachine = createServerFn({ method: "POST" })
       });
       if (!asked.ok) return { ok: false as const, message: asked.error };
       const records = store.loadLinkedTokens(home);
-      records[data.machineId] = { ...(records[data.machineId] || {}), pendingId: asked.id, pendingSecret: secret, url: target.url, letter };
+      records[data.machineId] = { ...(records[data.machineId] || {}), pendingId: asked.id, pendingSecret: secret, url: target.url, letter, pendingAt: Date.now() };
       store.saveLinkedTokens(home, records);
       return {
         ok: true as const,
@@ -402,6 +403,17 @@ export const finishLinkedMachine = createServerFn({ method: "POST" })
       return { ok: false as const, message: "This machine is not waiting for approval." };
     }
     const polled = await connect.pollRemote({ url: row.url, id: row.pendingId, secret: row.pendingSecret });
+    if (!polled.ok && polled.missing) {
+      const retried = await sendJoinRequest(home, data.machineId, row.url);
+      if (!retried.ok) {
+        return { ok: false as const, pending: true as const, message: retried.error || polled.error };
+      }
+      return {
+        ok: true as const,
+        pending: true as const,
+        message: "The earlier request expired, so a new one was sent. Approve it on a trusted device.",
+      };
+    }
     if (!polled.ok) return { ok: false as const, pending: true as const, message: polled.error };
     const listed = await cloud.fetchMachines(home);
     const machine = (listed.machines || []).find((item: { machineId?: string }) => item.machineId === data.machineId);
@@ -631,7 +643,63 @@ async function denyOnTrustedHost(home: string, data: { id: string; hostId?: stri
   return { ok: true };
 }
 
+const PENDING_RENEW_MS = 8 * 60 * 1000;
+
+async function sendJoinRequest(home: string, machineId: string, url: string) {
+  const store = await import("./linked-store.mjs");
+  const machines = await import("./linked-machines.mjs");
+  const connect = await import("./linked-connect.mjs");
+  const vault = await import("./linked-vault.mjs");
+  const crypto = await import("./linked-crypto.mjs");
+  const self = store.loadIdentity(home);
+  const dek = vault.loadDek(home);
+  if (!dek || !self?.privateKey || !self.machineId) {
+    return { ok: false as const, error: "Enter your join password first. Unlock the machine list on this device in My machines, then join." };
+  }
+  const secret = machines.randomToken();
+  const parts = { hostId: machineId, peerId: self.machineId, secret };
+  const asked = await connect.requestRemote({
+    url,
+    machineId: self.machineId,
+    displayName: self.displayName || "Drivebay",
+    secret,
+    proof: crypto.joinProof(dek, parts),
+    signature: crypto.signJoin(self.privateKey, parts),
+  });
+  if (!asked.ok) return { ok: false as const, error: asked.error };
+  const records = store.loadLinkedTokens(home);
+  records[machineId] = {
+    ...(records[machineId] || {}),
+    pendingId: asked.id,
+    pendingSecret: secret,
+    url,
+    pendingAt: Date.now(),
+  };
+  store.saveLinkedTokens(home, records);
+  return { ok: true as const };
+}
+
+/** If a join is still waiting and the request is getting old, send a fresh one so Approve stays available. Does not poll for a grant token (polling would spend it). */
+async function renewPendingJoins(home: string) {
+  const store = await import("./linked-store.mjs");
+  const records = store.loadLinkedTokens(home);
+  const now = Date.now();
+  let stamped = false;
+  for (const [machineId, row] of Object.entries(records as Record<string, { pendingId?: string; pendingSecret?: string; url?: string; token?: string; pendingAt?: number }>)) {
+    if (!row?.pendingId || !row.pendingSecret || !row.url || row.token) continue;
+    if (!row.pendingAt) {
+      records[machineId] = { ...row, pendingAt: now };
+      stamped = true;
+      continue;
+    }
+    if (now - Number(row.pendingAt) < PENDING_RENEW_MS) continue;
+    await sendJoinRequest(home, machineId, row.url);
+  }
+  if (stamped) store.saveLinkedTokens(home, records);
+}
+
 async function requestJoinOnTrustedPeers(home: string): Promise<{ asked: number; names: string[] }> {
+
   try {
     const cloud = await import("./linked-cloud.mjs");
     const machines = await import("./linked-machines.mjs");
@@ -669,6 +737,7 @@ async function requestJoinOnTrustedPeers(home: string): Promise<{ asked: number;
         pendingId: asked.id,
         pendingSecret: secret,
         url: target.url,
+        pendingAt: Date.now(),
       };
       store.saveLinkedTokens(home, records);
       names.push(machine.displayName || "that machine");

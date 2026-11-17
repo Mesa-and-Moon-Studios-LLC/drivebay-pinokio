@@ -118,28 +118,57 @@ object MesaPanel {
             val list = if (directory.locked && dek != null) openLocked(dek, directory.machines) else directory.machines
             MesaSponsor.attach(activity)
             val pendingAll = org.json.JSONArray()
-            if (dek != null) {
-                val vault = CredentialVault(activity)
-                for (i in 0 until list.length()) {
-                    val row = list.optJSONObject(i) ?: continue
-                    val id = row.optString("machineId")
-                    if (id.isBlank() || id == machineId(activity) || row.optString("type") == "phone") continue
-                    val token = vault.load("link-$id").orEmpty()
-                    if (token.isBlank() || vault.load("link-scope-$id").orEmpty() != "full") continue
-                    val origin = MesaReciprocal.originOf(row) ?: continue
-                    val found = MesaSponsor.listPending(origin, token)
-                    for (j in 0 until found.length()) pendingAll.put(found.getJSONObject(j))
+            val pendingNotes = mutableListOf<String>()
+            val vault = CredentialVault(activity)
+            val checked = mutableSetOf<String>()
+            fun considerHost(id: String, origin: String?, name: String) {
+                if (id.isBlank() || id == machineId(activity) || !checked.add(id)) return
+                val token = vault.load("link-$id").orEmpty()
+                if (token.isBlank()) return
+                val resolved = origin?.takeIf { it.isNotBlank() } ?: vault.load("link-url-$id")?.takeIf { it.isNotBlank() }
+                if (resolved.isNullOrBlank()) {
+                    pendingNotes.add("No reachable address for $name.")
+                    return
                 }
+                if (origin?.isNotBlank() == true) vault.save("link-url-$id", origin)
+                val found = MesaSponsor.listPending(resolved, token)
+                if (found.pending.length() == 0) {
+                    if (found.error != null) pendingNotes.add("Could not list join requests on $name.")
+                    return
+                }
+                if (vault.load("link-scope-$id").orEmpty() != "full") vault.save("link-scope-$id", "full")
+                for (j in 0 until found.pending.length()) pendingAll.put(found.pending.getJSONObject(j))
+            }
+            for (i in 0 until list.length()) {
+                val row = list.optJSONObject(i) ?: continue
+                if (row.optString("type") == "phone") continue
+                val id = row.optString("machineId")
+                considerHost(id, MesaReciprocal.originOf(row), row.optString("displayName").ifBlank { "that computer" })
+            }
+            for (key in vault.ids()) {
+                if (!key.startsWith("link-") || key.startsWith("link-scope-") || key.startsWith("link-url-")) continue
+                considerHost(key.removePrefix("link-"), vault.load("link-url-" + key.removePrefix("link-")), "a saved computer")
+            }
+            if (checked.none { vault.load("link-$it").orEmpty().isNotBlank() }) {
+                pendingNotes.add("This phone can approve a join once it has a full trusted connection to a computer. Until then, approve on the Mac: open Settings and tap Approve in the Join requests box at the top.")
             }
             activity.runOnUiThread {
                 val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-                if (pendingAll.length() > 0) {
+                if (pendingAll.length() > 0 || pendingNotes.isNotEmpty()) {
                     body.addView(TextView(activity).apply {
                         text = "Join requests"
-                        textSize = 14f
+                        textSize = 16f
                         setTypeface(typeface, android.graphics.Typeface.BOLD)
                         setPadding(0, 8, 0, 8)
                     })
+                    for (note in pendingNotes) {
+                        body.addView(TextView(activity).apply {
+                            text = note
+                            textSize = 12f
+                            alpha = 0.8f
+                            setPadding(0, 0, 0, 8)
+                        })
+                    }
                     for (i in 0 until pendingAll.length()) {
                         val req = pendingAll.getJSONObject(i)
                         val hostLabel = req.optString("hostName").ifBlank { "a trusted computer" }
@@ -279,8 +308,11 @@ object MesaPanel {
                 return@thread
             }
             val saved = runCatching {
-                CredentialVault(activity).save("link-" + machine.optString("machineId"), token)
-                CredentialVault(activity).save("link-scope-" + machine.optString("machineId"), "shares")
+                val vault = CredentialVault(activity)
+                val id = machine.optString("machineId")
+                vault.save("link-$id", token)
+                vault.save("link-scope-$id", "shares")
+                vault.save("link-url-$id", url.substringBefore("/dav").trimEnd('/'))
             }.isSuccess
             activity.runOnUiThread {
                 if (!saved) toast(activity, "Paired, but this phone could not save the pairing. Try again.")
@@ -820,8 +852,10 @@ object MesaPanel {
                     if (token.isBlank()) continue
                     val full = answer?.optString("scope") == "full"
                     runCatching {
-                        CredentialVault(activity).save("link-" + hostId, token)
-                        CredentialVault(activity).save("link-scope-" + hostId, if (full) "full" else "shares")
+                        val vault = CredentialVault(activity)
+                        vault.save("link-" + hostId, token)
+                        vault.save("link-scope-" + hostId, if (full) "full" else "shares")
+                        vault.save("link-url-" + hostId, origin)
                     }
                     if (full) runCatching { MesaReciprocal.offerTo(activity, machine, token) }
                     activity.runOnUiThread {

@@ -72,12 +72,17 @@ object MesaSponsor {
             .put("signature", signature)
     }
 
-    fun listPending(origin: String, token: String): JSONArray {
-        if (origin.isBlank() || token.isBlank()) return JSONArray()
+    data class PendingList(val pending: JSONArray, val error: String? = null)
+
+    fun listPending(origin: String, token: String): PendingList {
+        if (origin.isBlank() || token.isBlank()) return PendingList(JSONArray(), "The saved address for that computer is missing.")
         val (status, text) = getJson("$origin/api/link/pending", token)
-        if (status !in 200..299) return JSONArray()
-        val body = runCatching { JSONObject(text) }.getOrNull() ?: return JSONArray()
-        val pending = body.optJSONArray("pending") ?: return JSONArray()
+        if (status !in 200..299) {
+            val error = runCatching { JSONObject(text).optString("error") }.getOrNull()?.takeIf { it.isNotBlank() }
+            return PendingList(JSONArray(), error ?: "Could not reach that computer for join requests.")
+        }
+        val body = runCatching { JSONObject(text) }.getOrNull() ?: return PendingList(JSONArray(), "That computer sent a bad join-request list.")
+        val pending = body.optJSONArray("pending") ?: JSONArray()
         val hostId = body.optString("hostId")
         val hostName = body.optString("displayName")
         val out = JSONArray()
@@ -88,7 +93,7 @@ object MesaSponsor {
             row.put("hostUrl", origin)
             out.put(row)
         }
-        return out
+        return PendingList(out)
     }
 
     fun approveOnHost(origin: String, token: String, requestId: String, attestation: JSONObject): String? {

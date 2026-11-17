@@ -153,6 +153,7 @@ object MesaReciprocal {
         runCatching {
             vault.forget("link-$machineId")
             vault.forget("link-scope-$machineId")
+            vault.forget("link-url-$machineId")
             vault.forget("reciprocal-$machineId")
         }
         PhoneShareStore(context).revokeByMachineId(machineId)
