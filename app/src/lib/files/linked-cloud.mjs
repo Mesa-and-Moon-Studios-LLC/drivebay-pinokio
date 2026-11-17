@@ -55,18 +55,38 @@ export function verifyEmulatorIdToken(idToken, config) {
   return { uid, email: String(payload.email || ""), displayName: String(payload.name || "") };
 }
 
+/**
+ * Ask Firebase itself whether this ID token is valid for this project.
+ * Google's oauth2 tokeninfo endpoint does not accept Firebase ID tokens (it answers
+ * "Invalid Value"), which made every Google/Apple/email sign-in fail to save on this machine.
+ * accounts:lookup with the project's web API key accepts a Firebase ID token and rejects
+ * tokens from any other project.
+ */
 export async function verifyFirebaseIdToken(idToken, config, fetchImpl = fetch) {
   const local = verifyEmulatorIdToken(idToken, config);
   if (local) return local;
-  const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-  const res = await fetchImpl(url);
+  const key = encodeURIComponent(String(config?.apiKey || ""));
+  if (!key) return null;
+  let res;
+  try {
+    res = await fetchImpl(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${key}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+  } catch {
+    return null;
+  }
   if (!res.ok) return null;
   const info = await res.json();
-  const aud = String(info.aud || "");
-  if (aud !== config.projectId) return null;
-  const uid = String(info.sub || info.user_id || "");
+  const user = Array.isArray(info?.users) ? info.users[0] : null;
+  const uid = String(user?.localId || "");
   if (!uid) return null;
-  return { uid, email: String(info.email || ""), displayName: String(info.name || "") };
+  // The id token's own claims must name this project and the same user.
+  const claims = decodeJwtPayload(idToken);
+  if (!claims || String(claims.aud || "") !== String(config.projectId || "")) return null;
+  if (String(claims.sub || claims.user_id || "") !== uid) return null;
+  return { uid, email: String(user.email || claims.email || ""), displayName: String(user.displayName || claims.name || "") };
 }
 
 export async function refreshFirebase(config, refreshToken, fetchImpl = fetch) {
